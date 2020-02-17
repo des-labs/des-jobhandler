@@ -2,48 +2,149 @@ import tornado.ioloop
 import tornado.web
 import tornado
 import json
-# from kubernetes import client, config
-# config.load_kube_config(config_file='k8s.conf')
+import sqlite3
+import logging
+import uuid
+import kubejob
+
+log_format = "%(asctime)s  %(name)8s  %(levelname)5s  %(message)s"
+logging.basicConfig(
+    level=logging.INFO,
+    handlers=[logging.FileHandler("test.log"), logging.StreamHandler()],
+    format=log_format,
+)
+logger = logging.getLogger("main")
+
+
+def get_jobid():
+    return str(uuid.uuid4()).replace("-", "")
+
+def register_job(username, job, jobid):
+    conn = sqlite3.connect("deslabs.db")
+    c = conn.cursor()
+    t = tuple([username, job, jobid, "PENDING"])
+    c.execute("INSERT INTO Jobs VALUES {0}".format(t))
+    conn.commit()
+    conn.close()
+
+def submit_test(body):
+    username = body["username"].lower()
+    time = int(body["time"])
+    job = body["job"]
+    jobid = get_jobid()
+    conf = {"job": job}
+    conf["namespace"] = "default"
+    conf["cm_name"] = "{}-{}-{}-cm".format(conf["job"], jobid, username)
+    conf["job_name"] = "{}-{}-{}".format(conf["job"], jobid, username)
+    conf["image"] = "mgckind/test-task:1.3"
+    conf["command"] = ["python", "test.py"]
+    conf["configjob"] = {
+        "name": conf["job"],
+        "jobid": jobid,
+        "username": username,
+        "inputs": {"time": time},
+        "outputs": {"log": "{}.log".format(conf["job"])},
+    }
+    kubejob.create_configmap(conf)
+    kubejob.create_job(conf)
+    msg = "Job:{} id:{} by:{}".format(conf["job"], jobid, username)
+    register_job(username, job, jobid)
+    return msg
 
 class BaseHandler(tornado.web.RequestHandler):
-
     def set_default_headers(self):
         self.set_header("Access-Control-Allow-Origin", "*")
         self.set_header("Access-Control-Allow-Headers", "Content-Type")
-        self.set_header('Access-Control-Allow-Methods', ' POST, PUT, DELETE, OPTIONS')
+        self.set_header("Access-Control-Allow-Methods", " POST, PUT, DELETE, OPTIONS")
 
     def options(self):
         self.set_status(204)
         self.finish()
 
-class MainHandler(BaseHandler):
-    def post(self):
-        name = self.get_argument('name','')
-        data_json = tornado.escape.json_decode(self.request.body)
-        name = data_json['name']
-        print(name)
+    def getarg(self, arg, default=""):
+        temp = self.get_argument(arg, default)
+        try:
+            data_json = tornado.escape.json_decode(self.request.body)
+            temp = default
+            temp = data_json[arg]
+        except:
+            pass
+        return temp
 
-        out = dict(msg='Job submitted by {}'.format(name))
-        self.write(json.dumps(out,indent=4))
+
+class JobHandler(BaseHandler):
+    def put(self):
+        body = { k: self.get_argument(k) for k in self.request.arguments }
+        logger.debug(body)
+        job = body["job"]
+        if job == "test":
+           msg = submit_test(body)
+           logger.info(msg)
+        else:
+            msg = 'Job {} not defined'.format(job)
+        out = dict(msg=msg)
+        self.write(json.dumps(out, indent=4))
+
+
+    def delete(self):
+        username = self.getarg("username")
+        job = self.getarg("job")
+        jobid = self.getarg("jobid")
+        conf = {"job": job}
+        conf["namespace"] = "default"
+        conf["job_name"] = "{}-{}-{}".format(conf["job"], jobid, username)
+        conf["cm_name"] = "{}-{}-{}-cm".format(conf["job"], jobid, username)
+        kubejob.delete_job(conf)
+        out = dict(msg="done")
+        self.write(json.dumps(out, indent=4))
+
+    def post(self):
+        username = self.getarg("username")
+        job = self.getarg("job")
+        jobid = self.getarg("jobid")
+        conf = {"job": job}
+        conf["namespace"] = "default"
+        conf["job_name"] = "{}-{}-{}".format(conf["job"], jobid, username)
+        status = kubejob.status_job(conf)
+        out = dict(
+            msg="done",
+            avtive=status.active,
+            succeeded=status.succeeded,
+            failed=status.failed,
+        )
+        self.write(json.dumps(out, indent=4))
+
 
 
 ## This is the one providing a list of hidden/allowed resources
 class InitHandler(BaseHandler):
     def post(self):
-        username = self.get_argument('username','')
-        data_json = tornado.escape.json_decode(self.request.body)
-        username = data_json['username']
-        print(username)
-        out = dict(hidden=['page3'])
-        self.write(json.dumps(out,indent=4))
-
+        username = self.getarg("username")
+        logger.debug(username)
+        conn = sqlite3.connect("deslabs.db")
+        c = conn.cursor()
+        t = c.execute("select pages from access where username = '{}'".format(username))
+        d = t.fetchone()
+        conn.close()
+        pages = []
+        if d is not None:
+            pages = d[0].replace(" ", "").split(",")
+        out = dict(access=pages)
+        self.write(json.dumps(out, indent=4))
 
 
 def make_app():
-    return tornado.web.Application([
-        (r"/test/?", MainHandler),
-        (r"/init/?", InitHandler),
-    ],debug=True)
+    settings = {"debug": True}
+    return tornado.web.Application(
+        [
+            (r"/job/status?", JobHandler),
+            (r"/job/delete?", JobHandler),
+            (r"/job/submit?", JobHandler),
+            (r"/init/?", InitHandler),
+        ],
+        **settings
+    )
+
 
 if __name__ == "__main__":
     app = make_app()
