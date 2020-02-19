@@ -6,6 +6,7 @@ import sqlite3
 import logging
 import uuid
 import kubejob
+import os
 
 log_format = "%(asctime)s  %(name)8s  %(levelname)5s  %(message)s"
 logging.basicConfig(
@@ -36,7 +37,8 @@ def submit_test(body):
     conf["namespace"] = "default"
     conf["cm_name"] = "{}-{}-{}-cm".format(conf["job"], jobid, username)
     conf["job_name"] = "{}-{}-{}".format(conf["job"], jobid, username)
-    conf["image"] = "mgckind/test-task:1.3"
+    # conf["image"] = "mgckind/test-task:1.3"
+    conf["image"] = os.environ['DOCKER_IMAGE']
     conf["command"] = ["python", "test.py"]
     conf["configjob"] = {
         "name": conf["job"],
