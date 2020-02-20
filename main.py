@@ -2,11 +2,14 @@ import tornado.ioloop
 import tornado.web
 import tornado
 import json
+import jwt
+import datetime
 import sqlite3
 import logging
 import uuid
 import kubejob
 import os
+SECRET = 'my_secret_key'
 
 log_format = "%(asctime)s  %(name)8s  %(levelname)5s  %(message)s"
 logging.basicConfig(
@@ -72,6 +75,37 @@ class BaseHandler(tornado.web.RequestHandler):
         except:
             pass
         return temp
+
+class ProfileHandler(BaseHandler):
+    def post(self):
+        body = { k: self.get_argument(k) for k in self.request.arguments }
+        token = body["token"]
+        decoded = jwt.decode(token, SECRET, algorithms=['HS256'])
+        exptime =  datetime.datetime.utcfromtimestamp(decoded['exp'])
+        ttl = (exptime - datetime.datetime.utcnow()).seconds
+        logger.info(ttl)
+        response = {'username': decoded["username"], "email": decoded["email"], "ttl": ttl}
+        logger.info(response)
+        self.write(response)
+
+
+
+class LoginHandler(BaseHandler):
+
+    def post(self):
+        body = { k: self.get_argument(k) for k in self.request.arguments }
+        username = body["username"]
+        #passwd = body["password"]
+        email = "{}@test.test".format(username)
+        encoded = jwt.encode({
+            'username' : username,
+            'email' : email,
+            'exp' : datetime.datetime.utcnow() + datetime.timedelta(seconds=600)},
+            SECRET,
+            algorithm='HS256'
+        )
+        response = {'username': username, 'email':email, 'token': encoded.decode(encoding='UTF-8')}
+        self.write(json.dumps(response))
 
 
 class JobHandler(BaseHandler):
@@ -142,6 +176,8 @@ def make_app():
             (r"/job/status?", JobHandler),
             (r"/job/delete?", JobHandler),
             (r"/job/submit?", JobHandler),
+            (r"/login/?", LoginHandler),
+            (r"/profile/?", ProfileHandler),
             (r"/init/?", InitHandler),
         ],
         **settings
@@ -150,5 +186,5 @@ def make_app():
 
 if __name__ == "__main__":
     app = make_app()
-    app.listen(8888)
+    app.listen(8989)
     tornado.ioloop.IOLoop.current().start()
