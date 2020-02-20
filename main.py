@@ -1,5 +1,6 @@
 import tornado.ioloop
 import tornado.web
+import tornado.wsgi
 import tornado
 import json
 import jwt
@@ -170,8 +171,8 @@ class InitHandler(BaseHandler):
 
 
 def make_app():
-    settings = {"debug": True}
-    return tornado.web.Application(
+    settings = {"debug": False}
+    application = tornado.web.Application(
         [
             (r"/job/status?", JobHandler),
             (r"/job/delete?", JobHandler),
@@ -182,6 +183,7 @@ def make_app():
         ],
         **settings
     )
+    return tornado.wsgi.WSGIAdapter(application)
 
 
 if __name__ == "__main__":

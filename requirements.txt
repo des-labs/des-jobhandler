@@ -1,4 +1,6 @@
 kubernetes
-tornado
+tornado==5.1
+greenlet
 pyjwt
-json
+pyjson
+pyyaml
