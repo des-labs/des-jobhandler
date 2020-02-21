@@ -37,7 +37,14 @@ def submit_test(body):
     job = body["job"]
     jobid = get_jobid()
     conf = {"job": job}
-    conf["namespace"] = "default"
+    # When running in a pod, the namespace should be determined automatically,
+    # otherwise we assume the local development is in the default namespace
+    try:
+        with open('/var/run/secrets/kubernetes.io/serviceaccount/namespace', 'r') as file:
+            namespace = file.read().replace('\n', '')
+    except:
+        namespace = 'default'
+    conf["namespace"] = namespace
     conf["cm_name"] = "{}-{}-{}-cm".format(conf["job"], jobid, username)
     conf["job_name"] = "{}-{}-{}".format(conf["job"], jobid, username)
     # conf["image"] = "mgckind/test-task:1.3"
@@ -170,7 +177,7 @@ class InitHandler(BaseHandler):
 
 
 def make_app(basePath = ''):
-    settings = {"debug": False}
+    settings = {"debug": True}
     return tornado.web.Application(
         [
             (r"{}/job/status?".format(basePath), JobHandler),

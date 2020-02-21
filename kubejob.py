@@ -41,8 +41,12 @@ def job(input):
         command=input["command"],
         volume_mounts=[vmounts],
     )
+    imagePullSecret = client.V1LocalObjectReference(
+        # TODO: Replace this hard-coded secret reference with an environment variable value
+        name='registry-auth'
+    )
     podspec = client.V1PodSpec(
-        containers=[container], restart_policy="Never", volumes=[volume]
+        containers=[container], restart_policy="Never", volumes=[volume], image_pull_secrets=[imagePullSecret]
     )
     template = client.V1PodTemplateSpec(spec=podspec)
     jobspec = client.V1JobSpec(
