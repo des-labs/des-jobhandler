@@ -8,6 +8,7 @@ import sqlite3
 import logging
 import uuid
 import kubejob
+import os
 SECRET = 'my_secret_key'
 
 log_format = "%(asctime)s  %(name)8s  %(levelname)5s  %(message)s"
@@ -39,7 +40,8 @@ def submit_test(body):
     conf["namespace"] = "default"
     conf["cm_name"] = "{}-{}-{}-cm".format(conf["job"], jobid, username)
     conf["job_name"] = "{}-{}-{}".format(conf["job"], jobid, username)
-    conf["image"] = "mgckind/test-task:1.3"
+    # conf["image"] = "mgckind/test-task:1.3"
+    conf["image"] = os.environ['DOCKER_IMAGE']
     conf["command"] = ["python", "test.py"]
     conf["configjob"] = {
         "name": conf["job"],
@@ -167,22 +169,31 @@ class InitHandler(BaseHandler):
         self.write(json.dumps(out, indent=4))
 
 
-def make_app():
-    settings = {"debug": True}
+def make_app(basePath = ''):
+    settings = {"debug": False}
     return tornado.web.Application(
         [
-            (r"/job/status?", JobHandler),
-            (r"/job/delete?", JobHandler),
-            (r"/job/submit?", JobHandler),
-            (r"/login/?", LoginHandler),
-            (r"/profile/?", ProfileHandler),
-            (r"/init/?", InitHandler),
+            (r"{}/job/status?".format(basePath), JobHandler),
+            (r"{}/job/delete?".format(basePath), JobHandler),
+            (r"{}/job/submit?".format(basePath), JobHandler),
+            (r"{}/login/?".format(basePath), LoginHandler),
+            (r"{}/profile/?".format(basePath), ProfileHandler),
+            (r"{}/init/?".format(basePath), InitHandler),
         ],
         **settings
     )
 
-
 if __name__ == "__main__":
-    app = make_app()
-    app.listen(8989)
+
+    if int(os.environ['SERVICE_PORT']):
+        servicePort = int(os.environ['SERVICE_PORT'])
+    else:
+        servicePort = 8080
+    if os.environ['BASE_PATH'] == '' or os.environ['BASE_PATH'] == '/' or not isinstance(os.environ['BASE_PATH'], str) :
+        basePath = ''
+    else:
+        basePath = os.environ['BASE_PATH']
+
+    app = make_app(basePath = basePath)
+    app.listen(servicePort)
     tornado.ioloop.IOLoop.current().start()

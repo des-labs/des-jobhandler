@@ -8,7 +8,10 @@ from kubernetes import client, config, utils
 from kubernetes.client.rest import ApiException
 
 logger = logging.getLogger(__name__)
-config.load_kube_config(config_file="k8s.conf")
+try:
+    config.load_kube_config(config_file="k8s.conf")
+except:
+    config.load_incluster_config()
 configuration = client.Configuration()
 api_batch_v1 = client.BatchV1Api(client.ApiClient(configuration))
 api_v1 = client.CoreV1Api(client.ApiClient(configuration))
