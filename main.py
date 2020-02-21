@@ -1,6 +1,5 @@
 import tornado.ioloop
 import tornado.web
-import tornado.wsgi
 import tornado
 import json
 import jwt
