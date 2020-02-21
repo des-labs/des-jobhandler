@@ -170,23 +170,31 @@ class InitHandler(BaseHandler):
         self.write(json.dumps(out, indent=4))
 
 
-def make_app():
+def make_app(basePath = ''):
     settings = {"debug": False}
-    application = tornado.web.Application(
+    return tornado.web.Application(
         [
-            (r"/job/status?", JobHandler),
-            (r"/job/delete?", JobHandler),
-            (r"/job/submit?", JobHandler),
-            (r"/login/?", LoginHandler),
-            (r"/profile/?", ProfileHandler),
-            (r"/init/?", InitHandler),
+            (r"{}/job/status?".format(basePath), JobHandler),
+            (r"{}/job/delete?".format(basePath), JobHandler),
+            (r"{}/job/submit?".format(basePath), JobHandler),
+            (r"{}/login/?".format(basePath), LoginHandler),
+            (r"{}/profile/?".format(basePath), ProfileHandler),
+            (r"{}/init/?".format(basePath), InitHandler),
         ],
         **settings
     )
-    return tornado.wsgi.WSGIAdapter(application)
-
 
 if __name__ == "__main__":
-    app = make_app()
-    app.listen(8989)
+
+    if int(os.environ['SERVICE_PORT']):
+        servicePort = int(os.environ['SERVICE_PORT'])
+    else:
+        servicePort = 8080
+    if os.environ['BASE_PATH'] == '' or os.environ['BASE_PATH'] == '/' or not isinstance(os.environ['BASE_PATH'], str) :
+        basePath = ''
+    else:
+        basePath = os.environ['BASE_PATH']
+
+    app = make_app(basePath = basePath)
+    app.listen(servicePort)
     tornado.ioloop.IOLoop.current().start()
