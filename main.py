@@ -47,9 +47,8 @@ def submit_test(body):
     conf["namespace"] = namespace
     conf["cm_name"] = "{}-{}-{}-cm".format(conf["job"], jobid, username)
     conf["job_name"] = "{}-{}-{}".format(conf["job"], jobid, username)
-    # conf["image"] = "mgckind/test-task:1.3"
     conf["image"] = os.environ['DOCKER_IMAGE']
-    conf["command"] = ["python", "test.py"]
+    conf["command"] = ["python", "task.py"]
     conf["configjob"] = {
         "name": conf["job"],
         "jobid": jobid,

@@ -2,3 +2,4 @@ kubernetes
 tornado
 pyjwt
 pyyaml
+jinja2

@@ -6,6 +6,7 @@ import yaml
 import sys, os, time
 from kubernetes import client, config, utils
 from kubernetes.client.rest import ApiException
+from jinja2 import Template
 
 logger = logging.getLogger(__name__)
 try:
@@ -26,6 +27,7 @@ def test_credentials():
 
 
 def job(input):
+    '''
     vmounts = client.V1VolumeMount(
         name="config-volume",
         mount_path="/home/worker/configjob.yaml",
@@ -59,6 +61,24 @@ def job(input):
     body = client.V1Job(
         api_version="batch/v1", kind="Job", metadata=jobmeta, spec=jobspec
     )
+    '''
+
+    with open(os.path.join(os.path.dirname(__file__), "job.tpl.yaml")) as f:
+        templateText = f.read()
+
+    template = Template(templateText)
+    body = yaml.safe_load(template.render(
+        name=input["job_name"],
+        namespace=input["namespace"],
+        backoffLimit=2,
+        activeDeadlineSeconds=600,
+        ttlSecondsAfterFinished=600,
+        container_name=input["job"],
+        image=input["image"],
+        command=input["command"],
+        configmap_name=input["cm_name"],
+    ))
+
     return body
 
 

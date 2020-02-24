@@ -1,0 +1,33 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ name }}
+  namespace: {{ namespace }}
+spec:
+  backoffLimit: {{ backoffLimit }}
+  activeDeadlineSeconds: {{ activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: {{ ttlSecondsAfterFinished }}
+  template:
+    spec:
+      restartPolicy: Never
+      imagePullSecrets:
+      - name: registry-auth
+      volumes:
+      - name: config-volume
+        configMap:
+          name: {{ configmap_name }}
+      containers:
+      - name: {{ container_name }}
+        image: {{ image }}
+        command: {{ command }}
+        volumeMounts:
+        - name: config-volume
+          mountPath: '/home/worker/configjob.yaml'
+          subPath: 'configjob.yaml'
+        lifecycle:
+          postStart:
+            exec:
+              command: ["/bin/sh", "-c", "echo Hello from the postStart handler >> /home/worker/lifecycle_hook_test.log"]
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "echo Hello from the preStop handler >> /home/worker/lifecycle_hook_test.log"]
