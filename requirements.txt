@@ -3,3 +3,4 @@ tornado
 pyjwt
 pyyaml
 jinja2
+mysql-connector-python-rf

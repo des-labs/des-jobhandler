@@ -2,4 +2,4 @@ name: "test"
 inputs:
   time: 30
 outputs:
-    log: "test.log"
+    log: "./output/test.log"
