@@ -8,6 +8,9 @@ spec:
   activeDeadlineSeconds: {{ activeDeadlineSeconds }}
   ttlSecondsAfterFinished: {{ ttlSecondsAfterFinished }}
   template:
+    metadata:
+      labels:
+        task: test
     spec:
       restartPolicy: Never
       imagePullSecrets:
@@ -32,6 +35,9 @@ spec:
           subPath: {{ username }}
       containers:
       - name: {{ container_name }}
+        securityContext:
+          runAsUser: 1001
+          runAsGroup: 1001
         image: {{ image }}
         command: {{ command }}
         volumeMounts:

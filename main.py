@@ -9,6 +9,7 @@ import logging
 import uuid
 import kubejob
 import os
+import secrets
 SECRET = 'my_secret_key'
 
 log_format = "%(asctime)s  %(name)8s  %(levelname)5s  %(message)s"
@@ -24,25 +25,26 @@ def get_jobid():
     return str(uuid.uuid4()).replace("-", "")
 
 
-def register_job(username, job, jobid):
+def register_job(conf):
     cnx, cur = open_db_connection()
 
     newJobSql = (
         "INSERT INTO Jobs "
-        "(user, job, name, status, time, type, query, files, sizes, runtime) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+        "(user, job, name, status, time, type, query, files, sizes, runtime, apitoken) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
     )
     newJobInfo = (
-        username,
-        job,
-        jobid,
+        conf["configjob"]["username"],
+        conf["job"],
+        conf["configjob"]["jobid"],
         'in_progress',
         datetime.datetime.utcnow(),
         'type_test',
         'query_test',
         'files_test',
         'sizes_test',
-        0
+        0,
+        conf["configjob"]["apitoken"]
     )
     cur.execute(newJobSql, newJobInfo)
     close_db_connection(cnx, cur)
@@ -72,12 +74,14 @@ def submit_test(body):
         "username": username,
         "inputs": {"time": time},
         "outputs": {"log": "{}.log".format(conf["job"])},
+        "apitoken": secrets.token_hex(16),
+        "api_base_url": os.environ['API_BASE_URL']
     }
     conf['pvc_name'] = "deslabs-legacy-task-test"
     kubejob.create_configmap(conf)
     kubejob.create_job(conf)
     msg = "Job:{} id:{} by:{}".format(conf["job"], jobid, username)
-    register_job(username, job, jobid)
+    register_job(conf)
     return msg
 
 
@@ -104,6 +108,7 @@ class BaseHandler(tornado.web.RequestHandler):
 
 
 class ProfileHandler(BaseHandler):
+    # API endpoint: /profile
     def post(self):
         body = {k: self.get_argument(k) for k in self.request.arguments}
         token = body["token"]
@@ -121,6 +126,7 @@ class ProfileHandler(BaseHandler):
 
 
 class LoginHandler(BaseHandler):
+    # API endpoint: /login
     def post(self):
         body = {k: self.get_argument(k) for k in self.request.arguments}
         username = body["username"]
@@ -142,9 +148,10 @@ class LoginHandler(BaseHandler):
 
 
 class JobHandler(BaseHandler):
+    # API endpoint: /job/submit
     def put(self):
         body = {k: self.get_argument(k) for k in self.request.arguments}
-        logger.debug(body)
+        logger.info(body)
         job = body["job"]
         if job == "test":
            msg = submit_test(body)
@@ -154,6 +161,7 @@ class JobHandler(BaseHandler):
         out = dict(msg=msg)
         self.write(json.dumps(out, indent=4))
 
+    # API endpoint: /job/delete
     def delete(self):
         username = self.getarg("username")
         job = self.getarg("job")
@@ -166,6 +174,7 @@ class JobHandler(BaseHandler):
         out = dict(msg="done")
         self.write(json.dumps(out, indent=4))
 
+    # API endpoint: /job/status
     def post(self):
         username = self.getarg("username")
         job = self.getarg("job")
@@ -185,10 +194,11 @@ class JobHandler(BaseHandler):
 
 ## This is the one providing a list of hidden/allowed resources
 class InitHandler(BaseHandler):
+    # API endpoint: /init
     def post(self):
         cnx, cur = open_db_connection()
         username = self.getarg("username")
-        logger.debug(username)
+        logger.info(username)
         t = cur.execute(
             "select pages from access where username = '{}'".format(username))
         d = t.fetchone()
@@ -200,6 +210,39 @@ class InitHandler(BaseHandler):
         self.write(json.dumps(out, indent=4))
 
 
+class JobMonitor(BaseHandler):
+    # API endpoint: /job/monitor
+    def post(self):
+        try:
+            data = json.loads(self.request.body.decode('utf-8'))
+            logger.info('/job/monitor data: {}'.format(json.dumps(data)))
+        except:
+            logger.info('Error decoding JSON data')
+            self.write({
+                "status": "error",
+                "reason": "Invalid JSON in HTTP request body."
+            })
+            return
+        apitoken = data["apitoken"]
+        logger.info('API token: {}'.format(apitoken))
+        cnx, cur = open_db_connection()
+        cur.execute(
+            "SELECT id FROM Jobs WHERE apitoken = '{}' LIMIT 1".format(apitoken)
+        )
+        id = cur.fetchone()
+        if id is not None:
+            updateJobSql = (
+                "UPDATE Jobs "
+                "SET status=%s "
+                "WHERE id=%s"
+            )
+            updateJobInfo = (
+                'complete',
+                id[0]
+            )
+            cur.execute(updateJobSql, updateJobInfo)
+        close_db_connection(cnx, cur)
+
 def make_app(basePath=''):
     settings = {"debug": True}
     return tornado.web.Application(
@@ -210,6 +253,7 @@ def make_app(basePath=''):
             (r"{}/login/?".format(basePath), LoginHandler),
             (r"{}/profile/?".format(basePath), ProfileHandler),
             (r"{}/init/?".format(basePath), InitHandler),
+            (r"{}/job/monitor?".format(basePath), JobMonitor),
         ],
         **settings
     )

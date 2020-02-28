@@ -10,5 +10,6 @@ CREATE TABLE IF NOT EXISTS Jobs(
 	`files` mediumtext NOT NULL,
 	`sizes` text NOT NULL,
 	`runtime` int NOT NULL,
+	`apitoken` char(32) NOT NULL,
   PRIMARY KEY (`id`), UNIQUE KEY `id` (`id`)
 )
