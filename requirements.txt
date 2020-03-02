@@ -2,3 +2,5 @@ kubernetes
 tornado
 pyjwt
 pyyaml
+cx_Oracle
+tenacity
