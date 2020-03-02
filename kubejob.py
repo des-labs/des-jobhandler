@@ -77,8 +77,8 @@ def job(input):
         image=input["image"],
         command=input["command"],
         configmap_name=input["cm_name"],
-        pvc_name=input["pvc_name"],
-        username=input["configjob"]["username"],
+        pvc_name=input["configjob"]["metadata"]["persistentVolumeClaim"],
+        username=input["configjob"]["metadata"]["username"],
     ))
 
     return body

@@ -10,7 +10,20 @@ import uuid
 import kubejob
 import os
 import secrets
+import yaml
+from jinja2 import Template
 SECRET = 'my_secret_key'
+
+# Import environment variable values
+DOCKER_IMAGE = os.environ['DOCKER_IMAGE']
+API_BASE_URL = os.environ['API_BASE_URL']
+PVC_NAME = os.environ['PVC_NAME']
+MYSQL_HOST = os.environ['MYSQL_HOST']
+MYSQL_DATABASE = os.environ['MYSQL_DATABASE']
+MYSQL_USER = os.environ['MYSQL_USER']
+MYSQL_PASSWORD = os.environ['MYSQL_PASSWORD']
+SERVICE_PORT = os.environ['SERVICE_PORT']
+BASE_PATH = os.environ['BASE_PATH']
 
 log_format = "%(asctime)s  %(name)8s  %(levelname)5s  %(message)s"
 logging.basicConfig(
@@ -34,9 +47,9 @@ def register_job(conf):
         "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
     )
     newJobInfo = (
-        conf["configjob"]["username"],
+        conf["configjob"]["metadata"]["username"],
         conf["job"],
-        conf["configjob"]["jobid"],
+        conf["configjob"]["metadata"]["jobId"],
         'in_progress',
         datetime.datetime.utcnow(),
         'type_test',
@@ -44,7 +57,7 @@ def register_job(conf):
         'files_test',
         'sizes_test',
         0,
-        conf["configjob"]["apitoken"]
+        conf["configjob"]["metadata"]["apiToken"]
     )
     cur.execute(newJobSql, newJobInfo)
     close_db_connection(cnx, cur)
@@ -66,18 +79,31 @@ def submit_test(body):
     conf["namespace"] = namespace
     conf["cm_name"] = "{}-{}-{}-cm".format(conf["job"], jobid, username)
     conf["job_name"] = "{}-{}-{}".format(conf["job"], jobid, username)
-    conf["image"] = os.environ['DOCKER_IMAGE']
+    conf["image"] = DOCKER_IMAGE
     conf["command"] = ["python", "task.py"]
-    conf["configjob"] = {
-        "name": conf["job"],
-        "jobid": jobid,
-        "username": username,
-        "inputs": {"time": time},
-        "outputs": {"log": "{}.log".format(conf["job"])},
-        "apitoken": secrets.token_hex(16),
-        "api_base_url": os.environ['API_BASE_URL']
-    }
-    conf['pvc_name'] = "deslabs-legacy-task-test"
+
+    # Import task config template file and populate with values
+    jobConfigTemplateFile = os.path.join(
+        os.path.dirname(__file__),
+        "des-tasks",
+        job,
+        "jobconfig.tpl.yaml"
+    )
+    with open(jobConfigTemplateFile) as f:
+        templateText = f.read()
+    template = Template(templateText)
+    conf["configjob"] = yaml.safe_load(template.render(
+        taskType=conf["job"],
+        jobName=conf["job_name"],
+        jobId=jobid,
+        username=username,
+        taskDuration=time,
+        logFilePath="./output/{}.log".format(conf["job"]),
+        apiToken=secrets.token_hex(16),
+        apiBaseUrl=API_BASE_URL,
+        persistentVolumeClaim=PVC_NAME
+    ))
+
     kubejob.create_configmap(conf)
     kubejob.create_job(conf)
     msg = "Job:{} id:{} by:{}".format(conf["job"], jobid, username)
@@ -269,10 +295,10 @@ def close_db_connection(cnx, cur):
 def open_db_connection():
     # Open database connection
     cnx = mysql.connector.connect(
-        host=os.environ['MYSQL_HOST'],
-        user=os.environ['MYSQL_USER'],
-        password=os.environ['MYSQL_PASSWORD'],
-        database=os.environ['MYSQL_DATABASE'],
+        host = MYSQL_HOST,
+        user=MYSQL_USER,
+        password=MYSQL_PASSWORD,
+        database=MYSQL_DATABASE,
     )
     # Get database cursor object
     cur = cnx.cursor()
@@ -295,14 +321,14 @@ def create_db_jobs_table(delete=False):
 
 if __name__ == "__main__":
 
-    if int(os.environ['SERVICE_PORT']):
-        servicePort = int(os.environ['SERVICE_PORT'])
+    if int(SERVICE_PORT):
+        servicePort = int(SERVICE_PORT)
     else:
         servicePort = 8080
-    if os.environ['BASE_PATH'] == '' or os.environ['BASE_PATH'] == '/' or not isinstance(os.environ['BASE_PATH'], str):
+    if BASE_PATH == '' or BASE_PATH == '/' or not isinstance(BASE_PATH, str):
         basePath = ''
     else:
-        basePath = os.environ['BASE_PATH']
+        basePath = BASE_PATH
 
     # Create the MySQL database table for storing Jobs
     create_db_jobs_table(delete=True)

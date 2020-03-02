@@ -16,24 +16,24 @@ with open(input_file) as cfile:
 logging.basicConfig(
     level=logging.DEBUG,
     handlers=[
-        logging.FileHandler(config['outputs']['log']),
+        logging.FileHandler(config['spec']['outputs']['log']),
         logging.StreamHandler()
     ]
 )
 
-t = config['inputs']['time']
+t = config['spec']['inputs']['time']
 logging.info('********')
 logging.info('Running  job:{} at {}'.format(
-   config['name'], os.path.basename(__file__)))
+   config['metadata']['name'], os.path.basename(__file__)))
 logging.debug("This is a debug message")
 logging.info("Working... for  {} seconds".format(t))
 time.sleep(t)
-logging.info("Reporting completion to jobhandler (apitoken: {})...".format(config['apitoken']))
+logging.info("Reporting completion to jobhandler (apitoken: {})...".format(config['metadata']['apiToken']))
 
 requests.post(
-    '{}/job/monitor'.format(config['api_base_url']),
+    '{}/job/monitor'.format(config['metadata']['apiBaseUrl']),
     json={
-        'apitoken': config['apitoken']
+        'apitoken': config['metadata']['apiToken']
     }
 )
 
