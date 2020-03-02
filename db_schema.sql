@@ -6,10 +6,11 @@ CREATE TABLE IF NOT EXISTS Jobs(
 	`status` text NOT NULL,
 	`time` datetime NOT NULL,
 	`type` text NOT NULL,
-	`query` mediumtext NOT NULL,
-	`files` mediumtext NOT NULL,
+	`query` MEDIUMTEXT NOT NULL,
+	`files` MEDIUMTEXT NOT NULL,
 	`sizes` text NOT NULL,
 	`runtime` int NOT NULL,
 	`apitoken` char(32) NOT NULL,
+	`spec` MEDIUMTEXT NOT NULL,
   PRIMARY KEY (`id`), UNIQUE KEY `id` (`id`)
 )
