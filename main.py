@@ -12,6 +12,7 @@ import os
 import secrets
 import yaml
 from jinja2 import Template
+import dbutils
 SECRET = 'my_secret_key'
 
 # Import environment variable values
@@ -138,17 +139,33 @@ class ProfileHandler(BaseHandler):
     def post(self):
         body = {k: self.get_argument(k) for k in self.request.arguments}
         token = body["token"]
-        decoded = jwt.decode(token, SECRET, algorithms=['HS256'])
-        exptime = datetime.datetime.utcfromtimestamp(decoded['exp'])
-        ttl = (exptime - datetime.datetime.utcnow()).seconds
-        logger.info(ttl)
-        response = {
-            'username': decoded["username"],
-            "email": decoded["email"],
-            "ttl": ttl
-        }
-        logger.info(response)
+        response = {}
+        try:
+            decoded = jwt.decode(token, SECRET, algorithms=['HS256'])
+            exptime =  datetime.datetime.utcfromtimestamp(decoded['exp'])
+            ttl = (exptime - datetime.datetime.utcnow()).seconds
+            response["status"] = "ok"
+            response["message"] = "valid token"
+            response["name"] = decoded["name"]
+            response["username"] = decoded["username"]
+            response["email"] = decoded["email"]
+            response["ttl"] = ttl
+        except jwt.InvalidSignatureError:
+            response["status"] = "error"
+            response["message"] = "Signature verification failed"
+            self.set_status(401)
+        except jwt.ExpiredSignatureError:
+            response["status"] = "error"
+            response["message"] = "Signature has expired"
+            self.set_status(401)
+        except jwt.DecodeError:
+            response["status"] = "error"
+            response["message"] = "Invalid header string"
+            self.set_status(500)
+        self.flush()
         self.write(response)
+        self.finish()
+        return
 
 
 class LoginHandler(BaseHandler):
@@ -156,20 +173,38 @@ class LoginHandler(BaseHandler):
     def post(self):
         body = {k: self.get_argument(k) for k in self.request.arguments}
         username = body["username"]
-        #passwd = body["password"]
-        email = "{}@test.test".format(username)
+        passwd = body["password"]
+        db = body["database"]
+        response = {"username": username}
+        auth, err, update = dbutils.check_credentials(username, passwd, db)
+        if not auth:
+            if update:
+                self.set_status(406)
+                response["update"] = True
+            else:
+                self.set_status(401)
+                response["update"] = False
+            response["status"] = "error"
+            response["message"] = err
+            self.flush()
+            self.write(json.dumps(response))
+            self.finish()
+            return
+        # TODO: use des user manager credentials
+        name, last, email = dbutils.get_basic_info(username, passwd, username)
         encoded = jwt.encode({
-            'username': username,
-            'email': email,
-            'exp': datetime.datetime.utcnow() + datetime.timedelta(seconds=600)},
+            'name' : name,
+            'username' : username,
+            'email' : email,
+            'exp' : datetime.datetime.utcnow() + datetime.timedelta(seconds=60)},
             SECRET,
             algorithm='HS256'
         )
-        response = {
-            'username': username,
-            'email': email,
-            'token': encoded.decode(encoding='UTF-8')
-        }
+        response["status"] = "ok"
+        response["message"] = "login"
+        response["name"] = name
+        response["email"] = email
+        response["token"] = encoded.decode(encoding='UTF-8')
         self.write(json.dumps(response))
 
 

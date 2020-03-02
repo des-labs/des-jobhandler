@@ -4,3 +4,5 @@ pyjwt
 pyyaml
 jinja2
 mysql-connector-python-rf
+cx_Oracle
+tenacity
