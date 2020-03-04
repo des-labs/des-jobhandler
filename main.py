@@ -52,15 +52,16 @@ def register_job(conf):
 
     newJobSql = (
         "INSERT INTO Jobs "
-        "(user, job, name, status, time, type, query, files, sizes, runtime, apitoken, spec) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+        "(user, job, name, status, time_start, time_complete, type, query, files, sizes, runtime, apitoken, spec) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
     )
     newJobInfo = (
         conf["configjob"]["metadata"]["username"],
         conf["job"],
         conf["configjob"]["metadata"]["jobId"],
-        'in_progress',
-        datetime.datetime.utcnow(),
+        'init',
+        None,
+        None,
         'type_test',
         'query_test',
         'files_test',
@@ -145,7 +146,7 @@ class ProfileHandler(BaseHandler):
         response = {}
         try:
             decoded = jwt.decode(token, SECRET, algorithms=['HS256'])
-            exptime =  datetime.datetime.utcfromtimestamp(decoded['exp'])
+            exptime = datetime.datetime.utcfromtimestamp(decoded['exp'])
             ttl = (exptime - datetime.datetime.utcnow()).seconds
             response["status"] = "ok"
             response["message"] = "valid token"
@@ -175,13 +176,11 @@ class LoginHandler(BaseHandler):
     # API endpoint: /login
     def post(self):
         body = {k: self.get_argument(k) for k in self.request.arguments}
-        # TODO: Remove this authorization bypass hack!!!
-        auth = True
         username = body["username"]
-        #passwd = body["password"]
-        #db = body["database"]
+        passwd = body["password"]
+        db = body["database"]
         response = {"username": username}
-        #auth, err, update = dbutils.check_credentials(username, passwd, db)
+        auth, err, update = dbutils.check_credentials(username, passwd, db)
         if not auth:
             if update:
                 self.set_status(406)
@@ -196,14 +195,12 @@ class LoginHandler(BaseHandler):
             self.finish()
             return
         # TODO: use des user manager credentials
-        # TODO: Remove this authorization bypass hack!!!
-        # name, last, email = dbutils.get_basic_info(username, passwd, username)
-        name, last, email = [username, 'password', '{}@example.com'.format(username)]
+        name, last, email = dbutils.get_basic_info(username, passwd, username)
         encoded = jwt.encode({
-            'name' : name,
-            'username' : username,
-            'email' : email,
-            'exp' : datetime.datetime.utcnow() + datetime.timedelta(seconds=60)},
+            'name': name,
+            'username': username,
+            'email': email,
+            'exp': datetime.datetime.utcnow() + datetime.timedelta(seconds=60)},
             SECRET,
             algorithm='HS256'
         )
@@ -278,6 +275,39 @@ class InitHandler(BaseHandler):
         self.write(json.dumps(out, indent=4))
 
 
+class JobStart(BaseHandler):
+    # API endpoint: /job/start
+    def post(self):
+        try:
+            data = json.loads(self.request.body.decode('utf-8'))
+            logger.info('/job/complete data: {}'.format(json.dumps(data)))
+        except:
+            logger.info('Error decoding JSON data')
+            self.write({
+                "status": "error",
+                "reason": "Invalid JSON in HTTP request body."
+            })
+            return
+        apitoken = data["apitoken"]
+        rowId = validate_apitoken(apitoken)
+        if isinstance(rowId, int):
+            cnx, cur = open_db_connection()
+            updateJobSql = (
+                "UPDATE Jobs "
+                "SET status=%s, time_start=%s "
+                "WHERE id=%s"
+            )
+            updateJobInfo = (
+                'started',
+                datetime.datetime.utcnow(),
+                rowId
+            )
+            cur.execute(updateJobSql, updateJobInfo)
+            if cur.rowcount != 1:
+                logger.info('Error updating job record')
+            close_db_connection(cnx, cur)
+
+
 class JobComplete(BaseHandler):
     # API endpoint: /job/complete
     def post(self):
@@ -292,22 +322,18 @@ class JobComplete(BaseHandler):
             })
             return
         apitoken = data["apitoken"]
-        logger.info('API token: {}'.format(apitoken))
-        cnx, cur = open_db_connection()
-        cur.execute(
-            "SELECT id FROM Jobs WHERE apitoken = '{}' LIMIT 1".format(apitoken)
-        )
-        # id = cur.fetchone()
-        for (id,) in cur:
-        # if id is not None:
+        rowId = validate_apitoken(apitoken)
+        if isinstance(rowId, int):
+            cnx, cur = open_db_connection()
             updateJobSql = (
                 "UPDATE Jobs "
-                "SET status=%s "
+                "SET status=%s, time_complete=%s "
                 "WHERE id=%s"
             )
             updateJobInfo = (
                 'complete',
-                id
+                datetime.datetime.utcnow(),
+                rowId
             )
             cur.execute(updateJobSql, updateJobInfo)
             if cur.rowcount != 1:
@@ -317,16 +343,17 @@ class JobComplete(BaseHandler):
                     "SELECT user,job,name from Jobs WHERE id=%s"
                 )
                 selectJobInfo = (
-                    id,
+                    rowId,
                 )
                 cur.execute(selectJobSql, selectJobInfo)
                 for (user, job, name) in cur:
                     conf = {"job": job}
                     conf['namespace'] = get_namespace()
                     conf["job_name"] = get_job_name(conf["job"], name, user)
-                    conf["cm_name"] = get_job_configmap_name(conf["job"], name, user)
+                    conf["cm_name"] = get_job_configmap_name(
+                        conf["job"], name, user)
                     kubejob.delete_job(conf)
-        close_db_connection(cnx, cur)
+            close_db_connection(cnx, cur)
 
 
 def get_namespace():
@@ -343,6 +370,19 @@ def get_namespace():
     return namespace
 
 
+def validate_apitoken(apitoken):
+    cnx, cur = open_db_connection()
+    cur.execute(
+        "SELECT id FROM Jobs WHERE apitoken = '{}' LIMIT 1".format(apitoken)
+    )
+    # If there is a result, assume only one exists and return the record id, otherwise return None
+    rowId = None
+    for (id,) in cur:
+        rowId = id
+    close_db_connection(cnx, cur)
+    return rowId
+
+
 def make_app(basePath=''):
     settings = {"debug": True}
     return tornado.web.Application(
@@ -354,6 +394,7 @@ def make_app(basePath=''):
             (r"{}/profile/?".format(basePath), ProfileHandler),
             (r"{}/init/?".format(basePath), InitHandler),
             (r"{}/job/complete?".format(basePath), JobComplete),
+            (r"{}/job/start?".format(basePath), JobStart),
         ],
         **settings
     )
@@ -369,7 +410,7 @@ def close_db_connection(cnx, cur):
 def open_db_connection():
     # Open database connection
     cnx = mysql.connector.connect(
-        host = MYSQL_HOST,
+        host=MYSQL_HOST,
         user=MYSQL_USER,
         password=MYSQL_PASSWORD,
         database=MYSQL_DATABASE,

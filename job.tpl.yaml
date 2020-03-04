@@ -50,4 +50,4 @@ spec:
         lifecycle:
           postStart:
             exec:
-              command: ["/bin/sh", "-c", 'echo "$(date): Hello from the postStart handler" >> /home/worker/output/lifecycle_hook_test.log']
+              command: ["python", "init.py"]
