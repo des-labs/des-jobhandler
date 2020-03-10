@@ -13,6 +13,7 @@ import secrets
 import yaml
 from jinja2 import Template
 import dbutils
+import tests
 SECRET = 'my_secret_key'
 
 # Import environment variable values
@@ -103,7 +104,7 @@ def submit_test(body):
         jobId=jobid,
         username=username,
         taskDuration=time,
-        logFilePath="./output/{}.log".format(conf["job"]),
+        logFilePath="./output/{}.log".format(conf["job_name"]),
         apiToken=secrets.token_hex(16),
         apiBaseUrl=API_BASE_URL,
         persistentVolumeClaim=PVC_NAME
@@ -280,7 +281,7 @@ class JobStart(BaseHandler):
     def post(self):
         try:
             data = json.loads(self.request.body.decode('utf-8'))
-            logger.info('/job/complete data: {}'.format(json.dumps(data)))
+            logger.info('/job/start data: {}'.format(json.dumps(data)))
         except:
             logger.info('Error decoding JSON data')
             self.write({
@@ -356,6 +357,21 @@ class JobComplete(BaseHandler):
             close_db_connection(cnx, cur)
 
 
+class TestConcurrency(BaseHandler):
+    # API endpoint: /test/concurrency
+    def post(self):
+        try:
+            data = json.loads(self.request.body.decode('utf-8'))
+            if data["password"] == MYSQL_PASSWORD:
+                tests.run_concurrency_tests()
+        except:
+            logger.info('Error decoding JSON data or invalid password')
+            self.write({
+                "status": "error",
+                "reason": "Invalid JSON in HTTP request body or invalid password."
+            })
+
+
 def get_namespace():
     # When running in a pod, the namespace should be determined automatically,
     # otherwise we assume the local development is in the default namespace
@@ -395,6 +411,7 @@ def make_app(basePath=''):
             (r"{}/init/?".format(basePath), InitHandler),
             (r"{}/job/complete?".format(basePath), JobComplete),
             (r"{}/job/start?".format(basePath), JobStart),
+            (r"{}/test/concurrency?".format(basePath), TestConcurrency),
         ],
         **settings
     )
