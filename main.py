@@ -17,9 +17,10 @@ import tests
 SECRET = 'my_secret_key'
 
 # Import environment variable values
-DOCKER_IMAGE = os.environ['DOCKER_IMAGE']
+DOCKER_IMAGE_TASK_TEST = os.environ['DOCKER_IMAGE_TASK_TEST']
+DOCKER_IMAGE_TASK_QUERY = os.environ['DOCKER_IMAGE_TASK_QUERY']
 API_BASE_URL = os.environ['API_BASE_URL']
-PVC_NAME = os.environ['PVC_NAME']
+PVC_NAME_BASE = os.environ['PVC_NAME_BASE']
 MYSQL_HOST = os.environ['MYSQL_HOST']
 MYSQL_DATABASE = os.environ['MYSQL_DATABASE']
 MYSQL_USER = os.environ['MYSQL_USER']
@@ -36,7 +37,7 @@ logging.basicConfig(
 logger = logging.getLogger("main")
 
 
-def get_jobid():
+def generate_job_id():
     return str(uuid.uuid4()).replace("-", "")
 
 
@@ -76,28 +77,63 @@ def register_job(conf):
     close_db_connection(cnx, cur)
 
 
-def submit_test(body):
-    username = body["username"].lower()
-    time = int(body["time"])
-    job = body["job"]
-    jobid = get_jobid()
-    conf = {"job": job}
-    conf["namespace"] = get_namespace()
-    conf["cm_name"] = get_job_configmap_name(conf["job"], jobid, username)
-    conf["job_name"] = get_job_name(conf["job"], jobid, username)
-    conf["image"] = DOCKER_IMAGE
-    conf["command"] = ["python", "task.py"]
-
+def get_job_template(job_type):
     # Import task config template file and populate with values
     jobConfigTemplateFile = os.path.join(
         os.path.dirname(__file__),
         "des-tasks",
-        job,
+        job_type,
         "jobconfig.tpl.yaml"
     )
     with open(jobConfigTemplateFile) as f:
         templateText = f.read()
-    template = Template(templateText)
+    return Template(templateText)
+
+
+def submit_job_query(body):
+    username = body["username"].lower()
+    query_string = body["query"]
+    job_type = 'query'
+    job_id = generate_job_id()
+    conf = {"job": job_type}
+    conf["namespace"] = get_namespace()
+    conf["cm_name"] = get_job_configmap_name(conf["job"], job_id, username)
+    conf["job_name"] = get_job_name(conf["job"], job_id, username)
+    conf["image"] = DOCKER_IMAGE_TASK_QUERY
+    conf["command"] = ["python", "task.py"]
+    template = get_job_template(job_type)
+    conf["configjob"] = yaml.safe_load(template.render(
+        taskType=conf["job"],
+        jobName=conf["job_name"],
+        jobId=job_id,
+        username=username,
+        queryString=query_string,
+        logFilePath="./output/{}.log".format(conf["job_name"]),
+        apiToken=secrets.token_hex(16),
+        apiBaseUrl=API_BASE_URL,
+        persistentVolumeClaim='{}{}'.format(PVC_NAME_BASE, conf["job"])
+    ))
+
+    kubejob.create_configmap(conf)
+    kubejob.create_job(conf)
+    msg = "Job:{} id:{} by:{}".format(conf["job"], job_id, username)
+    register_job(conf)
+    return msg
+
+
+def submit_job_test(body):
+    username = body["username"].lower()
+    time = int(body["time"])
+    job_type = body["job"]
+    jobid = generate_job_id()
+    conf = {"job": job_type}
+    conf["namespace"] = get_namespace()
+    conf["cm_name"] = get_job_configmap_name(conf["job"], jobid, username)
+    conf["job_name"] = get_job_name(conf["job"], jobid, username)
+    conf["image"] = DOCKER_IMAGE_TASK_TEST
+    conf["command"] = ["python", "task.py"]
+
+    template = get_job_template(job_type)
     conf["configjob"] = yaml.safe_load(template.render(
         taskType=conf["job"],
         jobName=conf["job_name"],
@@ -107,7 +143,7 @@ def submit_test(body):
         logFilePath="./output/{}.log".format(conf["job_name"]),
         apiToken=secrets.token_hex(16),
         apiBaseUrl=API_BASE_URL,
-        persistentVolumeClaim=PVC_NAME
+        persistentVolumeClaim='{}{}'.format(PVC_NAME_BASE, conf["job"])
     ))
 
     kubejob.create_configmap(conf)
@@ -220,8 +256,11 @@ class JobHandler(BaseHandler):
         logger.info(body)
         jobType = body["job"]
         if jobType == "test":
-           msg = submit_test(body)
-           logger.info(msg)
+            msg = submit_job_test(body)
+            logger.info(msg)
+        elif jobType == "query":
+            msg = submit_job_query(body)
+            logger.info(msg)
         else:
             msg = 'Job type "{}" is not defined'.format(jobType)
         out = dict(msg=msg)
