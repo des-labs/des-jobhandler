@@ -1,3 +1,4 @@
+import rpdb
 import tornado.ioloop
 import tornado.web
 import tornado
@@ -396,6 +397,14 @@ class JobComplete(BaseHandler):
             close_db_connection(cnx, cur)
 
 
+class DebugTrigger(BaseHandler):
+    # API endpoint: /test/concurrency
+    def post(self):
+        data = json.loads(self.request.body.decode('utf-8'))
+        if data["password"] == MYSQL_PASSWORD:
+            rpdb.set_trace()
+
+
 class TestConcurrency(BaseHandler):
     # API endpoint: /test/concurrency
     def post(self):
@@ -451,6 +460,7 @@ def make_app(basePath=''):
             (r"{}/job/complete?".format(basePath), JobComplete),
             (r"{}/job/start?".format(basePath), JobStart),
             (r"{}/test/concurrency?".format(basePath), TestConcurrency),
+            (r"{}/debug/trigger?".format(basePath), DebugTrigger),
         ],
         **settings
     )
