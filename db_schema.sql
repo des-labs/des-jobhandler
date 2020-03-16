@@ -4,12 +4,14 @@ CREATE TABLE IF NOT EXISTS Jobs(
 	`job` varchar(50) NOT NULL,
 	`name` text NOT NULL,
 	`status` text NOT NULL,
-	`time` datetime NOT NULL,
+	`time_start` datetime,
+	`time_complete` datetime,
 	`type` text NOT NULL,
-	`query` mediumtext NOT NULL,
-	`files` mediumtext NOT NULL,
+	`query` MEDIUMTEXT NOT NULL,
+	`files` MEDIUMTEXT NOT NULL,
 	`sizes` text NOT NULL,
 	`runtime` int NOT NULL,
 	`apitoken` char(32) NOT NULL,
+	`spec` MEDIUMTEXT NOT NULL,
   PRIMARY KEY (`id`), UNIQUE KEY `id` (`id`)
 )
