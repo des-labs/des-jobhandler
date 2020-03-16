@@ -3,3 +3,4 @@ __pycache__/
 *.log
 k8s.conf
 des-tasks/test/*.log
+.codesync

@@ -31,7 +31,7 @@ time.sleep(t)
 logging.info("Reporting completion to jobhandler (apitoken: {})...".format(config['metadata']['apiToken']))
 
 requests.post(
-    '{}/job/monitor'.format(config['metadata']['apiBaseUrl']),
+    '{}/job/complete'.format(config['metadata']['apiBaseUrl']),
     json={
         'apitoken': config['metadata']['apiToken']
     }

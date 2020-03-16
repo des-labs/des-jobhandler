@@ -13,6 +13,7 @@ import secrets
 import yaml
 from jinja2 import Template
 import dbutils
+import tests
 SECRET = 'my_secret_key'
 
 # Import environment variable values
@@ -39,26 +40,37 @@ def get_jobid():
     return str(uuid.uuid4()).replace("-", "")
 
 
+def get_job_name(jobType, jobId, username):
+    return "{}-{}-{}".format(jobType, jobId, username)
+
+
+def get_job_configmap_name(jobType, jobId, username):
+    return "{}-{}-{}-cm".format(jobType, jobId, username)
+
+
 def register_job(conf):
     cnx, cur = open_db_connection()
 
     newJobSql = (
         "INSERT INTO Jobs "
-        "(user, job, name, status, time, type, query, files, sizes, runtime, apitoken) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+        "(user, job, name, status, time_start, time_complete, type, query, files, sizes, runtime, apitoken, spec) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
     )
     newJobInfo = (
         conf["configjob"]["metadata"]["username"],
         conf["job"],
         conf["configjob"]["metadata"]["jobId"],
-        'in_progress',
-        datetime.datetime.utcnow(),
+        'init',
+        None,
+        None,
         'type_test',
         'query_test',
         'files_test',
         'sizes_test',
         0,
-        conf["configjob"]["metadata"]["apiToken"]
+        conf["configjob"]["metadata"]["apiToken"],
+        json.dumps(conf["configjob"]["spec"])
+
     )
     cur.execute(newJobSql, newJobInfo)
     close_db_connection(cnx, cur)
@@ -70,16 +82,9 @@ def submit_test(body):
     job = body["job"]
     jobid = get_jobid()
     conf = {"job": job}
-    # When running in a pod, the namespace should be determined automatically,
-    # otherwise we assume the local development is in the default namespace
-    try:
-        with open('/var/run/secrets/kubernetes.io/serviceaccount/namespace', 'r') as file:
-            namespace = file.read().replace('\n', '')
-    except:
-        namespace = 'default'
-    conf["namespace"] = namespace
-    conf["cm_name"] = "{}-{}-{}-cm".format(conf["job"], jobid, username)
-    conf["job_name"] = "{}-{}-{}".format(conf["job"], jobid, username)
+    conf["namespace"] = get_namespace()
+    conf["cm_name"] = get_job_configmap_name(conf["job"], jobid, username)
+    conf["job_name"] = get_job_name(conf["job"], jobid, username)
     conf["image"] = DOCKER_IMAGE
     conf["command"] = ["python", "task.py"]
 
@@ -99,7 +104,7 @@ def submit_test(body):
         jobId=jobid,
         username=username,
         taskDuration=time,
-        logFilePath="./output/{}.log".format(conf["job"]),
+        logFilePath="./output/{}.log".format(conf["job_name"]),
         apiToken=secrets.token_hex(16),
         apiBaseUrl=API_BASE_URL,
         persistentVolumeClaim=PVC_NAME
@@ -142,7 +147,7 @@ class ProfileHandler(BaseHandler):
         response = {}
         try:
             decoded = jwt.decode(token, SECRET, algorithms=['HS256'])
-            exptime =  datetime.datetime.utcfromtimestamp(decoded['exp'])
+            exptime = datetime.datetime.utcfromtimestamp(decoded['exp'])
             ttl = (exptime - datetime.datetime.utcnow()).seconds
             response["status"] = "ok"
             response["message"] = "valid token"
@@ -193,10 +198,10 @@ class LoginHandler(BaseHandler):
         # TODO: use des user manager credentials
         name, last, email = dbutils.get_basic_info(username, passwd, username)
         encoded = jwt.encode({
-            'name' : name,
-            'username' : username,
-            'email' : email,
-            'exp' : datetime.datetime.utcnow() + datetime.timedelta(seconds=60)},
+            'name': name,
+            'username': username,
+            'email': email,
+            'exp': datetime.datetime.utcnow() + datetime.timedelta(seconds=60)},
             SECRET,
             algorithm='HS256'
         )
@@ -213,12 +218,12 @@ class JobHandler(BaseHandler):
     def put(self):
         body = {k: self.get_argument(k) for k in self.request.arguments}
         logger.info(body)
-        job = body["job"]
-        if job == "test":
+        jobType = body["job"]
+        if jobType == "test":
            msg = submit_test(body)
            logger.info(msg)
         else:
-            msg = 'Job {} not defined'.format(job)
+            msg = 'Job type "{}" is not defined'.format(jobType)
         out = dict(msg=msg)
         self.write(json.dumps(out, indent=4))
 
@@ -228,9 +233,9 @@ class JobHandler(BaseHandler):
         job = self.getarg("job")
         jobid = self.getarg("jobid")
         conf = {"job": job}
-        conf["namespace"] = "default"
-        conf["job_name"] = "{}-{}-{}".format(conf["job"], jobid, username)
-        conf["cm_name"] = "{}-{}-{}-cm".format(conf["job"], jobid, username)
+        #conf["namespace"] = "default"
+        conf["job_name"] = get_job_name(conf["job"], jobid, username)
+        conf["cm_name"] = get_job_configmap_name(conf["job"], jobid, username)
         kubejob.delete_job(conf)
         out = dict(msg="done")
         self.write(json.dumps(out, indent=4))
@@ -241,8 +246,8 @@ class JobHandler(BaseHandler):
         job = self.getarg("job")
         jobid = self.getarg("jobid")
         conf = {"job": job}
-        conf["namespace"] = "default"
-        conf["job_name"] = "{}-{}-{}".format(conf["job"], jobid, username)
+        #conf["namespace"] = "default"
+        conf["job_name"] = get_job_name(conf["job"], jobid, username)
         status = kubejob.status_job(conf)
         out = dict(
             msg="done",
@@ -271,12 +276,12 @@ class InitHandler(BaseHandler):
         self.write(json.dumps(out, indent=4))
 
 
-class JobMonitor(BaseHandler):
-    # API endpoint: /job/monitor
+class JobStart(BaseHandler):
+    # API endpoint: /job/start
     def post(self):
         try:
             data = json.loads(self.request.body.decode('utf-8'))
-            logger.info('/job/monitor data: {}'.format(json.dumps(data)))
+            logger.info('/job/start data: {}'.format(json.dumps(data)))
         except:
             logger.info('Error decoding JSON data')
             self.write({
@@ -285,24 +290,114 @@ class JobMonitor(BaseHandler):
             })
             return
         apitoken = data["apitoken"]
-        logger.info('API token: {}'.format(apitoken))
-        cnx, cur = open_db_connection()
-        cur.execute(
-            "SELECT id FROM Jobs WHERE apitoken = '{}' LIMIT 1".format(apitoken)
-        )
-        id = cur.fetchone()
-        if id is not None:
+        rowId = validate_apitoken(apitoken)
+        if isinstance(rowId, int):
+            cnx, cur = open_db_connection()
             updateJobSql = (
                 "UPDATE Jobs "
-                "SET status=%s "
+                "SET status=%s, time_start=%s "
+                "WHERE id=%s"
+            )
+            updateJobInfo = (
+                'started',
+                datetime.datetime.utcnow(),
+                rowId
+            )
+            cur.execute(updateJobSql, updateJobInfo)
+            if cur.rowcount != 1:
+                logger.info('Error updating job record')
+            close_db_connection(cnx, cur)
+
+
+class JobComplete(BaseHandler):
+    # API endpoint: /job/complete
+    def post(self):
+        try:
+            data = json.loads(self.request.body.decode('utf-8'))
+            logger.info('/job/complete data: {}'.format(json.dumps(data)))
+        except:
+            logger.info('Error decoding JSON data')
+            self.write({
+                "status": "error",
+                "reason": "Invalid JSON in HTTP request body."
+            })
+            return
+        apitoken = data["apitoken"]
+        rowId = validate_apitoken(apitoken)
+        if isinstance(rowId, int):
+            cnx, cur = open_db_connection()
+            updateJobSql = (
+                "UPDATE Jobs "
+                "SET status=%s, time_complete=%s "
                 "WHERE id=%s"
             )
             updateJobInfo = (
                 'complete',
-                id[0]
+                datetime.datetime.utcnow(),
+                rowId
             )
             cur.execute(updateJobSql, updateJobInfo)
-        close_db_connection(cnx, cur)
+            if cur.rowcount != 1:
+                logger.info('Error updating job record')
+            else:
+                selectJobSql = (
+                    "SELECT user,job,name from Jobs WHERE id=%s"
+                )
+                selectJobInfo = (
+                    rowId,
+                )
+                cur.execute(selectJobSql, selectJobInfo)
+                for (user, job, name) in cur:
+                    conf = {"job": job}
+                    conf['namespace'] = get_namespace()
+                    conf["job_name"] = get_job_name(conf["job"], name, user)
+                    conf["cm_name"] = get_job_configmap_name(
+                        conf["job"], name, user)
+                    kubejob.delete_job(conf)
+            close_db_connection(cnx, cur)
+
+
+class TestConcurrency(BaseHandler):
+    # API endpoint: /test/concurrency
+    def post(self):
+        try:
+            data = json.loads(self.request.body.decode('utf-8'))
+            if data["password"] == MYSQL_PASSWORD:
+                tests.run_concurrency_tests()
+        except:
+            logger.info('Error decoding JSON data or invalid password')
+            self.write({
+                "status": "error",
+                "reason": "Invalid JSON in HTTP request body or invalid password."
+            })
+
+
+def get_namespace():
+    # When running in a pod, the namespace should be determined automatically,
+    # otherwise we assume the local development is in the default namespace
+    try:
+        with open('/var/run/secrets/kubernetes.io/serviceaccount/namespace', 'r') as file:
+            namespace = file.read().replace('\n', '')
+    except:
+        if os.environ['NAMESPACE']:
+            namespace = os.environ['NAMESPACE']
+        else:
+            namespace = 'default'
+    return namespace
+
+
+def validate_apitoken(apitoken):
+    cnx, cur = open_db_connection()
+    cur.execute(
+        "SELECT id FROM Jobs WHERE apitoken = '{}' LIMIT 1".format(apitoken)
+    )
+    # If there is a result, assume only one exists and return the record id, otherwise return None
+    rowId = None
+    for (id,) in cur:
+        rowId = id
+    close_db_connection(cnx, cur)
+    return rowId
+
 
 def make_app(basePath=''):
     settings = {"debug": True}
@@ -314,7 +409,9 @@ def make_app(basePath=''):
             (r"{}/login/?".format(basePath), LoginHandler),
             (r"{}/profile/?".format(basePath), ProfileHandler),
             (r"{}/init/?".format(basePath), InitHandler),
-            (r"{}/job/monitor?".format(basePath), JobMonitor),
+            (r"{}/job/complete?".format(basePath), JobComplete),
+            (r"{}/job/start?".format(basePath), JobStart),
+            (r"{}/test/concurrency?".format(basePath), TestConcurrency),
         ],
         **settings
     )
@@ -330,7 +427,7 @@ def close_db_connection(cnx, cur):
 def open_db_connection():
     # Open database connection
     cnx = mysql.connector.connect(
-        host = MYSQL_HOST,
+        host=MYSQL_HOST,
         user=MYSQL_USER,
         password=MYSQL_PASSWORD,
         database=MYSQL_DATABASE,
