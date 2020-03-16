@@ -14,6 +14,8 @@ import secrets
 import yaml
 from jinja2 import Template
 import dbutils
+from jwtutils import authenticated
+from jwtutils import encode_info
 import tests
 SECRET = 'my_secret_key'
 
@@ -176,34 +178,20 @@ class BaseHandler(tornado.web.RequestHandler):
         return temp
 
 
+@authenticated
 class ProfileHandler(BaseHandler):
     # API endpoint: /profile
     def post(self):
-        body = {k: self.get_argument(k) for k in self.request.arguments}
-        token = body["token"]
         response = {}
-        try:
-            decoded = jwt.decode(token, SECRET, algorithms=['HS256'])
-            exptime = datetime.datetime.utcfromtimestamp(decoded['exp'])
-            ttl = (exptime - datetime.datetime.utcnow()).seconds
-            response["status"] = "ok"
-            response["message"] = "valid token"
-            response["name"] = decoded["name"]
-            response["username"] = decoded["username"]
-            response["email"] = decoded["email"]
-            response["ttl"] = ttl
-        except jwt.InvalidSignatureError:
-            response["status"] = "error"
-            response["message"] = "Signature verification failed"
-            self.set_status(401)
-        except jwt.ExpiredSignatureError:
-            response["status"] = "error"
-            response["message"] = "Signature has expired"
-            self.set_status(401)
-        except jwt.DecodeError:
-            response["status"] = "error"
-            response["message"] = "Invalid header string"
-            self.set_status(500)
+        decoded = self._token_decoded
+        exptime =  datetime.datetime.utcfromtimestamp(decoded['exp'])
+        ttl = (exptime - datetime.datetime.utcnow()).seconds
+        response["status"] = "ok"
+        response["message"] = "valid token"
+        response["name"] = decoded["name"]
+        response["username"] = decoded["username"]
+        response["email"] = decoded["email"]
+        response["ttl"] = ttl
         self.flush()
         self.write(response)
         self.finish()
@@ -234,14 +222,7 @@ class LoginHandler(BaseHandler):
             return
         # TODO: use des user manager credentials
         name, last, email = dbutils.get_basic_info(username, passwd, username)
-        encoded = jwt.encode({
-            'name': name,
-            'username': username,
-            'email': email,
-            'exp': datetime.datetime.utcnow() + datetime.timedelta(seconds=60)},
-            SECRET,
-            algorithm='HS256'
-        )
+        encoded = encode_info(name, username, email) 
         response["status"] = "ok"
         response["message"] = "login"
         response["name"] = name
@@ -314,6 +295,18 @@ class InitHandler(BaseHandler):
             pages = d[0].replace(" ", "").split(",")
         out = dict(access=pages)
         self.write(json.dumps(out, indent=4))
+
+
+@authenticated
+class TestHandler(BaseHandler):
+    # API endpoint: /test
+    def post(self):
+        cnx, cur = open_db_connection()
+        username = self.getarg("username")
+        response = {"username": username}
+        response = {"token_decoded": self._token_decoded}
+        self.write(json.dumps(response, indent=4))
+
 
 
 class JobStart(BaseHandler):
@@ -457,6 +450,7 @@ def make_app(basePath=''):
             (r"{}/login/?".format(basePath), LoginHandler),
             (r"{}/profile/?".format(basePath), ProfileHandler),
             (r"{}/init/?".format(basePath), InitHandler),
+            (r"{}/test/?".format(basePath), TestHandler),
             (r"{}/job/complete?".format(basePath), JobComplete),
             (r"{}/job/start?".format(basePath), JobStart),
             (r"{}/test/concurrency?".format(basePath), TestConcurrency),
