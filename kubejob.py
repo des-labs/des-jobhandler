@@ -71,7 +71,7 @@ def job(input):
         name=input["job_name"],
         namespace=input["namespace"],
         backoffLimit=2,
-        activeDeadlineSeconds=600,
+        activeDeadlineSeconds=24*60*60, # No Job is allowed to run beyond 24 hours.
         ttlSecondsAfterFinished=600,
         container_name=input["job"],
         image=input["image"],

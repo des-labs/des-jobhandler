@@ -101,7 +101,7 @@ def submit_job_query(body):
     conf["cm_name"] = get_job_configmap_name(conf["job"], job_id, username)
     conf["job_name"] = get_job_name(conf["job"], job_id, username)
     conf["image"] = DOCKER_IMAGE_TASK_QUERY
-    conf["command"] = ["python", "task.py"]
+    conf["command"] = ["python3", "task.py"]
     template = get_job_template(job_type)
     conf["configjob"] = yaml.safe_load(template.render(
         taskType=conf["job"],
@@ -109,10 +109,12 @@ def submit_job_query(body):
         jobId=job_id,
         username=username,
         queryString=query_string,
+        dbPassword='',
         logFilePath="./output/{}.log".format(conf["job_name"]),
         apiToken=secrets.token_hex(16),
         apiBaseUrl=API_BASE_URL,
-        persistentVolumeClaim='{}{}'.format(PVC_NAME_BASE, conf["job"])
+        persistentVolumeClaim='{}{}'.format(PVC_NAME_BASE, conf["job"]),
+        debug=False
     ))
 
     kubejob.create_configmap(conf)

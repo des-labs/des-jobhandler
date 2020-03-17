@@ -10,7 +10,7 @@ spec:
   template:
     metadata:
       labels:
-        task: test
+        task: {{ container_name }}
     spec:
       restartPolicy: Never
       imagePullSecrets:
