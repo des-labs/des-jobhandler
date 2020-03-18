@@ -12,6 +12,7 @@ spec:
       labels:
         task: test
     spec:
+      hostNetwork: {{ hostNetwork }}
       restartPolicy: Never
       imagePullSecrets:
       - name: registry-auth

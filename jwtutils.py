@@ -4,12 +4,12 @@ import datetime
 
 SECRET = "my_secret_key"
 
-def encode_info(name, username, email):
+def encode_info(name, username, email, ttl):
     encoded = jwt.encode({
             'name' : name,
             'username' : username,
             'email' : email,
-            'exp' : datetime.datetime.utcnow() + datetime.timedelta(seconds=60)},
+            'exp' : datetime.datetime.utcnow() + datetime.timedelta(seconds=ttl)},
             SECRET,
             algorithm='HS256'
         )
