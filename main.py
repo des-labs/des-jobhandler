@@ -30,6 +30,8 @@ MYSQL_USER = os.environ['MYSQL_USER']
 MYSQL_PASSWORD = os.environ['MYSQL_PASSWORD']
 SERVICE_PORT = os.environ['SERVICE_PORT']
 BASE_PATH = os.environ['BASE_PATH']
+TTL = int(os.environ['TTL'])
+HOST_NETWORK = os.environ['HOST_NETWORK']
 
 log_format = "%(asctime)s  %(name)8s  %(levelname)5s  %(message)s"
 logging.basicConfig(
@@ -119,9 +121,10 @@ def submit_job_query(body):
 
     kubejob.create_configmap(conf)
     kubejob.create_job(conf)
+    status = "ok"
     msg = "Job:{} id:{} by:{}".format(conf["job"], job_id, username)
     register_job(conf)
-    return msg
+    return status,msg,jobid
 
 
 def submit_job_test(body):
@@ -134,6 +137,7 @@ def submit_job_test(body):
     conf["cm_name"] = get_job_configmap_name(conf["job"], jobid, username)
     conf["job_name"] = get_job_name(conf["job"], jobid, username)
     conf["image"] = DOCKER_IMAGE_TASK_TEST
+    conf["host_network"] = HOST_NETWORK
     conf["command"] = ["python", "task.py"]
 
     template = get_job_template(job_type)
@@ -149,11 +153,13 @@ def submit_job_test(body):
         persistentVolumeClaim='{}{}'.format(PVC_NAME_BASE, conf["job"])
     ))
 
+    # TODO: Need to check whether the job where successfully submitted
     kubejob.create_configmap(conf)
     kubejob.create_job(conf)
+    status = "ok"
     msg = "Job:{} id:{} by:{}".format(conf["job"], jobid, username)
     register_job(conf)
-    return msg
+    return status,msg,jobid
 
 
 class BaseHandler(tornado.web.RequestHandler):
@@ -222,7 +228,7 @@ class LoginHandler(BaseHandler):
             return
         # TODO: use des user manager credentials
         name, last, email = dbutils.get_basic_info(username, passwd, username)
-        encoded = encode_info(name, username, email) 
+        encoded = encode_info(name, username, email, TTL) 
         response["status"] = "ok"
         response["message"] = "login"
         response["name"] = name
@@ -230,7 +236,7 @@ class LoginHandler(BaseHandler):
         response["token"] = encoded.decode(encoding='UTF-8')
         self.write(json.dumps(response))
 
-
+@authenticated
 class JobHandler(BaseHandler):
     # API endpoint: /job/submit
     def put(self):
@@ -238,14 +244,16 @@ class JobHandler(BaseHandler):
         logger.info(body)
         jobType = body["job"]
         if jobType == "test":
-            msg = submit_job_test(body)
+            st,msg,jobid = submit_job_test(body)
             logger.info(msg)
         elif jobType == "query":
-            msg = submit_job_query(body)
+            st,msg,jobid = submit_job_query(body)
             logger.info(msg)
         else:
+            status = "error"
             msg = 'Job type "{}" is not defined'.format(jobType)
-        out = dict(msg=msg)
+            jobid=''
+        out = dict(status="ok", message=msg, jobid=jobid)
         self.write(json.dumps(out, indent=4))
 
     # API endpoint: /job/delete
@@ -254,7 +262,7 @@ class JobHandler(BaseHandler):
         job = self.getarg("job")
         jobid = self.getarg("jobid")
         conf = {"job": job}
-        #conf["namespace"] = "default"
+        conf["namespace"] = get_namespace()
         conf["job_name"] = get_job_name(conf["job"], jobid, username)
         conf["cm_name"] = get_job_configmap_name(conf["job"], jobid, username)
         kubejob.delete_job(conf)
@@ -267,15 +275,22 @@ class JobHandler(BaseHandler):
         job = self.getarg("job")
         jobid = self.getarg("jobid")
         conf = {"job": job}
-        #conf["namespace"] = "default"
+        conf["namespace"] = get_namespace()
         conf["job_name"] = get_job_name(conf["job"], jobid, username)
-        status = kubejob.status_job(conf)
-        out = dict(
-            msg="done",
-            avtive=status.active,
-            succeeded=status.succeeded,
-            failed=status.failed,
-        )
+        status,body = kubejob.status_job(conf)
+        if status == "ok":
+            out = dict(
+                status=status,
+                message="",
+                active=body.active,
+                succeeded=body.succeeded,
+                failed=body.failed,
+            )
+        else:
+            out = dict(
+                status="error",
+                message="Job {} id:{} not found".format(job, jobid),
+            )
         self.write(json.dumps(out, indent=4))
 
 
@@ -420,9 +435,9 @@ def get_namespace():
         with open('/var/run/secrets/kubernetes.io/serviceaccount/namespace', 'r') as file:
             namespace = file.read().replace('\n', '')
     except:
-        if os.environ['NAMESPACE']:
+        try:
             namespace = os.environ['NAMESPACE']
-        else:
+        except:
             namespace = 'default'
     return namespace
 
