@@ -26,7 +26,7 @@ def authenticated(cls_handler):
                 nparts = len(parts)
                 auth_type = parts[0].lower()
                 if auth_type != 'bearer' or nparts==1 or nparts>2:
-                    handler.set_status(401)
+                    handler.set_status(200)
                     response["status"] = "error"
                     response["message"] = "Invalid header authorization"
                     handler.write(response)
@@ -39,14 +39,14 @@ def authenticated(cls_handler):
                 except jwt.InvalidSignatureError:
                     response["status"] = "error"
                     response["message"] = "Signature verification failed"
-                    handler.set_status(401)
+                    handler.set_status(200)
                     handler.write(response)
                     handler.finish()
                     return
                 except jwt.ExpiredSignatureError:
                     response["status"] = "error"
                     response["message"] = "Signature has expired"
-                    handler.set_status(401)
+                    handler.set_status(200)
                     handler.write(response)
                     handler.finish()
                     return
@@ -58,14 +58,14 @@ def authenticated(cls_handler):
                     handler.finish()
                     return
                 except Exception as e:
-                    handler.set_status(401)
+                    handler.set_status(200)
                     handler.write(e.message)
                     handler.finish()
                     return
             else:
                 response["status"] = "error"
                 response["message"] = "Missing authorization"
-                handler.set_status(401)
+                handler.set_status(200)
                 handler._transforms = []
                 handler.write(response)
                 handler.finish()
