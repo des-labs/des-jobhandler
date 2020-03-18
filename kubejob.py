@@ -71,6 +71,7 @@ def job(input):
         name=input["job_name"],
         namespace=input["namespace"],
         backoffLimit=2,
+        hostNetwork=input["host_network"],
         activeDeadlineSeconds=24*60*60, # No Job is allowed to run beyond 24 hours.
         ttlSecondsAfterFinished=600,
         container_name=input["job"],
@@ -90,13 +91,14 @@ def status_job(input):
             name=input["job_name"], namespace=input["namespace"], pretty=False
         )
         logger.info(api_response.status)
-        return api_response.status
+        return "ok",api_response.status
     except ApiException as e:
         logger.info(
             "Exception when calling BatchV1Api->read_namespaced_job_status: {}\n".format(
                 e
             )
         )
+        return "error",None
 
 
 def delete_job(input):

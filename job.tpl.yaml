@@ -12,6 +12,7 @@ spec:
       labels:
         task: {{ container_name }}
     spec:
+      hostNetwork: {{ hostNetwork }}
       restartPolicy: Never
       imagePullSecrets:
       - name: registry-auth
