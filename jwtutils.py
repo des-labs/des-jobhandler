@@ -1,8 +1,6 @@
 import jwt
-import json
 import datetime
-
-SECRET = "my_secret_key"
+import envvars
 
 def encode_info(name, username, email, ttl):
     encoded = jwt.encode({
@@ -10,7 +8,7 @@ def encode_info(name, username, email, ttl):
             'username' : username,
             'email' : email,
             'exp' : datetime.datetime.utcnow() + datetime.timedelta(seconds=ttl)},
-            SECRET,
+            envvars.JWT_HS256_SECRET,
             algorithm='HS256'
         )
     return encoded
@@ -34,7 +32,7 @@ def authenticated(cls_handler):
                     return
                 token = parts[1]
                 try:
-                    decode = jwt.decode(token, SECRET, algorithms=["HS256"])
+                    decode = jwt.decode(token, envvars.JWT_HS256_SECRET, algorithms=["HS256"])
                     handler._token_decoded = decode
                 except jwt.InvalidSignatureError:
                     response["status"] = "error"
