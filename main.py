@@ -10,12 +10,12 @@ import dbutils
 from jwtutils import authenticated
 from jwtutils import encode_info
 import tests
-from jobsdb import JobsDb
-import jobutils
+# from jobsdb import JobsDb
 import envvars
+import jobutils
 
 # Get global instance of the job handler database interface
-JOBSDB = JobsDb(
+JOBSDB = jobutils.JobsDb(
     mysql_host=envvars.MYSQL_HOST,
     mysql_user=envvars.MYSQL_USER,
     mysql_password=envvars.MYSQL_PASSWORD,
@@ -97,7 +97,7 @@ class LoginHandler(BaseHandler):
             return
         # TODO: use des user manager credentials
         name, last, email = dbutils.get_basic_info(username, passwd, username)
-        encoded = encode_info(name, username, email, envvars.TTL)
+        encoded = encode_info(name, username, email, envvars.JWT_TTL_SECONDS)
         response["status"] = "ok"
         response["message"] = "login"
         response["name"] = name
@@ -226,7 +226,7 @@ class JobComplete(BaseHandler):
 
 
 class DebugTrigger(BaseHandler):
-    # API endpoint: /test/concurrency
+    # API endpoint: /debug/trigger
     def post(self):
         data = json.loads(self.request.body.decode('utf-8'))
         if data["password"] == envvars.MYSQL_PASSWORD:
