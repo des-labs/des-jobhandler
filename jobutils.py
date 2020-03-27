@@ -58,9 +58,9 @@ class JobsDb:
     def get_table_names(self):
         return [
             'job',
-            'user',
-            'group',
-            'group_membership',
+            'account',
+            'role',
+            'role_binding',
             'session'
         ]
 
@@ -71,7 +71,12 @@ class JobsDb:
         # Create the database tables
         with open(os.path.join(os.path.dirname(__file__), "db_schema.sql")) as f:
             dbSchema = f.read()
-        self.cur.execute(dbSchema)
+        try:
+            for sqlCommand in dbSchema.split('#---'):
+                if len(sqlCommand) > 0 and not sqlCommand.isspace():
+                    self.cur.execute(sqlCommand)
+        except Exception as e:
+            logger.error(str(e).strip())
         self.close_db_connection()
 
     def validate_apitoken(self, apitoken):

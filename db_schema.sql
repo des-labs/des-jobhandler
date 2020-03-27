@@ -15,46 +15,53 @@ CREATE TABLE IF NOT EXISTS job(
 	`spec` MEDIUMTEXT NOT NULL,
 	PRIMARY KEY (`id`), UNIQUE KEY `id` (`id`)
 )
-
-CREATE TABLE IF NOT EXISTS user(
+#---
+CREATE TABLE IF NOT EXISTS account(
 	`id` int NOT NULL AUTO_INCREMENT,
 	`username` varchar(50) NOT NULL,
 	`full_name` text NOT NULL,
 	`email` text NOT NULL,
-	`token_issued` datetime,
-	`token_value` varchar(65) NOT NULL,
 	PRIMARY KEY (`id`), UNIQUE KEY `id` (`id`)
 )
-
+#---
 CREATE TABLE IF NOT EXISTS session(
 	`id` int NOT NULL AUTO_INCREMENT,
-	`user_id` varchar(50) NOT NULL,
+	`account_id` int NOT NULL,
 	`token_refreshed` datetime,
 	`token_value` varchar(65) NOT NULL,
 	PRIMARY KEY (`id`), UNIQUE KEY `id` (`id`)
 )
-
-CREATE TABLE IF NOT EXISTS group_membership(
+#---
+CREATE TABLE IF NOT EXISTS role_binding(
 	`id` int NOT NULL AUTO_INCREMENT,
-	`user_id` int NOT NULL,
-	`group_id` int NOT NULL,
+	`account_id` int NOT NULL,
+	`role_id` int NOT NULL,
 	PRIMARY KEY (`id`), UNIQUE KEY `id` (`id`)
 )
-
-CREATE TABLE IF NOT EXISTS group(
+#---
+CREATE TABLE IF NOT EXISTS role(
 	`id` int NOT NULL AUTO_INCREMENT,
-	`group_name` int NOT NULL,
+	`role_name` text NOT NULL,
 	PRIMARY KEY (`id`), UNIQUE KEY `id` (`id`)
 )
-
-INSERT INTO group ('group_name') VALUES('admin')
-INSERT INTO group ('group_name') VALUES('collaborator')
-INSERT INTO group ('group_name') VALUES('public')
-
+#---
+INSERT INTO role (`role_name`) VALUES ('admin')
+#---
+INSERT INTO role (`role_name`) VALUES ('collaborator')
+#---
+INSERT INTO role (`role_name`) VALUES ('public')
+#---
 # TODO: Remove these hard-coded initialization statements prior to committing
-INSERT INTO user ('username', 'full_name', 'email') VALUES('michael', 'Michael Johnson', 'mjohns44@illinois.edu')
-INSERT INTO group_membership ('user_id', 'group_id') VALUES(1, 1)
-INSERT INTO user ('username', 'full_name', 'email') VALUES('andrew', 'Timothy Andrew Manning', 'manninga@illinois.edu')
-INSERT INTO group_membership ('user_id', 'group_id') VALUES(2, 1)
-INSERT INTO user ('username', 'full_name', 'email') VALUES('matias', 'Matias Carrasco Kind', 'mcarras2@illinois.edu')
-INSERT INTO group_membership ('user_id', 'group_id') VALUES(3, 1)
+#---
+INSERT INTO account (`username`, `full_name`, `email`) VALUES('michael', 'Michael Johnson', 'mjohns44@illinois.edu')
+#---
+INSERT INTO role_binding (`account_id`, `role_id`) VALUES(1, 1)
+#---
+INSERT INTO account (`username`, `full_name`, `email`) VALUES('andrew', 'Timothy Andrew Manning', 'manninga@illinois.edu')
+#---
+INSERT INTO role_binding (`account_id`, `role_id`) VALUES(2, 1)
+#---
+INSERT INTO account (`username`, `full_name`, `email`) VALUES('matias', 'Matias Carrasco Kind', 'mcarras2@illinois.edu')
+#---
+INSERT INTO role_binding (`account_id`, `role_id`) VALUES(3, 1)
+#---

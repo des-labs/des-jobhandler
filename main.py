@@ -14,6 +14,8 @@ import tests
 import envvars
 import jobutils
 
+
+
 # Get global instance of the job handler database interface
 JOBSDB = jobutils.JobsDb(
     mysql_host=envvars.MYSQL_HOST,
@@ -280,7 +282,7 @@ if __name__ == "__main__":
         basePath = envvars.BASE_PATH
 
     # Reset the database if DROP_TABLES is set.
-    if envvars.DROP_TABLES == '1':
+    if envvars.DROP_TABLES == True:
         JOBSDB.reinitialize_tables()
 
     app = make_app(basePath=basePath)
