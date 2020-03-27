@@ -13,5 +13,10 @@ SERVICE_PORT = os.environ['SERVICE_PORT']
 BASE_PATH = os.environ['BASE_PATH']
 JWT_TTL_SECONDS = int(os.environ['JWT_TTL_SECONDS'])
 HOST_NETWORK = os.environ['HOST_NETWORK']
-DROP_TABLES = False
 JWT_HS256_SECRET = os.environ['JWT_HS256_SECRET']
+DROP_TABLES = False
+try:
+    if os.environ['DROP_TABLES'].lower() == "true":
+        DROP_TABLES = True
+except Exception:
+    pass

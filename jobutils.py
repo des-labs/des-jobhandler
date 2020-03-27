@@ -9,6 +9,15 @@ import envvars
 import mysql.connector
 import json
 import datetime
+import logging
+
+log_format = "%(asctime)s  %(name)8s  %(levelname)5s  %(message)s"
+logging.basicConfig(
+    level=logging.INFO,
+    handlers=[logging.FileHandler("test.log"), logging.StreamHandler()],
+    format=log_format,
+)
+logger = logging.getLogger("main")
 
 class JobsDb:
     def __init__(self, mysql_host, mysql_user, mysql_password, mysql_database):
@@ -20,7 +29,7 @@ class JobsDb:
         self.cnx = None
 
     def open_db_connection(self):
-        if self.cnx != None and self.cur != None:
+        if self.cnx is None or self.cur is None:
             # Open database connection
             self.cnx = mysql.connector.connect(
                 host=self.host,
@@ -68,7 +77,7 @@ class JobsDb:
     def validate_apitoken(self, apitoken):
         self.open_db_connection()
         self.cur.execute(
-            "SELECT id FROM Jobs WHERE apitoken = '{}' LIMIT 1".format(
+            "SELECT id FROM job WHERE apitoken = '{}' LIMIT 1".format(
                 apitoken)
         )
         # If there is a result, assume only one exists and return the record id, otherwise return None
@@ -82,7 +91,7 @@ class JobsDb:
         self.open_db_connection()
 
         newJobSql = (
-            "INSERT INTO Jobs "
+            "INSERT INTO job "
             "(user, job, name, status, time_start, time_complete, type, query, files, sizes, runtime, apitoken, spec) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
         )
@@ -108,7 +117,7 @@ class JobsDb:
     def update_job_start(self, rowId):
         self.open_db_connection()
         updateJobSql = (
-            "UPDATE Jobs "
+            "UPDATE job "
             "SET status=%s, time_start=%s "
             "WHERE id=%s"
         )
@@ -127,7 +136,7 @@ class JobsDb:
     def update_job_complete(self, rowId):
         self.open_db_connection()
         updateJobSql = (
-            "UPDATE Jobs "
+            "UPDATE job "
             "SET status=%s, time_complete=%s "
             "WHERE id=%s"
         )
@@ -142,7 +151,7 @@ class JobsDb:
             error_msg = 'Error updating job record {}'.format(rowId)
         else:
             selectJobSql = (
-                "SELECT user,job,name from Jobs WHERE id=%s"
+                "SELECT user,job,name from job WHERE id=%s"
             )
             selectJobInfo = (
                 rowId,
@@ -207,13 +216,16 @@ def get_job_template(job_type):
         os.path.dirname(__file__),
         "des-tasks",
         job_type,
-        "jobconfig.tpl.yaml"
+        "jobconfig_spec.tpl.yaml"
     )
     with open(jobConfigTemplateFile) as f:
         templateText = f.read()
     return Template(templateText)
 
 def submit_job(params):
+    # import rpdb
+    # rpdb.set_trace()
+    logger.info(params)
     # Common configurations to all tasks types:
     username = params["username"].lower()
     job_type = params["job"]

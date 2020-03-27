@@ -1,15 +1,16 @@
 import jwt
 import datetime
 import envvars
-import logging
-
-log_format = "%(asctime)s  %(name)8s  %(levelname)5s  %(message)s"
-logging.basicConfig(
-    level=logging.INFO,
-    handlers=[logging.FileHandler("test.log"), logging.StreamHandler()],
-    format=log_format,
-)
-logger = logging.getLogger("main")
+# import logging
+import json
+#
+# log_format = "%(asctime)s  %(name)8s  %(levelname)5s  %(message)s"
+# logging.basicConfig(
+#     level=logging.INFO,
+#     handlers=[logging.FileHandler("test.log"), logging.StreamHandler()],
+#     format=log_format,
+# )
+# logger = logging.getLogger("main")
 
 def encode_info(name, username, email, ttl):
     encoded = jwt.encode({
