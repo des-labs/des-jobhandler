@@ -4,7 +4,6 @@ from jinja2 import Template
 import secrets
 import kubejob
 import yaml
-# from jobsdb import JobsDb
 import envvars
 import mysql.connector
 import json

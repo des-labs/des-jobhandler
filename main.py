@@ -10,7 +10,6 @@ import dbutils
 from jwtutils import authenticated
 from jwtutils import encode_info
 import tests
-# from jobsdb import JobsDb
 import envvars
 import jobutils
 
