@@ -1,10 +1,8 @@
-import hashlib
-import string
-import random
 import logging
 import yaml
-import sys, os, time
-from kubernetes import client, config, utils
+import sys
+import os
+from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 from jinja2 import Template
 

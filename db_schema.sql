@@ -28,7 +28,8 @@ CREATE TABLE IF NOT EXISTS session(
 	`id` int NOT NULL AUTO_INCREMENT,
 	`account_id` int NOT NULL,
 	`token_refreshed` datetime,
-	`token_value` varchar(65) NOT NULL,
+	`token_value` text NOT NULL,
+	`password` text,
 	PRIMARY KEY (`id`), UNIQUE KEY `id` (`id`)
 )
 #---
@@ -44,24 +45,3 @@ CREATE TABLE IF NOT EXISTS role(
 	`role_name` text NOT NULL,
 	PRIMARY KEY (`id`), UNIQUE KEY `id` (`id`)
 )
-#---
-INSERT INTO role (`role_name`) VALUES ('admin')
-#---
-INSERT INTO role (`role_name`) VALUES ('collaborator')
-#---
-INSERT INTO role (`role_name`) VALUES ('public')
-#---
-# TODO: Remove these hard-coded initialization statements prior to committing
-#---
-INSERT INTO account (`username`, `full_name`, `email`) VALUES('michael', 'Michael Johnson', 'mjohns44@illinois.edu')
-#---
-INSERT INTO role_binding (`account_id`, `role_id`) VALUES(1, 1)
-#---
-INSERT INTO account (`username`, `full_name`, `email`) VALUES('andrew', 'Timothy Andrew Manning', 'manninga@illinois.edu')
-#---
-INSERT INTO role_binding (`account_id`, `role_id`) VALUES(2, 1)
-#---
-INSERT INTO account (`username`, `full_name`, `email`) VALUES('matias', 'Matias Carrasco Kind', 'mcarras2@illinois.edu')
-#---
-INSERT INTO role_binding (`account_id`, `role_id`) VALUES(3, 1)
-#---

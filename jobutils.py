@@ -10,6 +10,8 @@ import mysql.connector
 import json
 import datetime
 import logging
+from cryptography.fernet import Fernet
+import base64
 
 log_format = "%(asctime)s  %(name)8s  %(levelname)5s  %(message)s"
 logging.basicConfig(
@@ -18,6 +20,21 @@ logging.basicConfig(
     format=log_format,
 )
 logger = logging.getLogger("main")
+
+
+def password_encrypt(password):
+    secret = envvars.JWT_HS256_SECRET
+    key = base64.urlsafe_b64encode(secret.encode('UTF-8'))
+    locksmith = Fernet(key)
+    return locksmith.encrypt(password.encode('UTF-8')).decode('UTF-8')
+
+
+def password_decrypt(password):
+    secret = envvars.JWT_HS256_SECRET
+    key = base64.urlsafe_b64encode(secret.encode('UTF-8'))
+    locksmith = Fernet(key)
+    return locksmith.decrypt(password.encode('UTF-8')).decode('UTF-8')
+
 
 class JobsDb:
     def __init__(self, mysql_host, mysql_user, mysql_password, mysql_database):
@@ -66,17 +83,83 @@ class JobsDb:
 
     def reinitialize_tables(self):
         self.open_db_connection()
-        for table in self.get_table_names():
-            self.cur.execute("DROP TABLE IF EXISTS {}".format(table))
-        # Create the database tables
-        with open(os.path.join(os.path.dirname(__file__), "db_schema.sql")) as f:
-            dbSchema = f.read()
         try:
+            # Drop all existing database tables
+            for table in self.get_table_names():
+                self.cur.execute("DROP TABLE IF EXISTS {}".format(table))
+            # Create the database tables from the schema file. Individual SQL
+            # commands must be separated by the custom delimiter '#---'
+            with open(os.path.join(os.path.dirname(__file__), "db_schema.sql")) as f:
+                dbSchema = f.read()
+            # Construct the database tables
             for sqlCommand in dbSchema.split('#---'):
                 if len(sqlCommand) > 0 and not sqlCommand.isspace():
                     self.cur.execute(sqlCommand)
+            # Initialize the database tables with info such as admin accounts
+            # with open(os.path.join(os.path.dirname(__file__), "db_init", "db_init.yaml")) as f:
+            with open(os.path.join("/", "config", "db_init.yaml")) as f:
+                db_init = yaml.safe_load(f.read())
+            for account in db_init['account']:
+                self.cur.execute(
+                    (
+                        "INSERT INTO account "
+                        "(full_name, username, email) "
+                        "VALUES (%s, %s, %s)"
+                    ),
+                    (
+                        account["full_name"],
+                        account["username"],
+                        account["email"],
+                    )
+                )
+            for role in db_init['role']:
+                self.cur.execute(
+                    (
+                        "INSERT INTO role "
+                        "(role_name) "
+                        "VALUES (%s)"
+                    ),
+                    (
+                        role["role_name"],
+                    )
+                )
+            for role_binding in db_init['role_binding']:
+                self.cur.execute(
+                    (
+                        "SELECT id FROM account WHERE username=%s"
+                    ),
+                    (
+                        role_binding["username"],
+                    )
+                )
+                for (id,) in self.cur:
+                    # There should only be a single account associated with a username
+                    account_id = id
+                self.cur.execute(
+                    (
+                        "SELECT id FROM role WHERE role_name=%s"
+                    ),
+                    (
+                        role_binding["role_name"],
+                    )
+                )
+                for (id,) in self.cur:
+                    # There should only be a single account associated with a username
+                    role_id = id
+                self.cur.execute(
+                    (
+                        "INSERT INTO role_binding "
+                        "(account_id, role_id) "
+                        "VALUES (%s, %s)"
+                    ),
+                    (
+                        account_id,
+                        role_id,
+                    )
+                )
         except Exception as e:
             logger.error(str(e).strip())
+
         self.close_db_connection()
 
     def validate_apitoken(self, apitoken):
@@ -172,6 +255,100 @@ class JobsDb:
         self.close_db_connection()
         return error_msg
 
+    def session_login(self, username, email, token, ciphertext):
+        self.open_db_connection()
+        status = "ok"
+        try:
+            self.cur.execute(
+                (
+                    "SELECT id from account WHERE username=%s AND email=%s"
+                ),
+                (
+                    username,
+                    email,
+                )
+            )
+            account_id = None
+            for (id,) in self.cur:
+                account_id = id
+            if isinstance(account_id, int):
+                session_id = None
+                self.cur.execute(
+                    (
+                        "SELECT id from session WHERE account_id=%s"
+                    ),
+                    (
+                        account_id,
+                    )
+                )
+                for (id,) in self.cur:
+                    session_id = id
+                if isinstance(session_id, int):
+                    self.cur.execute(
+                        (
+                            "UPDATE session "
+                            "SET token_value=%s, token_refreshed=%s, password=%s "
+                            "WHERE account_id=%s"
+                        ),
+                        (
+                            token,
+                            ciphertext,
+                            datetime.datetime.utcnow(),
+                            account_id,
+                        )
+                    )
+                else:
+                    self.cur.execute(
+                        (
+                            "INSERT INTO session "
+                            "(account_id, token_value, token_refreshed, password) "
+                            "VALUES (%s, %s, %s, %s) "
+                        ),
+                        (
+                            account_id,
+                            token,
+                            datetime.datetime.utcnow(),
+                            ciphertext,
+                        )
+                    )
+        except Exception as e:
+            logger.error(str(e).strip())
+            status = "error"
+        self.close_db_connection()
+        return status
+
+    def get_password(self, username):
+        self.open_db_connection()
+        try:
+            self.cur.execute(
+                (
+                    "SELECT id from account WHERE username=%s"
+                ),
+                (
+                    username,
+                )
+            )
+            account_id = None
+            for (id,) in self.cur:
+                account_id = id
+            if isinstance(account_id, int):
+                self.cur.execute(
+                    (
+                        "SELECT password from session WHERE account_id=%s"
+                    ),
+                    (
+                        account_id,
+                    )
+                )
+                ciphertext = None
+                for (password,) in self.cur:
+                    ciphertext = password
+                if isinstance(ciphertext, str):
+                    return password_decrypt(ciphertext)
+        except Exception as e:
+            logger.error(str(e).strip())
+        self.close_db_connection()
+
 # Get global instance of the job handler database interface
 JOBSDB = JobsDb(
     mysql_host=envvars.MYSQL_HOST,
@@ -228,8 +405,6 @@ def get_job_template(job_type):
     return Template(templateText)
 
 def submit_job(params):
-    # import rpdb
-    # rpdb.set_trace()
     logger.info(params)
     # Common configurations to all tasks types:
     username = params["username"].lower()
@@ -241,7 +416,6 @@ def submit_job(params):
     conf["cm_name"] = get_job_configmap_name(conf["job"], job_id, username)
     conf["job_name"] = get_job_name(conf["job"], job_id, username)
     conf["host_network"] = envvars.HOST_NETWORK
-    conf["command"] = ["python", "task.py"]
     template = get_job_template(job_type)
     base_template = get_job_template_base()
     # Render the base YAML template for the job configuration data structure
@@ -261,14 +435,16 @@ def submit_job(params):
     # Custom configurations depending on the task type:
     if job_type == 'test':
         conf["image"] = envvars.DOCKER_IMAGE_TASK_TEST
+        conf["command"] = ["python", "task.py"]
         conf["configjob"]["spec"] = yaml.safe_load(template.render(
             taskDuration=int(params["time"])
         ))
     elif job_type == 'query':
         conf["image"] = envvars.DOCKER_IMAGE_TASK_QUERY
+        conf["command"] = ["python3", "task.py"]
         conf["configjob"]["spec"] = yaml.safe_load(template.render(
             queryString=params["query"],
-            dbPassword=''
+            dbPassword=JOBSDB.get_password(username)
         ))
     else:
         # Invalid job type

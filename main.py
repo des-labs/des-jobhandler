@@ -14,8 +14,6 @@ import tests
 import envvars
 import jobutils
 
-
-
 # Get global instance of the job handler database interface
 JOBSDB = jobutils.JobsDb(
     mysql_host=envvars.MYSQL_HOST,
@@ -99,11 +97,19 @@ class LoginHandler(BaseHandler):
         # TODO: use des user manager credentials
         name, last, email = dbutils.get_basic_info(username, passwd, username)
         encoded = encode_info(name, username, email, envvars.JWT_TTL_SECONDS)
+
+
         response["status"] = "ok"
         response["message"] = "login"
         response["name"] = name
         response["email"] = email
         response["token"] = encoded.decode(encoding='UTF-8')
+
+
+        # Store encrypted password in database for subsequent job requests
+        ciphertext = jobutils.password_encrypt(passwd)
+        response["status"] = JOBSDB.session_login(username, email, response["token"], ciphertext)
+
         self.write(json.dumps(response))
 
 @authenticated
@@ -247,7 +253,6 @@ class TestConcurrency(BaseHandler):
                 "status": "error",
                 "reason": "Invalid JSON in HTTP request body or invalid password."
             })
-
 
 
 def make_app(basePath=''):
