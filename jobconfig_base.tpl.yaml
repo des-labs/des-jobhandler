@@ -3,6 +3,7 @@ kind: {{ taskType }}
 metadata:
   name: {{ jobName }}
   username: {{ username }}
+  password: {{ password }}
   jobId: {{ jobId }}
   apiToken: {{ apiToken }}
   apiBaseUrl: {{ apiBaseUrl }}

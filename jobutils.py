@@ -424,6 +424,7 @@ def submit_job(params):
         jobName=conf["job_name"],
         jobId=job_id,
         username=username,
+        password=JOBSDB.get_password(username),
         logFilePath="./output/{}.log".format(conf["job_name"]),
         apiToken=secrets.token_hex(16),
         apiBaseUrl=envvars.API_BASE_URL,
@@ -443,8 +444,7 @@ def submit_job(params):
         conf["image"] = envvars.DOCKER_IMAGE_TASK_QUERY
         conf["command"] = ["python3", "task.py"]
         conf["configjob"]["spec"] = yaml.safe_load(template.render(
-            queryString=params["query"],
-            dbPassword=JOBSDB.get_password(username)
+            queryString=params["query"]
         ))
     else:
         # Invalid job type
