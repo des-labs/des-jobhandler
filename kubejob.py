@@ -1,10 +1,8 @@
-import hashlib
-import string
-import random
 import logging
 import yaml
-import sys, os, time
-from kubernetes import client, config, utils
+import sys
+import os
+from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 from jinja2 import Template
 
@@ -147,7 +145,13 @@ def create_job(input):
 
 def config_map(input):
     keyfile = "configjob.yaml"
-    meta = client.V1ObjectMeta(name=input["cm_name"], namespace=input["namespace"])
+    meta = client.V1ObjectMeta(
+        name=input["cm_name"],
+        namespace=input["namespace"],
+        labels={
+            "task": input["job"]
+        }
+    )
     body = client.V1ConfigMap(
         api_version="v1",
         kind="ConfigMap",
