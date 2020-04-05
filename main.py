@@ -9,7 +9,7 @@ import kubejob
 import dbutils
 from jwtutils import authenticated
 from jwtutils import encode_info
-import tests
+from test import tests
 import envvars
 import jobutils
 
