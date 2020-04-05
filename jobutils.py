@@ -96,7 +96,7 @@ class JobsDb:
                     self.cur.execute(sqlCommand)
             # Initialize the database tables with info such as admin accounts
             # with open(os.path.join(os.path.dirname(__file__), "db_init", "db_init.yaml")) as f:
-            with open(os.path.join("/", "config", "db_init.yaml")) as f:
+            with open(os.path.join(envvars.CONFIG_FOLDER_ROOT, "config", "db_init.yaml")) as f:
                 db_init = yaml.safe_load(f.read())
             for account in db_init['account']:
                 self.cur.execute(
