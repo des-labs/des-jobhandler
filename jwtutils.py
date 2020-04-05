@@ -2,9 +2,10 @@ import jwt
 import datetime
 import envvars
 
-def encode_info(name, username, email, ttl):
+def encode_info(name, lastname, username, email, ttl):
     encoded = jwt.encode({
             'name' : name,
+            'lastname' : lastname,
             'username' : username,
             'email' : email,
             'exp' : datetime.datetime.utcnow() + datetime.timedelta(seconds=ttl)},
