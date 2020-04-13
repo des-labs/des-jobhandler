@@ -74,9 +74,7 @@ class JobsDb:
     def get_table_names(self):
         return [
             'job',
-            'account',
             'role',
-            'role_binding',
             'session'
         ]
 
@@ -98,62 +96,16 @@ class JobsDb:
             # with open(os.path.join(os.path.dirname(__file__), "db_init", "db_init.yaml")) as f:
             with open(os.path.join(envvars.CONFIG_FOLDER_ROOT, "config", "db_init.yaml")) as f:
                 db_init = yaml.safe_load(f.read())
-            for account in db_init['account']:
-                self.cur.execute(
-                    (
-                        "INSERT INTO account "
-                        "(full_name, username, email) "
-                        "VALUES (%s, %s, %s)"
-                    ),
-                    (
-                        account["full_name"],
-                        account["username"],
-                        account["email"],
-                    )
-                )
             for role in db_init['role']:
                 self.cur.execute(
                     (
                         "INSERT INTO role "
-                        "(role_name) "
-                        "VALUES (%s)"
-                    ),
-                    (
-                        role["role_name"],
-                    )
-                )
-            for role_binding in db_init['role_binding']:
-                self.cur.execute(
-                    (
-                        "SELECT id FROM account WHERE username=%s"
-                    ),
-                    (
-                        role_binding["username"],
-                    )
-                )
-                for (id,) in self.cur:
-                    # There should only be a single account associated with a username
-                    account_id = id
-                self.cur.execute(
-                    (
-                        "SELECT id FROM role WHERE role_name=%s"
-                    ),
-                    (
-                        role_binding["role_name"],
-                    )
-                )
-                for (id,) in self.cur:
-                    # There should only be a single account associated with a username
-                    role_id = id
-                self.cur.execute(
-                    (
-                        "INSERT INTO role_binding "
-                        "(account_id, role_id) "
+                        "(username, role_name) "
                         "VALUES (%s, %s)"
                     ),
                     (
-                        account_id,
-                        role_id,
+                        role["username"],
+                        role["role_name"],
                     )
                 )
         except Exception as e:
@@ -254,62 +206,49 @@ class JobsDb:
         self.close_db_connection()
         return error_msg
 
-    def session_login(self, username, email, token, ciphertext):
+    def session_login(self, username, token, ciphertext):
         self.open_db_connection()
         status = "ok"
         try:
             self.cur.execute(
                 (
-                    "SELECT id from account WHERE username=%s AND email=%s"
+                    "SELECT id from session WHERE username=%s"
                 ),
                 (
                     username,
-                    email,
                 )
             )
-            account_id = None
+            session_id = None
             for (id,) in self.cur:
-                account_id = id
-            if isinstance(account_id, int):
-                session_id = None
+                session_id = id
+            if isinstance(session_id, int):
                 self.cur.execute(
                     (
-                        "SELECT id from session WHERE account_id=%s"
+                        "UPDATE session "
+                        "SET token_value=%s, token_refreshed=%s, password=%s "
+                        "WHERE username=%s"
                     ),
                     (
-                        account_id,
+                        token,
+                        ciphertext,
+                        datetime.datetime.utcnow(),
+                        username,
                     )
                 )
-                for (id,) in self.cur:
-                    session_id = id
-                if isinstance(session_id, int):
-                    self.cur.execute(
-                        (
-                            "UPDATE session "
-                            "SET token_value=%s, token_refreshed=%s, password=%s "
-                            "WHERE account_id=%s"
-                        ),
-                        (
-                            token,
-                            ciphertext,
-                            datetime.datetime.utcnow(),
-                            account_id,
-                        )
+            else:
+                self.cur.execute(
+                    (
+                        "INSERT INTO session "
+                        "(username, token_value, token_refreshed, password) "
+                        "VALUES (%s, %s, %s, %s) "
+                    ),
+                    (
+                        username,
+                        token,
+                        datetime.datetime.utcnow(),
+                        ciphertext,
                     )
-                else:
-                    self.cur.execute(
-                        (
-                            "INSERT INTO session "
-                            "(account_id, token_value, token_refreshed, password) "
-                            "VALUES (%s, %s, %s, %s) "
-                        ),
-                        (
-                            account_id,
-                            token,
-                            datetime.datetime.utcnow(),
-                            ciphertext,
-                        )
-                    )
+                )
         except Exception as e:
             logger.error(str(e).strip())
             status = "error"

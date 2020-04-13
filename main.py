@@ -146,7 +146,7 @@ class LoginHandler(BaseHandler):
 
         # Store encrypted password in database for subsequent job requests
         ciphertext = jobutils.password_encrypt(passwd)
-        response["status"] = JOBSDB.session_login(username, email, response["token"], ciphertext)
+        response["status"] = JOBSDB.session_login(username, response["token"], ciphertext)
 
         self.write(json.dumps(response))
 

@@ -16,32 +16,20 @@ CREATE TABLE IF NOT EXISTS job(
 	PRIMARY KEY (`id`), UNIQUE KEY `id` (`id`)
 )
 #---
-CREATE TABLE IF NOT EXISTS account(
-	`id` int NOT NULL AUTO_INCREMENT,
-	`username` varchar(50) NOT NULL,
-	`full_name` text NOT NULL,
-	`email` text NOT NULL,
-	PRIMARY KEY (`id`), UNIQUE KEY `id` (`id`)
-)
-#---
 CREATE TABLE IF NOT EXISTS session(
 	`id` int NOT NULL AUTO_INCREMENT,
-	`account_id` int NOT NULL,
+	`username` varchar(50) NOT NULL,
 	`token_refreshed` datetime,
 	`token_value` text NOT NULL,
 	`password` text,
-	PRIMARY KEY (`id`), UNIQUE KEY `id` (`id`)
-)
-#---
-CREATE TABLE IF NOT EXISTS role_binding(
-	`id` int NOT NULL AUTO_INCREMENT,
-	`account_id` int NOT NULL,
-	`role_id` int NOT NULL,
-	PRIMARY KEY (`id`), UNIQUE KEY `id` (`id`)
+	KEY (`id`), 
+	PRIMARY KEY (`username`),
+	UNIQUE KEY `username` (`username`)
 )
 #---
 CREATE TABLE IF NOT EXISTS role(
 	`id` int NOT NULL AUTO_INCREMENT,
+	`username` varchar(50) NOT NULL,
 	`role_name` text NOT NULL,
 	PRIMARY KEY (`id`), UNIQUE KEY `id` (`id`)
 )
