@@ -62,9 +62,47 @@ class ProfileHandler(BaseHandler):
         response["status"] = "ok"
         response["message"] = "valid token"
         response["name"] = decoded["name"]
+        response["lastname"] = decoded["lastname"]
         response["username"] = decoded["username"]
         response["email"] = decoded["email"]
         response["ttl"] = ttl
+        self.flush()
+        self.write(response)
+        self.finish()
+        return
+
+
+@authenticated
+class ProfileUpdateHandler(BaseHandler):
+    # API endpoint: /profile/update
+    def post(self):
+        response = {}
+        body = {k: self.get_argument(k) for k in self.request.arguments}
+        username = body['username']
+        first = body['firstname']
+        last = body['lastname']
+        email = body['email']
+        status, msg = dbutils.update_info(username, first, last, email)
+        response['status'] = status
+        response['message'] = msg
+        self.flush()
+        self.write(response)
+        self.finish()
+        return
+
+
+class ProfileUpdatePasswordHandler(BaseHandler):
+    # API endpoint: /profile/update
+    def post(self):
+        response = {}
+        body = {k: self.get_argument(k) for k in self.request.arguments}
+        username = body['username']
+        oldpwd = body['oldpwd']
+        newpwd = body['newpwd']
+        database = body['db']
+        status, message = dbutils.change_credentials(username, oldpwd, newpwd, database)
+        response['status'] = status
+        response['message'] = message
         self.flush()
         self.write(response)
         self.finish()
@@ -95,12 +133,13 @@ class LoginHandler(BaseHandler):
             return
         # TODO: use des user manager credentials
         name, last, email = dbutils.get_basic_info(username, passwd, username)
-        encoded = encode_info(name, username, email, envvars.JWT_TTL_SECONDS)
+        encoded = encode_info(name, last, username, email, envvars.JWT_TTL_SECONDS)
 
 
         response["status"] = "ok"
         response["message"] = "login"
         response["name"] = name
+        response["lastname"] = last
         response["email"] = email
         response["token"] = encoded.decode(encoding='UTF-8')
 
@@ -263,6 +302,8 @@ def make_app(basePath=''):
             (r"{}/job/submit?".format(basePath), JobHandler),
             (r"{}/login/?".format(basePath), LoginHandler),
             (r"{}/profile/?".format(basePath), ProfileHandler),
+            (r"{}/profile/update/?".format(basePath), ProfileUpdateHandler),
+            (r"{}/profile/changepwd/?".format(basePath), ProfileUpdatePasswordHandler),
             # (r"{}/init/?".format(basePath), InitHandler),
             (r"{}/test/?".format(basePath), TestHandler),
             (r"{}/job/complete?".format(basePath), JobComplete),
