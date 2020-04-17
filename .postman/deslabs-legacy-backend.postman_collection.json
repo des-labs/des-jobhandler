@@ -70,7 +70,7 @@
 				"method": "PUT",
 				"header": [],
 				"url": {
-					"raw": "{{api_base_url}}/job/submit?username={{username}}&job=test&time=30",
+					"raw": "{{api_base_url}}/job/submit?username={{username}}&job=test&time=8",
 					"host": [
 						"{{api_base_url}}"
 					],
@@ -89,7 +89,7 @@
 						},
 						{
 							"key": "time",
-							"value": "30"
+							"value": "8"
 						}
 					]
 				}
@@ -116,7 +116,7 @@
 				"method": "PUT",
 				"header": [],
 				"url": {
-					"raw": "{{api_base_url}}/job/submit?username={{username}}&job=query&query=\"SELECT RA, DEC, MAG_AUTO_G, TILENAME from Y3_GOLD_2_2 sample(0.001)\"",
+					"raw": "{{api_base_url}}/job/submit?username={{username}}&job=query&query=\"SELECT RA, DEC, MAG_AUTO_G, TILENAME from Y3_GOLD_2_2 sample(0.001)\"&quick=false",
 					"host": [
 						"{{api_base_url}}"
 					],
@@ -136,6 +136,10 @@
 						{
 							"key": "query",
 							"value": "\"SELECT RA, DEC, MAG_AUTO_G, TILENAME from Y3_GOLD_2_2 sample(0.001)\""
+						},
+						{
+							"key": "quick",
+							"value": "false"
 						}
 					]
 				}
