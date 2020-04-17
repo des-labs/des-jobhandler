@@ -355,7 +355,6 @@ def get_job_template(job_type):
     return Template(templateText)
 
 def submit_job(params):
-    logger.info(params)
     # Common configurations to all tasks types:
     username = params["username"].lower()
     job_type = params["job"]
@@ -393,10 +392,12 @@ def submit_job(params):
     elif job_type == 'query':
         conf["image"] = envvars.DOCKER_IMAGE_TASK_QUERY
         conf["command"] = ["python3", "task.py"]
-        if isinstance(params["quick"], str) and params["quick"].lower in ['true', '1']:
-            quickQuery = True
-        else:
-            quickQuery = False
+        quickQuery = "false"
+        try:
+            if params["quick"].lower() in ['true', '1', 'yes']:
+                quickQuery = "true"
+        except:
+            pass
         conf["configjob"]["spec"] = yaml.safe_load(template.render(
             queryString=params["query"],
             quickQuery=quickQuery

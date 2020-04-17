@@ -155,7 +155,6 @@ class JobHandler(BaseHandler):
     # API endpoint: /job/submit
     def put(self):
         body = {k: self.get_argument(k) for k in self.request.arguments}
-        logger.info(body)
         st,msg,jobid = jobutils.submit_job(body)
         logger.info(msg)
         out = dict(status=st, message=msg, jobid=jobid)
