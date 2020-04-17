@@ -265,7 +265,7 @@ class JobComplete(BaseHandler):
         apitoken = data["apitoken"]
         rowId = JOBSDB.validate_apitoken(apitoken)
         if isinstance(rowId, int):
-            error_msg = JOBSDB.update_job_complete(rowId)
+            error_msg = JOBSDB.update_job_complete(rowId, data["response"])
             if error_msg is not None:
                 logger.info(error_msg)
 

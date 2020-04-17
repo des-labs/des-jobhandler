@@ -25,41 +25,6 @@ def test_credentials():
 
 
 def job(input):
-    '''
-    vmounts = client.V1VolumeMount(
-        name="config-volume",
-        mount_path="/home/worker/configjob.yaml",
-        sub_path="configjob.yaml",
-    )
-    volume = client.V1Volume(
-        name="config-volume",
-        config_map=client.V1ConfigMapVolumeSource(name=input["cm_name"]),
-    )
-    container = client.V1Container(
-        name=input["job"],
-        image=input["image"],
-        command=input["command"],
-        volume_mounts=[vmounts],
-    )
-    imagePullSecret = client.V1LocalObjectReference(
-        # TODO: Replace this hard-coded secret reference with an environment variable value
-        name='registry-auth'
-    )
-    podspec = client.V1PodSpec(
-        containers=[container], restart_policy="Never", volumes=[volume], image_pull_secrets=[imagePullSecret]
-    )
-    template = client.V1PodTemplateSpec(spec=podspec)
-    jobspec = client.V1JobSpec(
-        active_deadline_seconds=600,
-        ttl_seconds_after_finished=600,
-        template=template,
-        backoff_limit=2,
-    )
-    jobmeta = client.V1ObjectMeta(name=input["job_name"], namespace=input["namespace"])
-    body = client.V1Job(
-        api_version="batch/v1", kind="Job", metadata=jobmeta, spec=jobspec
-    )
-    '''
 
     with open(os.path.join(os.path.dirname(__file__), "job.tpl.yaml")) as f:
         templateText = f.read()

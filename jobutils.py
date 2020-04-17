@@ -74,6 +74,7 @@ class JobsDb:
     def get_table_names(self):
         return [
             'job',
+            'query',
             'role',
             'session'
         ]
@@ -131,26 +132,38 @@ class JobsDb:
 
         newJobSql = (
             "INSERT INTO job "
-            "(user, job, name, status, time_start, time_complete, type, query, files, sizes, runtime, apitoken, spec) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            "(user, type, uuid, status, time_start, time_complete, apitoken, spec) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
         )
         newJobInfo = (
             conf["configjob"]["metadata"]["username"],
-            conf["job"],
+            conf["configjob"]["kind"],
             conf["configjob"]["metadata"]["jobId"],
             'init',
             None,
             None,
-            'type_test',
-            'query_test',
-            'files_test',
-            'sizes_test',
-            0,
             conf["configjob"]["metadata"]["apiToken"],
             json.dumps(conf["configjob"]["spec"])
-
         )
         self.cur.execute(newJobSql, newJobInfo)
+        if self.cur.lastrowid:
+            if conf["configjob"]["kind"] == 'query':
+                newQuerySql = (
+                    "INSERT INTO query "
+                    "(job_id, query, file_info) "
+                    "VALUES (%s, %s, %s)"
+                )
+                newQueryInfo = (
+                    self.cur.lastrowid,
+                    conf["configjob"]["spec"]["inputs"]["queryString"],
+                    '{}'
+                )
+                self.cur.execute(newQuerySql, newQueryInfo)
+            elif conf["configjob"]["kind"] == 'test':
+                # TODO: Add test table row associated with test task
+                logger.info('Created new job of type "test"')
+        else:
+            logger.error("Error inserting new job.")
         self.close_db_connection()
 
     def update_job_start(self, rowId):
@@ -172,7 +185,7 @@ class JobsDb:
         self.close_db_connection()
         return error_msg
 
-    def update_job_complete(self, rowId):
+    def update_job_complete(self, rowId, response):
         self.open_db_connection()
         updateJobSql = (
             "UPDATE job "
@@ -190,19 +203,29 @@ class JobsDb:
             error_msg = 'Error updating job record {}'.format(rowId)
         else:
             selectJobSql = (
-                "SELECT user,job,name from job WHERE id=%s"
+                "SELECT user,type,uuid from job WHERE id=%s"
             )
             selectJobInfo = (
                 rowId,
             )
             self.cur.execute(selectJobSql, selectJobInfo)
-            for (user, job, name) in self.cur:
-                conf = {"job": job}
+            for (user, type, uuid) in self.cur:
+                conf = {"job": type}
                 conf['namespace'] = get_namespace()
-                conf["job_name"] = get_job_name(conf["job"], name, user)
-                conf["cm_name"] = get_job_configmap_name(
-                    conf["job"], name, user)
+                conf["job_name"] = get_job_name(type, uuid, user)
+                conf["cm_name"] = get_job_configmap_name(type, uuid, user)
                 kubejob.delete_job(conf)
+                if type == 'query':
+                    updateQuerySql = (
+                        "UPDATE query "
+                        "SET file_info=%s "
+                        "WHERE job_id=%s"
+                    )
+                    updateQueryInfo = (
+                        json.dumps(response),
+                        rowId
+                    )
+                    self.cur.execute(updateQuerySql, updateQueryInfo)
         self.close_db_connection()
         return error_msg
 
@@ -230,8 +253,8 @@ class JobsDb:
                     ),
                     (
                         token,
-                        ciphertext,
                         datetime.datetime.utcnow(),
+                        ciphertext,
                         username,
                     )
                 )
@@ -260,29 +283,17 @@ class JobsDb:
         try:
             self.cur.execute(
                 (
-                    "SELECT id from account WHERE username=%s"
+                    "SELECT password from session WHERE username=%s"
                 ),
                 (
                     username,
                 )
             )
-            account_id = None
-            for (id,) in self.cur:
-                account_id = id
-            if isinstance(account_id, int):
-                self.cur.execute(
-                    (
-                        "SELECT password from session WHERE account_id=%s"
-                    ),
-                    (
-                        account_id,
-                    )
-                )
-                ciphertext = None
-                for (password,) in self.cur:
-                    ciphertext = password
-                if isinstance(ciphertext, str):
-                    return password_decrypt(ciphertext)
+            ciphertext = None
+            for (password,) in self.cur:
+                ciphertext = password
+            if isinstance(ciphertext, str):
+                return password_decrypt(ciphertext)
         except Exception as e:
             logger.error(str(e).strip())
         self.close_db_connection()
@@ -336,6 +347,7 @@ def get_job_template(job_type):
         os.path.dirname(__file__),
         "des-tasks",
         job_type,
+        'worker',
         "jobconfig_spec.tpl.yaml"
     )
     with open(jobConfigTemplateFile) as f:
@@ -381,8 +393,13 @@ def submit_job(params):
     elif job_type == 'query':
         conf["image"] = envvars.DOCKER_IMAGE_TASK_QUERY
         conf["command"] = ["python3", "task.py"]
+        if isinstance(params["quick"], str) and params["quick"].lower in ['true', '1']:
+            quickQuery = True
+        else:
+            quickQuery = False
         conf["configjob"]["spec"] = yaml.safe_load(template.render(
-            queryString=params["query"]
+            queryString=params["query"],
+            quickQuery=quickQuery
         ))
     else:
         # Invalid job type
