@@ -146,7 +146,7 @@ class LoginHandler(BaseHandler):
 
         # Store encrypted password in database for subsequent job requests
         ciphertext = jobutils.password_encrypt(passwd)
-        response["status"] = JOBSDB.session_login(username, email, response["token"], ciphertext)
+        response["status"] = JOBSDB.session_login(username, response["token"], ciphertext)
 
         self.write(json.dumps(response))
 
@@ -155,7 +155,6 @@ class JobHandler(BaseHandler):
     # API endpoint: /job/submit
     def put(self):
         body = {k: self.get_argument(k) for k in self.request.arguments}
-        logger.info(body)
         st,msg,jobid = jobutils.submit_job(body)
         logger.info(msg)
         out = dict(status=st, message=msg, jobid=jobid)
@@ -265,7 +264,7 @@ class JobComplete(BaseHandler):
         apitoken = data["apitoken"]
         rowId = JOBSDB.validate_apitoken(apitoken)
         if isinstance(rowId, int):
-            error_msg = JOBSDB.update_job_complete(rowId)
+            error_msg = JOBSDB.update_job_complete(rowId, data["response"])
             if error_msg is not None:
                 logger.info(error_msg)
 

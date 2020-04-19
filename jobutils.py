@@ -74,9 +74,8 @@ class JobsDb:
     def get_table_names(self):
         return [
             'job',
-            'account',
+            'query',
             'role',
-            'role_binding',
             'session'
         ]
 
@@ -98,62 +97,16 @@ class JobsDb:
             # with open(os.path.join(os.path.dirname(__file__), "db_init", "db_init.yaml")) as f:
             with open(os.path.join(envvars.CONFIG_FOLDER_ROOT, "config", "db_init.yaml")) as f:
                 db_init = yaml.safe_load(f.read())
-            for account in db_init['account']:
-                self.cur.execute(
-                    (
-                        "INSERT INTO account "
-                        "(full_name, username, email) "
-                        "VALUES (%s, %s, %s)"
-                    ),
-                    (
-                        account["full_name"],
-                        account["username"],
-                        account["email"],
-                    )
-                )
             for role in db_init['role']:
                 self.cur.execute(
                     (
                         "INSERT INTO role "
-                        "(role_name) "
-                        "VALUES (%s)"
-                    ),
-                    (
-                        role["role_name"],
-                    )
-                )
-            for role_binding in db_init['role_binding']:
-                self.cur.execute(
-                    (
-                        "SELECT id FROM account WHERE username=%s"
-                    ),
-                    (
-                        role_binding["username"],
-                    )
-                )
-                for (id,) in self.cur:
-                    # There should only be a single account associated with a username
-                    account_id = id
-                self.cur.execute(
-                    (
-                        "SELECT id FROM role WHERE role_name=%s"
-                    ),
-                    (
-                        role_binding["role_name"],
-                    )
-                )
-                for (id,) in self.cur:
-                    # There should only be a single account associated with a username
-                    role_id = id
-                self.cur.execute(
-                    (
-                        "INSERT INTO role_binding "
-                        "(account_id, role_id) "
+                        "(username, role_name) "
                         "VALUES (%s, %s)"
                     ),
                     (
-                        account_id,
-                        role_id,
+                        role["username"],
+                        role["role_name"],
                     )
                 )
         except Exception as e:
@@ -179,26 +132,38 @@ class JobsDb:
 
         newJobSql = (
             "INSERT INTO job "
-            "(user, job, name, status, time_start, time_complete, type, query, files, sizes, runtime, apitoken, spec) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            "(user, type, uuid, status, time_start, time_complete, apitoken, spec) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
         )
         newJobInfo = (
             conf["configjob"]["metadata"]["username"],
-            conf["job"],
+            conf["configjob"]["kind"],
             conf["configjob"]["metadata"]["jobId"],
             'init',
             None,
             None,
-            'type_test',
-            'query_test',
-            'files_test',
-            'sizes_test',
-            0,
             conf["configjob"]["metadata"]["apiToken"],
             json.dumps(conf["configjob"]["spec"])
-
         )
         self.cur.execute(newJobSql, newJobInfo)
+        if self.cur.lastrowid:
+            if conf["configjob"]["kind"] == 'query':
+                newQuerySql = (
+                    "INSERT INTO query "
+                    "(job_id, query, file_info) "
+                    "VALUES (%s, %s, %s)"
+                )
+                newQueryInfo = (
+                    self.cur.lastrowid,
+                    conf["configjob"]["spec"]["inputs"]["queryString"],
+                    '{}'
+                )
+                self.cur.execute(newQuerySql, newQueryInfo)
+            elif conf["configjob"]["kind"] == 'test':
+                # TODO: Add test table row associated with test task
+                logger.info('Created new job of type "test"')
+        else:
+            logger.error("Error inserting new job.")
         self.close_db_connection()
 
     def update_job_start(self, rowId):
@@ -220,7 +185,7 @@ class JobsDb:
         self.close_db_connection()
         return error_msg
 
-    def update_job_complete(self, rowId):
+    def update_job_complete(self, rowId, response):
         self.open_db_connection()
         updateJobSql = (
             "UPDATE job "
@@ -238,78 +203,75 @@ class JobsDb:
             error_msg = 'Error updating job record {}'.format(rowId)
         else:
             selectJobSql = (
-                "SELECT user,job,name from job WHERE id=%s"
+                "SELECT user,type,uuid from job WHERE id=%s"
             )
             selectJobInfo = (
                 rowId,
             )
             self.cur.execute(selectJobSql, selectJobInfo)
-            for (user, job, name) in self.cur:
-                conf = {"job": job}
+            for (user, type, uuid) in self.cur:
+                conf = {"job": type}
                 conf['namespace'] = get_namespace()
-                conf["job_name"] = get_job_name(conf["job"], name, user)
-                conf["cm_name"] = get_job_configmap_name(
-                    conf["job"], name, user)
+                conf["job_name"] = get_job_name(type, uuid, user)
+                conf["cm_name"] = get_job_configmap_name(type, uuid, user)
                 kubejob.delete_job(conf)
+                if type == 'query':
+                    updateQuerySql = (
+                        "UPDATE query "
+                        "SET file_info=%s "
+                        "WHERE job_id=%s"
+                    )
+                    updateQueryInfo = (
+                        json.dumps(response),
+                        rowId
+                    )
+                    self.cur.execute(updateQuerySql, updateQueryInfo)
         self.close_db_connection()
         return error_msg
 
-    def session_login(self, username, email, token, ciphertext):
+    def session_login(self, username, token, ciphertext):
         self.open_db_connection()
         status = "ok"
         try:
             self.cur.execute(
                 (
-                    "SELECT id from account WHERE username=%s AND email=%s"
+                    "SELECT id from session WHERE username=%s"
                 ),
                 (
                     username,
-                    email,
                 )
             )
-            account_id = None
+            session_id = None
             for (id,) in self.cur:
-                account_id = id
-            if isinstance(account_id, int):
-                session_id = None
+                session_id = id
+            if isinstance(session_id, int):
                 self.cur.execute(
                     (
-                        "SELECT id from session WHERE account_id=%s"
+                        "UPDATE session "
+                        "SET token_value=%s, token_refreshed=%s, password=%s "
+                        "WHERE username=%s"
                     ),
                     (
-                        account_id,
+                        token,
+                        datetime.datetime.utcnow(),
+                        ciphertext,
+                        username,
                     )
                 )
-                for (id,) in self.cur:
-                    session_id = id
-                if isinstance(session_id, int):
-                    self.cur.execute(
-                        (
-                            "UPDATE session "
-                            "SET token_value=%s, token_refreshed=%s, password=%s "
-                            "WHERE account_id=%s"
-                        ),
-                        (
-                            token,
-                            ciphertext,
-                            datetime.datetime.utcnow(),
-                            account_id,
-                        )
+            else:
+                self.cur.execute(
+                    (
+                        "INSERT INTO session "
+                        "(username, token_value, token_refreshed, password) "
+                        "VALUES (%s, %s, %s, %s) "
+                    ),
+                    (
+                        username,
+                        token,
+                        datetime.datetime.utcnow(),
+                        ciphertext,
                     )
-                else:
-                    self.cur.execute(
-                        (
-                            "INSERT INTO session "
-                            "(account_id, token_value, token_refreshed, password) "
-                            "VALUES (%s, %s, %s, %s) "
-                        ),
-                        (
-                            account_id,
-                            token,
-                            datetime.datetime.utcnow(),
-                            ciphertext,
-                        )
-                    )
+                )
         except Exception as e:
             logger.error(str(e).strip())
             status = "error"
@@ -321,29 +283,17 @@ class JobsDb:
         try:
             self.cur.execute(
                 (
-                    "SELECT id from account WHERE username=%s"
+                    "SELECT password from session WHERE username=%s"
                 ),
                 (
                     username,
                 )
             )
-            account_id = None
-            for (id,) in self.cur:
-                account_id = id
-            if isinstance(account_id, int):
-                self.cur.execute(
-                    (
-                        "SELECT password from session WHERE account_id=%s"
-                    ),
-                    (
-                        account_id,
-                    )
-                )
-                ciphertext = None
-                for (password,) in self.cur:
-                    ciphertext = password
-                if isinstance(ciphertext, str):
-                    return password_decrypt(ciphertext)
+            ciphertext = None
+            for (password,) in self.cur:
+                ciphertext = password
+            if isinstance(ciphertext, str):
+                return password_decrypt(ciphertext)
         except Exception as e:
             logger.error(str(e).strip())
         self.close_db_connection()
@@ -397,6 +347,7 @@ def get_job_template(job_type):
         os.path.dirname(__file__),
         "des-tasks",
         job_type,
+        'worker',
         "jobconfig_spec.tpl.yaml"
     )
     with open(jobConfigTemplateFile) as f:
@@ -404,7 +355,6 @@ def get_job_template(job_type):
     return Template(templateText)
 
 def submit_job(params):
-    logger.info(params)
     # Common configurations to all tasks types:
     username = params["username"].lower()
     job_type = params["job"]
@@ -442,8 +392,15 @@ def submit_job(params):
     elif job_type == 'query':
         conf["image"] = envvars.DOCKER_IMAGE_TASK_QUERY
         conf["command"] = ["python3", "task.py"]
+        quickQuery = "false"
+        try:
+            if params["quick"].lower() in ['true', '1', 'yes']:
+                quickQuery = "true"
+        except:
+            pass
         conf["configjob"]["spec"] = yaml.safe_load(template.render(
-            queryString=params["query"]
+            queryString=params["query"],
+            quickQuery=quickQuery
         ))
     else:
         # Invalid job type
