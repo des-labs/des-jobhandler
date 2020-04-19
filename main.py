@@ -331,4 +331,5 @@ if __name__ == "__main__":
 
     app = make_app(basePath=basePath)
     app.listen(servicePort)
+    logger.info('Running at localhost:{}{}'.format(servicePort,basePath))
     tornado.ioloop.IOLoop.current().start()
