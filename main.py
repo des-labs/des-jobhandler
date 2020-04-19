@@ -151,6 +151,16 @@ class LoginHandler(BaseHandler):
         self.write(json.dumps(response))
 
 @authenticated
+class LogoutHandler(BaseHandler):
+    # API endpoint: /logout
+    def post(self):
+        response = {}
+        response["status"] = "ok"
+        response["message"] = "logout {}".format(self._token_decoded["username"])
+        # TODO: Remove user session from table
+        self.write(json.dumps(response))
+
+@authenticated
 class JobHandler(BaseHandler):
     # API endpoint: /job/submit
     def put(self):
@@ -296,17 +306,21 @@ def make_app(basePath=''):
     settings = {"debug": True}
     return tornado.web.Application(
         [
+            ## JOBS Endpoints
             (r"{}/job/status?".format(basePath), JobHandler),
             (r"{}/job/delete?".format(basePath), JobHandler),
             (r"{}/job/submit?".format(basePath), JobHandler),
+            (r"{}/job/complete?".format(basePath), JobComplete),
+            (r"{}/job/start?".format(basePath), JobStart),
+            ## Profile Endpoints    
             (r"{}/login/?".format(basePath), LoginHandler),
             (r"{}/profile/?".format(basePath), ProfileHandler),
             (r"{}/profile/update/?".format(basePath), ProfileUpdateHandler),
             (r"{}/profile/changepwd/?".format(basePath), ProfileUpdatePasswordHandler),
+            (r"{}/logout/?".format(basePath), LogoutHandler),
+            ## Test Endpoints
             # (r"{}/init/?".format(basePath), InitHandler),
             (r"{}/test/?".format(basePath), TestHandler),
-            (r"{}/job/complete?".format(basePath), JobComplete),
-            (r"{}/job/start?".format(basePath), JobStart),
             (r"{}/test/concurrency?".format(basePath), TestConcurrency),
             (r"{}/debug/trigger?".format(basePath), DebugTrigger),
         ],
