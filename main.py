@@ -65,6 +65,7 @@ class ProfileHandler(BaseHandler):
         response["lastname"] = decoded["lastname"]
         response["username"] = decoded["username"]
         response["email"] = decoded["email"]
+        response["db"] = decoded["db"]
         response["ttl"] = ttl
         self.flush()
         self.write(response)
@@ -131,9 +132,8 @@ class LoginHandler(BaseHandler):
             self.write(json.dumps(response))
             self.finish()
             return
-        # TODO: use des user manager credentials
-        name, last, email = dbutils.get_basic_info(username, passwd, username)
-        encoded = encode_info(name, last, username, email, envvars.JWT_TTL_SECONDS)
+        name, last, email = dbutils.get_basic_info(username)
+        encoded = encode_info(name, last, username, email, db, envvars.JWT_TTL_SECONDS)
 
 
         response["status"] = "ok"
@@ -141,6 +141,7 @@ class LoginHandler(BaseHandler):
         response["name"] = name
         response["lastname"] = last
         response["email"] = email
+        response["db"] = db
         response["token"] = encoded.decode(encoding='UTF-8')
 
 
@@ -148,6 +149,16 @@ class LoginHandler(BaseHandler):
         ciphertext = jobutils.password_encrypt(passwd)
         response["status"] = JOBSDB.session_login(username, response["token"], ciphertext)
 
+        self.write(json.dumps(response))
+
+@authenticated
+class LogoutHandler(BaseHandler):
+    # API endpoint: /logout
+    def post(self):
+        response = {}
+        response["status"] = "ok"
+        response["message"] = "logout {}".format(self._token_decoded["username"])
+        # TODO: Remove user session from table
         self.write(json.dumps(response))
 
 @authenticated
@@ -296,17 +307,21 @@ def make_app(basePath=''):
     settings = {"debug": True}
     return tornado.web.Application(
         [
+            ## JOBS Endpoints
             (r"{}/job/status?".format(basePath), JobHandler),
             (r"{}/job/delete?".format(basePath), JobHandler),
             (r"{}/job/submit?".format(basePath), JobHandler),
+            (r"{}/job/complete?".format(basePath), JobComplete),
+            (r"{}/job/start?".format(basePath), JobStart),
+            ## Profile Endpoints    
             (r"{}/login/?".format(basePath), LoginHandler),
             (r"{}/profile/?".format(basePath), ProfileHandler),
             (r"{}/profile/update/?".format(basePath), ProfileUpdateHandler),
             (r"{}/profile/changepwd/?".format(basePath), ProfileUpdatePasswordHandler),
+            (r"{}/logout/?".format(basePath), LogoutHandler),
+            ## Test Endpoints
             # (r"{}/init/?".format(basePath), InitHandler),
             (r"{}/test/?".format(basePath), TestHandler),
-            (r"{}/job/complete?".format(basePath), JobComplete),
-            (r"{}/job/start?".format(basePath), JobStart),
             (r"{}/test/concurrency?".format(basePath), TestConcurrency),
             (r"{}/debug/trigger?".format(basePath), DebugTrigger),
         ],
@@ -331,4 +346,5 @@ if __name__ == "__main__":
 
     app = make_app(basePath=basePath)
     app.listen(servicePort)
+    logger.info('Running at localhost:{}{}'.format(servicePort,basePath))
     tornado.ioloop.IOLoop.current().start()
