@@ -2,12 +2,13 @@ import jwt
 import datetime
 import envvars
 
-def encode_info(name, lastname, username, email, ttl):
+def encode_info(name, lastname, username, email, db, ttl):
     encoded = jwt.encode({
             'name' : name,
             'lastname' : lastname,
             'username' : username,
             'email' : email,
+            'db' : db,
             'exp' : datetime.datetime.utcnow() + datetime.timedelta(seconds=ttl)},
             envvars.JWT_HS256_SECRET,
             algorithm='HS256'

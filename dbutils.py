@@ -40,7 +40,7 @@ def check_credentials(username, password, db):
             update = True
         return False, error, update
 
-def get_basic_info(username, password, user):
+def get_basic_info(user):
     kwargs = {'host': dbConf.host, 'port': dbConf.port, 'service_name': dbConf.db_manager}
     dsn = cx_Oracle.makedsn(**kwargs)
     dbh = cx_Oracle.connect(dbConf.user_manager, dbConf.pwd_manager, dsn=dsn)

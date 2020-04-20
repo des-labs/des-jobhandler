@@ -65,6 +65,7 @@ class ProfileHandler(BaseHandler):
         response["lastname"] = decoded["lastname"]
         response["username"] = decoded["username"]
         response["email"] = decoded["email"]
+        response["db"] = decoded["db"]
         response["ttl"] = ttl
         self.flush()
         self.write(response)
@@ -131,9 +132,8 @@ class LoginHandler(BaseHandler):
             self.write(json.dumps(response))
             self.finish()
             return
-        # TODO: use des user manager credentials
-        name, last, email = dbutils.get_basic_info(username, passwd, username)
-        encoded = encode_info(name, last, username, email, envvars.JWT_TTL_SECONDS)
+        name, last, email = dbutils.get_basic_info(username)
+        encoded = encode_info(name, last, username, email, db, envvars.JWT_TTL_SECONDS)
 
 
         response["status"] = "ok"
@@ -141,6 +141,7 @@ class LoginHandler(BaseHandler):
         response["name"] = name
         response["lastname"] = last
         response["email"] = email
+        response["db"] = db
         response["token"] = encoded.decode(encoding='UTF-8')
 
 
