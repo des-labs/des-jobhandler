@@ -2,6 +2,7 @@ CREATE TABLE IF NOT EXISTS job(
 	`id` int NOT NULL AUTO_INCREMENT,
 	`user` varchar(50) NOT NULL,
 	`type` varchar(50) NOT NULL,
+	`name` varchar(128) NOT NULL,
 	`uuid` text NOT NULL,
 	`status` text NOT NULL,
 	`time_start` datetime,
@@ -14,7 +15,7 @@ CREATE TABLE IF NOT EXISTS job(
 CREATE TABLE IF NOT EXISTS session(
 	`id` int NOT NULL AUTO_INCREMENT,
 	`username` varchar(50) NOT NULL,
-	`token_refreshed` datetime,
+	`last_login` datetime,
 	`token_value` text NOT NULL,
 	`password` text,
 	KEY (`id`),

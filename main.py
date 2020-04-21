@@ -158,7 +158,7 @@ class LogoutHandler(BaseHandler):
         response = {}
         response["status"] = "ok"
         response["message"] = "logout {}".format(self._token_decoded["username"])
-        # TODO: Remove user session from table
+        response["status"] = JOBSDB.session_logout(self._token_decoded["username"])
         self.write(json.dumps(response))
 
 @authenticated
@@ -274,8 +274,12 @@ class JobComplete(BaseHandler):
             return
         apitoken = data["apitoken"]
         rowId = JOBSDB.validate_apitoken(apitoken)
+        error_msg = None
         if isinstance(rowId, int):
-            error_msg = JOBSDB.update_job_complete(rowId, data["response"])
+            try:
+                error_msg = JOBSDB.update_job_complete(rowId, data["response"])
+            except:
+                pass
             if error_msg is not None:
                 logger.info(error_msg)
 
@@ -313,7 +317,7 @@ def make_app(basePath=''):
             (r"{}/job/submit?".format(basePath), JobHandler),
             (r"{}/job/complete?".format(basePath), JobComplete),
             (r"{}/job/start?".format(basePath), JobStart),
-            ## Profile Endpoints    
+            ## Profile Endpoints
             (r"{}/login/?".format(basePath), LoginHandler),
             (r"{}/profile/?".format(basePath), ProfileHandler),
             (r"{}/profile/update/?".format(basePath), ProfileUpdateHandler),

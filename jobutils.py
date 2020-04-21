@@ -97,18 +97,22 @@ class JobsDb:
             # with open(os.path.join(os.path.dirname(__file__), "db_init", "db_init.yaml")) as f:
             with open(os.path.join(envvars.CONFIG_FOLDER_ROOT, "config", "db_init.yaml")) as f:
                 db_init = yaml.safe_load(f.read())
+            roles_added = []
             for role in db_init['role']:
-                self.cur.execute(
-                    (
-                        "INSERT INTO role "
-                        "(username, role_name) "
-                        "VALUES (%s, %s)"
-                    ),
-                    (
-                        role["username"],
-                        role["role_name"],
+                # Ignore redundant role definitions
+                if role not in roles_added:
+                    roles_added.append(role)
+                    self.cur.execute(
+                        (
+                            "INSERT INTO role "
+                            "(username, role_name) "
+                            "VALUES (%s, %s)"
+                        ),
+                        (
+                            role["username"],
+                            role["role_name"],
+                        )
                     )
-                )
         except Exception as e:
             logger.error(str(e).strip())
 
@@ -132,12 +136,13 @@ class JobsDb:
 
         newJobSql = (
             "INSERT INTO job "
-            "(user, type, uuid, status, time_start, time_complete, apitoken, spec) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
+            "(user, type, name, uuid, status, time_start, time_complete, apitoken, spec) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
         )
         newJobInfo = (
             conf["configjob"]["metadata"]["username"],
             conf["configjob"]["kind"],
+            conf["configjob"]["metadata"]["name"],
             conf["configjob"]["metadata"]["jobId"],
             'init',
             None,
@@ -235,7 +240,7 @@ class JobsDb:
         try:
             self.cur.execute(
                 (
-                    "SELECT id from session WHERE username=%s"
+                    "SELECT id from `session` WHERE username=%s"
                 ),
                 (
                     username,
@@ -247,8 +252,8 @@ class JobsDb:
             if isinstance(session_id, int):
                 self.cur.execute(
                     (
-                        "UPDATE session "
-                        "SET token_value=%s, token_refreshed=%s, password=%s "
+                        "UPDATE `session` "
+                        "SET token_value=%s, last_login=%s, password=%s "
                         "WHERE username=%s"
                     ),
                     (
@@ -261,8 +266,8 @@ class JobsDb:
             else:
                 self.cur.execute(
                     (
-                        "INSERT INTO session "
-                        "(username, token_value, token_refreshed, password) "
+                        "INSERT INTO `session` "
+                        "(username, token_value, last_login, password) "
                         "VALUES (%s, %s, %s, %s) "
                     ),
                     (
@@ -278,12 +283,38 @@ class JobsDb:
         self.close_db_connection()
         return status
 
+    def session_logout(self, username):
+        # This function assumes the logout action is already authorized
+        self.open_db_connection()
+        status = "ok"
+        try:
+            self.cur.execute(
+                (
+                    "UPDATE `session` "
+                    "SET token_value=%s, password=%s "
+                    "WHERE username=%s"
+                ),
+                (
+                    '',
+                    '',
+                    username,
+                )
+            )
+            if self.cur.rowcount < 1:
+                status = "warning"
+                logger.warning('No record in session table found for user {}'.format(username))
+        except Exception as e:
+            logger.error(str(e).strip())
+            status = "error"
+        self.close_db_connection()
+        return status
+
     def get_password(self, username):
         self.open_db_connection()
         try:
             self.cur.execute(
                 (
-                    "SELECT password from session WHERE username=%s"
+                    "SELECT password from `session` WHERE username=%s"
                 ),
                 (
                     username,
