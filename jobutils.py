@@ -131,6 +131,66 @@ class JobsDb:
         self.close_db_connection()
         return rowId
 
+    def job_status(self, username, job_id):
+        self.open_db_connection()
+        request_status = 'ok'
+        msg = ''
+        job_info_list = []
+        try:
+            if job_id == "all":
+                self.cur.execute(
+                    (
+                    "SELECT type, name, uuid, status, time_start, time_complete "
+                    "FROM job WHERE user = %s ORDER BY time_start DESC"
+                    ),
+                    (
+                    username,
+                    )
+                )
+                job_info = None
+                for (type, name, uuid, status, time_start, time_complete) in self.cur:
+                    job_info = {}
+                    job_info["job_type"] = type
+                    job_info["job_name"] = name
+                    job_info["job_id"] = uuid
+                    job_info["job_status"] = status
+                    job_info["job_time_start"] = time_start
+                    job_info["job_time_complete"] = time_complete
+                    job_info_list.append(job_info)
+                if job_info == None:
+                    request_status = 'error'
+                    msg = 'Error retrieving all job statuses for user {}'.format(username)
+            else:
+                self.cur.execute(
+                    (
+                    "SELECT type, name, uuid, status, time_start, time_complete "
+                    "FROM job "
+                    "WHERE user = %s AND uuid = %s LIMIT 1"
+                    ),
+                    (
+                        username,
+                        job_id
+                    )
+                )
+                job_info = None
+                for (type, name, uuid, status, time_start, time_complete) in self.cur:
+                    job_info = {}
+                    job_info["job_type"] = type
+                    job_info["job_name"] = name
+                    job_info["job_id"] = uuid
+                    job_info["job_status"] = status
+                    job_info["job_time_start"] = time_start
+                    job_info["job_time_complete"] = time_complete
+                    job_info_list.append(job_info)
+                if job_info == None:
+                    request_status = 'error'
+                    msg = 'Error retrieving job status for user {}, job_id {}'.format(username, job_id)
+        except:
+            request_status = 'error'
+            msg = 'Error retrieving job status for user {}, job_id {}'.format(username, job_id)
+        self.close_db_connection()
+        return [job_info_list, request_status, msg]
+
     def register_job(self, conf):
         self.open_db_connection()
 
@@ -328,6 +388,7 @@ class JobsDb:
         except Exception as e:
             logger.error(str(e).strip())
         self.close_db_connection()
+
 
 # Get global instance of the job handler database interface
 JOBSDB = JobsDb(

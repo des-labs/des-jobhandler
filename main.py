@@ -186,27 +186,22 @@ class JobHandler(BaseHandler):
 
     # API endpoint: /job/status
     def post(self):
-        username = self.getarg("username")
-        job = self.getarg("job")
-        jobid = self.getarg("jobid")
-        conf = {"job": job}
-        conf["namespace"] = jobutils.get_namespace()
-        conf["job_name"] = jobutils.get_job_name(conf["job"], jobid, username)
-        status,body = kubejob.status_job(conf)
-        if status == "ok":
-            out = dict(
-                status=status,
-                message="",
-                active=body.active,
-                succeeded=body.succeeded,
-                failed=body.failed,
-            )
-        else:
-            out = dict(
-                status="error",
-                message="Job {} id:{} not found".format(job, jobid),
-            )
-        self.write(json.dumps(out, indent=4))
+        # TODO: Use role-based access control to allow a username parameter different
+        #       from the authenticated user. For example, a user with role "admin" could
+        #       obtain job status for any user.
+        username = self._token_decoded["username"]
+        job_id = self.getarg("job-id")
+        job_info_list, status, msg = JOBSDB.job_status(username, job_id)
+        out = dict(
+            status=status,
+            message=msg,
+            jobs=job_info_list
+        )
+        # The datetime type is not JSON serializable, so convert to string
+        def myconverter(o):
+            if isinstance(o, datetime.datetime):
+                return o.__str__()
+        self.write(json.dumps(out, indent=4, default = myconverter))
 
 
 # ## This is the one providing a list of hidden/allowed resources
