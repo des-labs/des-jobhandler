@@ -162,7 +162,7 @@
 				"method": "PUT",
 				"header": [],
 				"url": {
-					"raw": "{{api_base_url}}/job/submit?username={{username}}&job=query&query=\"SELECT RA, DEC, MAG_AUTO_G, TILENAME from Y3_GOLD_2_2 sample(0.001)\"&quick=true",
+					"raw": "{{api_base_url}}/job/submit?username={{username}}&job=query&query=\"SELECT RA, DEC, MAG_AUTO_G, TILENAME from Y3_GOLD_2_2 FETCH FIRST 5 ROWS ONLY\"&quick=true",
 					"host": [
 						"{{api_base_url}}"
 					],
@@ -181,7 +181,7 @@
 						},
 						{
 							"key": "query",
-							"value": "\"SELECT RA, DEC, MAG_AUTO_G, TILENAME from Y3_GOLD_2_2 sample(0.001)\""
+							"value": "\"SELECT RA, DEC, MAG_AUTO_G, TILENAME from Y3_GOLD_2_2 FETCH FIRST 5 ROWS ONLY\""
 						},
 						{
 							"key": "quick",

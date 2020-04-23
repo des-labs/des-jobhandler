@@ -247,11 +247,9 @@ class JobStart(BaseHandler):
             })
             return
         apitoken = data["apitoken"]
-        rowId = JOBSDB.validate_apitoken(apitoken)
-        if isinstance(rowId, int):
-            error_msg = JOBSDB.update_job_start(rowId)
-            if error_msg is not None:
-                logger.info(error_msg)
+        error_msg = JOBSDB.update_job_start(apitoken)
+        if error_msg is not None:
+            logger.error(error_msg)
 
 
 class JobComplete(BaseHandler):
@@ -268,15 +266,13 @@ class JobComplete(BaseHandler):
             })
             return
         apitoken = data["apitoken"]
-        rowId = JOBSDB.validate_apitoken(apitoken)
         error_msg = None
-        if isinstance(rowId, int):
-            try:
-                error_msg = JOBSDB.update_job_complete(rowId, data["response"])
-            except:
-                pass
-            if error_msg is not None:
-                logger.info(error_msg)
+        try:
+            error_msg = JOBSDB.update_job_complete(apitoken, data["response"])
+        except:
+            pass
+        if error_msg is not None:
+            logger.error(error_msg)
 
 
 class DebugTrigger(BaseHandler):

@@ -52,3 +52,6 @@ spec:
           postStart:
             exec:
               command: ["python", "init.py"]
+          preStop:
+            exec:
+              command: ["python", "prestop.py"]

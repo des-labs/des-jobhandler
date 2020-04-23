@@ -104,7 +104,7 @@ class JobsDb:
                     roles_added.append(role)
                     self.cur.execute(
                         (
-                            "INSERT INTO role "
+                            "INSERT INTO `role` "
                             "(username, role_name) "
                             "VALUES (%s, %s)"
                         ),
@@ -121,7 +121,7 @@ class JobsDb:
     def validate_apitoken(self, apitoken):
         self.open_db_connection()
         self.cur.execute(
-            "SELECT id FROM job WHERE apitoken = '{}' LIMIT 1".format(
+            "SELECT id FROM `job` WHERE apitoken = '{}' LIMIT 1".format(
                 apitoken)
         )
         # If there is a result, assume only one exists and return the record id, otherwise return None
@@ -141,7 +141,7 @@ class JobsDb:
                 self.cur.execute(
                     (
                     "SELECT type, name, uuid, status, time_start, time_complete "
-                    "FROM job WHERE user = %s ORDER BY time_start DESC"
+                    "FROM `job` WHERE user = %s ORDER BY time_start DESC"
                     ),
                     (
                     username,
@@ -164,7 +164,7 @@ class JobsDb:
                 self.cur.execute(
                     (
                     "SELECT type, name, uuid, status, time_start, time_complete "
-                    "FROM job "
+                    "FROM `job` "
                     "WHERE user = %s AND uuid = %s LIMIT 1"
                     ),
                     (
@@ -195,9 +195,9 @@ class JobsDb:
         self.open_db_connection()
 
         newJobSql = (
-            "INSERT INTO job "
-            "(user, type, name, uuid, status, time_start, time_complete, apitoken, spec) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            "INSERT INTO `job` "
+            "(user, type, name, uuid, status, apitoken, spec) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)"
         )
         newJobInfo = (
             conf["configjob"]["metadata"]["username"],
@@ -205,8 +205,6 @@ class JobsDb:
             conf["configjob"]["metadata"]["name"],
             conf["configjob"]["metadata"]["jobId"],
             'init',
-            None,
-            None,
             conf["configjob"]["metadata"]["apiToken"],
             json.dumps(conf["configjob"]["spec"])
         )
@@ -214,14 +212,16 @@ class JobsDb:
         if self.cur.lastrowid:
             if conf["configjob"]["kind"] == 'query':
                 newQuerySql = (
-                    "INSERT INTO query "
-                    "(job_id, query, file_info) "
-                    "VALUES (%s, %s, %s)"
+                    "INSERT INTO `query` "
+                    "(job_id, query, files, sizes, data) "
+                    "VALUES (%s, %s, %s, %s, %s)"
                 )
                 newQueryInfo = (
                     self.cur.lastrowid,
                     conf["configjob"]["spec"]["inputs"]["queryString"],
-                    '{}'
+                    '[]',
+                    '[]',
+                    '{}',
                 )
                 self.cur.execute(newQuerySql, newQueryInfo)
             elif conf["configjob"]["kind"] == 'test':
@@ -231,63 +231,107 @@ class JobsDb:
             logger.error("Error inserting new job.")
         self.close_db_connection()
 
-    def update_job_start(self, rowId):
-        self.open_db_connection()
-        updateJobSql = (
-            "UPDATE job "
-            "SET status=%s, time_start=%s "
-            "WHERE id=%s"
-        )
-        updateJobInfo = (
-            'started',
-            datetime.datetime.utcnow(),
-            rowId
-        )
-        self.cur.execute(updateJobSql, updateJobInfo)
+    def update_job_start(self, apitoken):
         error_msg = None
+        rowId = self.validate_apitoken(apitoken)
+        if not isinstance(rowId, int):
+            error_msg = 'Invalid apitoken'
+            return error_msg
+        self.open_db_connection()
+        try:
+            updateJobSql = (
+                "UPDATE `job` "
+                "SET status=%s, time_start=%s "
+                "WHERE id=%s"
+            )
+            updateJobInfo = (
+                'started',
+                datetime.datetime.utcnow(),
+                rowId
+            )
+            self.cur.execute(updateJobSql, updateJobInfo)
+        except Exception as e:
+            error_msg = str(e).strip()
+            self.close_db_connection()
+            return error_msg
         if self.cur.rowcount != 1:
             error_msg = 'Error updating job record'
         self.close_db_connection()
         return error_msg
 
-    def update_job_complete(self, rowId, response):
-        self.open_db_connection()
-        updateJobSql = (
-            "UPDATE job "
-            "SET status=%s, time_complete=%s "
-            "WHERE id=%s"
-        )
-        updateJobInfo = (
-            'complete',
-            datetime.datetime.utcnow(),
-            rowId
-        )
-        self.cur.execute(updateJobSql, updateJobInfo)
+    def update_job_complete(self, apitoken, response):
         error_msg = None
+        rowId = self.validate_apitoken(apitoken)
+        if not isinstance(rowId, int):
+            error_msg = 'Invalid apitoken'
+            return error_msg
+        self.open_db_connection()
+        try:
+            response_status = response["status"]
+            if response_status == "ok":
+                job_status = "success"
+            elif response_status == "error":
+                job_status = "failure"
+            else:
+                job_status = "unknown"
+        except:
+            job_status = "unknown"
+        try:
+            updateJobSql = (
+                "UPDATE `job` "
+                "SET status=%s, time_complete=%s, msg=%s "
+                "WHERE id=%s"
+            )
+            updateJobInfo = (
+                job_status,
+                datetime.datetime.utcnow(),
+                response['msg'],
+                rowId
+            )
+            self.cur.execute(updateJobSql, updateJobInfo)
+        except Exception as e:
+            error_msg = str(e).strip()
+            self.close_db_connection()
+            return error_msg
         if self.cur.rowcount != 1:
             error_msg = 'Error updating job record {}'.format(rowId)
         else:
             selectJobSql = (
-                "SELECT user,type,uuid from job WHERE id=%s"
+                "SELECT user,type,uuid from `job` WHERE id=%s"
             )
             selectJobInfo = (
                 rowId,
             )
             self.cur.execute(selectJobSql, selectJobInfo)
             for (user, type, uuid) in self.cur:
+                if job_status == "unknown":
+                    logger.warning('Job {} completion report did not include a final status.'.format(uuid))
                 conf = {"job": type}
                 conf['namespace'] = get_namespace()
                 conf["job_name"] = get_job_name(type, uuid, user)
                 conf["cm_name"] = get_job_configmap_name(type, uuid, user)
                 kubejob.delete_job(conf)
-                if type == 'query':
+                if type == 'test':
                     updateQuerySql = (
-                        "UPDATE query "
-                        "SET file_info=%s "
+                        "UPDATE `job` "
+                        "SET msg=%s "
+                        "WHERE id=%s"
+                    )
+                    updateQueryInfo = (
+                        response['output'],
+                        rowId
+                    )
+                    self.cur.execute(updateQuerySql, updateQueryInfo)
+                elif type == 'query':
+                    updateQuerySql = (
+                        "UPDATE `query` "
+                        "SET files=%s, sizes=%s, data=%s "
                         "WHERE job_id=%s"
                     )
                     updateQueryInfo = (
-                        json.dumps(response),
+                        json.dumps(response["files"]),
+                        json.dumps(response["sizes"]),
+                        json.dumps(response["data"]),
                         rowId
                     )
                     self.cur.execute(updateQuerySql, updateQueryInfo)
