@@ -51,6 +51,45 @@
 			"response": []
 		},
 		{
+			"name": "dev/db/wipe",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "0061a010-069d-4c58-866e-17f022f08458",
+						"exec": [
+							"var data = pm.response.json();",
+							"//console.log(data.token);",
+							"pm.environment.set(\"auth_token\", data.token);"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "{{api_base_url}}/dev/db/wipe?password={{db_passwd}}",
+					"host": [
+						"{{api_base_url}}"
+					],
+					"path": [
+						"dev",
+						"db",
+						"wipe"
+					],
+					"query": [
+						{
+							"key": "password",
+							"value": "{{db_passwd}}"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
 			"name": "job/submit (task: test)",
 			"event": [
 				{
