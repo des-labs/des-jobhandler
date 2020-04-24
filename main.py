@@ -9,7 +9,6 @@ import kubejob
 import dbutils
 from jwtutils import authenticated
 from jwtutils import encode_info
-from test import tests
 import envvars
 import jobutils
 
@@ -115,8 +114,6 @@ class ProfileUpdatePasswordHandler(BaseHandler):
         else:
             response['status'] = 'error'
             response['message'] = 'User info to update must belong to the authenticated user.'
-        response['status'] = status
-        response['message'] = message
         self.flush()
         self.write(response)
         self.finish()
@@ -179,22 +176,44 @@ class JobHandler(BaseHandler):
     # API endpoint: /job/submit
     def put(self):
         body = {k: self.get_argument(k) for k in self.request.arguments}
-        st,msg,jobid = jobutils.submit_job(body)
-        logger.info(msg)
-        out = dict(status=st, message=msg, jobid=jobid)
+        # If username is not specified, assume it is the authenticated user
+        try:
+            username = body["username"].lower()
+        except:
+            username = self._token_decoded["username"]
+        # TODO: Allow users with "admin" role to specify any username
+        if username == self._token_decoded["username"]:
+            status,message,jobid = jobutils.submit_job(body)
+        else:
+            status = 'error'
+            message = 'Username specified must belong to the authenticated user.'
+        logger.info(message)
+        out = dict(status=status, message=message, jobid=jobid)
         self.write(json.dumps(out, indent=4))
 
     # API endpoint: /job/delete
     def delete(self):
-        username = self.getarg("username")
-        job = self.getarg("job")
-        jobid = self.getarg("jobid")
-        conf = {"job": job}
-        conf["namespace"] = jobutils.get_namespace()
-        conf["job_name"] = jobutils.get_job_name(conf["job"], jobid, username)
-        conf["cm_name"] = jobutils.get_job_configmap_name(conf["job"], jobid, username)
-        kubejob.delete_job(conf)
-        out = dict(msg="done")
+        # If username is not specified, assume it is the authenticated user
+        try:
+            username = self.getarg("username").lower()
+        except:
+            username = self._token_decoded["username"]
+        # TODO: Allow users with "admin" role to specify any username
+        if username == self._token_decoded["username"]:
+            job = self.getarg("job")
+            # TODO: Allow specifying jobid "all" to delete all of user's jobs
+            jobid = self.getarg("jobid")
+            conf = {"job": job}
+            conf["namespace"] = jobutils.get_namespace()
+            conf["job_name"] = jobutils.get_job_name(conf["job"], jobid, username)
+            conf["cm_name"] = jobutils.get_job_configmap_name(conf["job"], jobid, username)
+            kubejob.delete_job(conf)
+            status = 'ok'
+            message = 'Job "{}" deleted.'.format(jobid)
+        else:
+            status = 'error'
+            message = 'Username specified must be the authenticated user.'
+        out = dict(status=status, message=message, jobid=jobid)
         self.write(json.dumps(out, indent=4))
 
     # API endpoint: /job/status
