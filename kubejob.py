@@ -43,6 +43,8 @@ def job(input):
         configmap_name=input["cm_name"],
         pvc_name=input["configjob"]["metadata"]["persistentVolumeClaim"],
         username=input["configjob"]["metadata"]["username"],
+        resource_limit_cpu=input["resource_limit_cpu"],
+        resource_request_cpu=input["resource_request_cpu"],
     ))
 
     return body

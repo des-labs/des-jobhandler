@@ -518,6 +518,10 @@ def submit_job(params):
     ))
     conf["configjob"]["spec"] = {}
 
+    # TODO: Variate the resource requests/limits between the task types
+    conf["resource_limit_cpu"] = 1
+    conf["resource_request_cpu"] = 1
+
     # Custom configurations depending on the task type:
     if job_type == 'test':
         conf["image"] = envvars.DOCKER_IMAGE_TASK_TEST
