@@ -413,6 +413,26 @@ class JobsDb:
         self.close_db_connection()
         return status
 
+    def get_user_roles(self, username):
+        self.open_db_connection()
+        roles = []
+        try:
+            self.cur.execute(
+                (
+                    "SELECT role_name from `role` WHERE username=%s"
+                ),
+                (
+                    username,
+                )
+            )
+            for (role_name,) in self.cur:
+                if isinstance(role_name, str):
+                    roles.append(role_name)
+        except Exception as e:
+            logger.error(str(e).strip())
+        self.close_db_connection()
+        return roles
+
     def get_password(self, username):
         self.open_db_connection()
         try:

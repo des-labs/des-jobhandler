@@ -65,6 +65,7 @@ class ProfileHandler(BaseHandler):
         response["username"] = decoded["username"]
         response["email"] = decoded["email"]
         response["db"] = decoded["db"]
+        response["roles"] = decoded["roles"]
         response["ttl"] = ttl
         self.flush()
         self.write(response)
@@ -143,7 +144,8 @@ class LoginHandler(BaseHandler):
             self.finish()
             return
         name, last, email = dbutils.get_basic_info(username)
-        encoded = encode_info(name, last, username, email, db, envvars.JWT_TTL_SECONDS)
+        roles = JOBSDB.get_user_roles(username)
+        encoded = encode_info(name, last, username, email, db, roles, envvars.JWT_TTL_SECONDS)
 
 
         response["status"] = "ok"
@@ -152,6 +154,7 @@ class LoginHandler(BaseHandler):
         response["lastname"] = last
         response["email"] = email
         response["db"] = db
+        response["roles"] = roles
         response["token"] = encoded.decode(encoding='UTF-8')
 
 
