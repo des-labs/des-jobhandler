@@ -3,6 +3,7 @@ import os
 # Import and initialize environment variable values
 DOCKER_IMAGE_TASK_TEST = os.environ['DOCKER_IMAGE_TASK_TEST']
 DOCKER_IMAGE_TASK_QUERY = os.environ['DOCKER_IMAGE_TASK_QUERY']
+DOCKER_IMAGE_TASK_CUTOUT = os.environ['DOCKER_IMAGE_TASK_CUTOUT']
 API_BASE_URL = os.environ['API_BASE_URL']
 PVC_NAME_BASE = os.environ['PVC_NAME_BASE']
 MYSQL_HOST = os.environ['MYSQL_HOST']

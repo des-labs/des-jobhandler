@@ -529,6 +529,9 @@ def submit_job(params):
         conf["configjob"]["spec"] = yaml.safe_load(template.render(
             taskDuration=int(params["time"])
         ))
+    elif job_type == 'cutout':
+        conf["image"] = envvars.DOCKER_IMAGE_TASK_CUTOUT
+        conf["command"] = ["python3", "task.py"]
     elif job_type == 'query':
         conf["image"] = envvars.DOCKER_IMAGE_TASK_QUERY
         conf["command"] = ["python3", "task.py"]
