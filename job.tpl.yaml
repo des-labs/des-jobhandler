@@ -51,10 +51,10 @@ spec:
         lifecycle:
           postStart:
             exec:
-              command: ["python", "init.py"]
+              command: ["python3", "init.py"]
           preStop:
             exec:
-              command: ["python", "prestop.py"]
+              command: ["python3", "prestop.py"]
         resources:
           limits:
             cpu: {{ resource_limit_cpu}}

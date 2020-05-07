@@ -232,6 +232,76 @@
 			"response": []
 		},
 		{
+			"name": "job/submit (task: cutout)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "da718185-85e7-4519-81f2-7d3a9cb46632",
+						"exec": [
+							"var data = pm.response.json();",
+							"//console.log(data.token);",
+							"pm.environment.set(\"job_id\", data.jobid);"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "PUT",
+				"header": [],
+				"url": {
+					"raw": "{{api_base_url}}/job/submit?username={{username}}&job=cutout&ra=0.1&dec=0.1&make_fits=gri&xsize=1.0&ysize=1.0&colors=g,r,i&release=Y6A1",
+					"host": [
+						"{{api_base_url}}"
+					],
+					"path": [
+						"job",
+						"submit"
+					],
+					"query": [
+						{
+							"key": "username",
+							"value": "{{username}}"
+						},
+						{
+							"key": "job",
+							"value": "cutout"
+						},
+						{
+							"key": "ra",
+							"value": "0.1"
+						},
+						{
+							"key": "dec",
+							"value": "0.1"
+						},
+						{
+							"key": "make_fits",
+							"value": "gri"
+						},
+						{
+							"key": "xsize",
+							"value": "1.0"
+						},
+						{
+							"key": "ysize",
+							"value": "1.0"
+						},
+						{
+							"key": "colors",
+							"value": "g,r,i"
+						},
+						{
+							"key": "release",
+							"value": "Y6A1"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
 			"name": "job/status",
 			"event": [
 				{

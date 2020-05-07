@@ -12,6 +12,9 @@ import logging
 from cryptography.fernet import Fernet
 import base64
 
+STATUS_OK = 'ok'
+STATUS_ERROR = 'error'
+
 log_format = "%(asctime)s  %(name)8s  %(levelname)5s  %(message)s"
 logging.basicConfig(
     level=logging.INFO,
@@ -511,6 +514,8 @@ def get_job_template(job_type):
     return Template(templateText)
 
 def submit_job(params):
+    status = STATUS_OK
+    msg = ''
     # Common configurations to all tasks types:
     username = params["username"].lower()
     job_type = params["job"]
@@ -552,6 +557,44 @@ def submit_job(params):
     elif job_type == 'cutout':
         conf["image"] = envvars.DOCKER_IMAGE_TASK_CUTOUT
         conf["command"] = ["python3", "task.py"]
+
+        # Process job configuration parameters.
+        coadd = []
+        ra = []
+        dec = []
+        try:
+            # Determine if the cutout is coadd or ra/dec based.
+            if all(k in params for k in ("ra", "dec")):
+                ra = params["ra"]
+                dec = params["dec"]
+            elif "coadd" in params:
+                coadd = params["coadd"]
+        except:
+            pass
+
+        if (not ra or not dec) and not coadd:
+            status = STATUS_ERROR
+            msg = 'Cutout job requires RA/DEC coordinates or Coadd IDs.'
+            return status,msg,job_id
+
+        conf["configjob"]["spec"] = yaml.safe_load(template.render(
+            ra=ra,
+            dec=dec,
+            coadd=coadd,
+            make_fits=params["make_fits"],
+            xsize=params["xsize"],
+            ysize=params["ysize"],
+            colors=params["colors"].upper(),
+            db=params["db"].upper(),
+            release=params["release"]
+            # return_list=params["return_list"],
+            # make_pngs=params["make_pngs"],
+            # make_tiffs=params["make_tiffs"],
+            # make_rgbs=params["make_rgbs"],
+            # make_rgbs_stiff=params["make_rgbs_stiff"],
+            # colors_stiff=params["colors_stiff"]
+    ))
+
     elif job_type == 'query':
         conf["image"] = envvars.DOCKER_IMAGE_TASK_QUERY
         conf["command"] = ["python3", "task.py"]
@@ -570,12 +613,13 @@ def submit_job(params):
         job_id=''
 
     if job_id == '':
+        status = STATUS_ERROR
         msg = 'Job type "{}" is not defined'.format(job_type)
+        return status,msg,job_id
     else:
         msg = "Job:{} id:{} by:{}".format(job_type, job_id, username)
 
     kubejob.create_configmap(conf)
     kubejob.create_job(conf)
-    status = "ok"
     JOBSDB.register_job(conf)
     return status,msg,job_id

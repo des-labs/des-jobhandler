@@ -184,6 +184,7 @@ class JobHandler(BaseHandler):
             username = body["username"].lower()
         except:
             username = self._token_decoded["username"]
+        body["db"] = self._token_decoded["db"]
         # TODO: Allow users with "admin" role to specify any username
         if username == self._token_decoded["username"]:
             status,message,jobid = jobutils.submit_job(body)
