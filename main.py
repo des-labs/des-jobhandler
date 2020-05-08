@@ -374,6 +374,12 @@ if __name__ == "__main__":
     # if envvars.DROP_TABLES == True:
     #     JOBSDB.reinitialize_tables()
 
+    # Apply any database updates
+    try:
+        JOBSDB.update_db_tables()
+    except Exception as e:
+        logger.error(str(e).strip())
+
     app = make_app(basePath=basePath)
     app.listen(servicePort)
     logger.info('Running at localhost:{}{}'.format(servicePort,basePath))

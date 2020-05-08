@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS job(
+CREATE TABLE IF NOT EXISTS `job`(
 	`id` int NOT NULL AUTO_INCREMENT,
 	`user` varchar(50) NOT NULL,
 	`type` varchar(50) NOT NULL,
@@ -10,10 +10,11 @@ CREATE TABLE IF NOT EXISTS job(
 	`apitoken` char(32) NOT NULL,
 	`spec` MEDIUMTEXT NOT NULL DEFAULT '',
 	`msg` MEDIUMTEXT NOT NULL DEFAULT '',
+	`user_agent` TEXT NOT NULL DEFAULT '',
 	PRIMARY KEY (`id`), UNIQUE KEY `id` (`id`)
 )
 #---
-CREATE TABLE IF NOT EXISTS session(
+CREATE TABLE IF NOT EXISTS `session`(
 	`id` int NOT NULL AUTO_INCREMENT,
 	`username` varchar(50) NOT NULL,
 	`last_login` datetime DEFAULT 0,
@@ -24,14 +25,14 @@ CREATE TABLE IF NOT EXISTS session(
 	UNIQUE KEY `username` (`username`)
 )
 #---
-CREATE TABLE IF NOT EXISTS role(
+CREATE TABLE IF NOT EXISTS `role`(
 	`id` int NOT NULL AUTO_INCREMENT,
 	`username` varchar(50) NOT NULL,
 	`role_name` text NOT NULL,
 	PRIMARY KEY (`id`), UNIQUE KEY `id` (`id`)
 )
 #---
-CREATE TABLE IF NOT EXISTS query(
+CREATE TABLE IF NOT EXISTS `query`(
 	`id` int NOT NULL AUTO_INCREMENT,
 	`job_id` int NOT NULL,
 	`query` MEDIUMTEXT NOT NULL,
@@ -39,4 +40,11 @@ CREATE TABLE IF NOT EXISTS query(
 	`sizes` MEDIUMTEXT NOT NULL,
 	`data` MEDIUMTEXT NOT NULL,
 	PRIMARY KEY (`id`), UNIQUE KEY `id` (`id`)
+)
+#---
+CREATE TABLE IF NOT EXISTS `meta`(
+	`Lock` char(1) NOT NULL,
+	`schema_version` int NOT NULL,
+	constraint PK_T1 PRIMARY KEY (`Lock`),
+	constraint CK_T1_Locked CHECK (`Lock`='X')
 )

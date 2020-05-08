@@ -14,6 +14,7 @@ import base64
 
 STATUS_OK = 'ok'
 STATUS_ERROR = 'error'
+DB_SCHEMA_VERSION = 2
 
 log_format = "%(asctime)s  %(name)8s  %(levelname)5s  %(message)s"
 logging.basicConfig(
@@ -79,8 +80,58 @@ class JobsDb:
             'job',
             'query',
             'role',
-            'session'
+            'session',
+            'meta'
         ]
+
+    def parse_sql_commands(self, sql_file):
+        msg = ''
+        status = STATUS_OK
+        commands = []
+        try:
+            with open(sql_file) as f:
+                dbUpdateSql = f.read()
+            #Individual SQL commands must be separated by the custom delimiter '#---'
+            for sqlCommand in dbUpdateSql.split('#---'):
+                if len(sqlCommand) > 0 and not sqlCommand.isspace():
+                    commands.append(sqlCommand)
+        except Exception as e:
+            msg = str(e).strip()
+            logger.error(msg)
+            status = STATUS_ERROR
+        return [commands, status, msg]
+
+
+    def update_db_tables(self):
+        self.open_db_connection()
+        try:
+            # Get currently applied database schema version
+            self.cur.execute(
+                "SELECT `schema_version` FROM `meta` LIMIT 1"
+            )
+            current_schema_version = None
+            for (schema_version,) in self.cur:
+                current_schema_version = schema_version
+            logger.info('current_schema_version: {}'.format(current_schema_version))
+            logger.info('DB_SCHEMA_VERSION: {}'.format(DB_SCHEMA_VERSION))
+            # Update the database schema if the versions do not match
+            if current_schema_version < DB_SCHEMA_VERSION:
+                # Sequentially apply each DB update until the schema is fully updated
+                for db_update_idx in range(current_schema_version+1, DB_SCHEMA_VERSION+1, 1):
+                    sql_file = os.path.join(os.path.dirname(__file__), "db_schema_update", "db_schema_update.{}.sql".format(db_update_idx))
+                    commands, status, msg = self.parse_sql_commands(sql_file)
+                    for cmd in commands:
+                        # Apply incremental update
+                        self.cur.execute(cmd)
+                        # Update `meta` table to match
+                        self.cur.execute(
+                            "UPDATE `meta` SET `schema_version`={}".format(db_update_idx)
+                        )
+        except Exception as e:
+            logger.error(str(e).strip())
+
+        self.close_db_connection()
+
 
     def reinitialize_tables(self):
         self.open_db_connection()
@@ -88,14 +139,18 @@ class JobsDb:
             # Drop all existing database tables
             for table in self.get_table_names():
                 self.cur.execute("DROP TABLE IF EXISTS {}".format(table))
-            # Create the database tables from the schema file. Individual SQL
-            # commands must be separated by the custom delimiter '#---'
-            with open(os.path.join(os.path.dirname(__file__), "db_schema.sql")) as f:
-                dbSchema = f.read()
-            # Construct the database tables
-            for sqlCommand in dbSchema.split('#---'):
-                if len(sqlCommand) > 0 and not sqlCommand.isspace():
-                    self.cur.execute(sqlCommand)
+
+            # Create the database tables from the schema file.
+            sql_file = os.path.join(os.path.dirname(__file__), "db_schema.sql")
+            commands, status, msg = self.parse_sql_commands(sql_file)
+            for cmd in commands:
+                self.cur.execute(cmd)
+
+            # Set the database schema version
+            self.cur.execute(
+                "INSERT INTO `meta` (`schema_version`) VALUES ({})".format(DB_SCHEMA_VERSION)
+            )
+
             # Initialize the database tables with info such as admin accounts
             # with open(os.path.join(os.path.dirname(__file__), "db_init", "db_init.yaml")) as f:
             with open(os.path.join(envvars.CONFIG_FOLDER_ROOT, "config", "db_init.yaml")) as f:
