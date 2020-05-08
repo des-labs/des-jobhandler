@@ -185,6 +185,10 @@ class JobHandler(BaseHandler):
         except:
             username = self._token_decoded["username"]
         body["db"] = self._token_decoded["db"]
+        try:
+            body["user_agent"] = self.request.headers["User-Agent"]
+        except:
+            body["user_agent"] = ''
         # TODO: Allow users with "admin" role to specify any username
         if username == self._token_decoded["username"]:
             status,message,jobid = jobutils.submit_job(body)

@@ -14,7 +14,7 @@ import base64
 
 STATUS_OK = 'ok'
 STATUS_ERROR = 'error'
-DB_SCHEMA_VERSION = 2
+DB_SCHEMA_VERSION = 3
 
 log_format = "%(asctime)s  %(name)8s  %(levelname)5s  %(message)s"
 logging.basicConfig(
@@ -112,8 +112,6 @@ class JobsDb:
             current_schema_version = None
             for (schema_version,) in self.cur:
                 current_schema_version = schema_version
-            logger.info('current_schema_version: {}'.format(current_schema_version))
-            logger.info('DB_SCHEMA_VERSION: {}'.format(DB_SCHEMA_VERSION))
             # Update the database schema if the versions do not match
             if current_schema_version < DB_SCHEMA_VERSION:
                 # Sequentially apply each DB update until the schema is fully updated
@@ -254,8 +252,8 @@ class JobsDb:
 
         newJobSql = (
             "INSERT INTO `job` "
-            "(user, type, name, uuid, status, apitoken, spec) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)"
+            "(user, type, name, uuid, status, apitoken, spec, user_agent) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
         )
         newJobInfo = (
             conf["configjob"]["metadata"]["username"],
@@ -264,7 +262,8 @@ class JobsDb:
             conf["configjob"]["metadata"]["jobId"],
             'init',
             conf["configjob"]["metadata"]["apiToken"],
-            json.dumps(conf["configjob"]["spec"])
+            json.dumps(conf["configjob"]["spec"]),
+            conf["user_agent"]
         )
         self.cur.execute(newJobSql, newJobInfo)
         if self.cur.lastrowid:
@@ -581,6 +580,7 @@ def submit_job(params):
     conf["cm_name"] = get_job_configmap_name(conf["job"], job_id, username)
     conf["job_name"] = get_job_name(conf["job"], job_id, username)
     conf["host_network"] = envvars.HOST_NETWORK
+    conf["user_agent"] = params["user_agent"]
     template = get_job_template(job_type)
     base_template = get_job_template_base()
     # Render the base YAML template for the job configuration data structure

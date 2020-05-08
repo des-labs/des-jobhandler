@@ -43,8 +43,8 @@ CREATE TABLE IF NOT EXISTS `query`(
 )
 #---
 CREATE TABLE IF NOT EXISTS `meta`(
-	`Lock` char(1) NOT NULL,
-	`schema_version` int NOT NULL,
+	`Lock` char(1) NOT NULL DEFAULT 'X',
+	`schema_version` int NOT NULL DEFAULT 0,
 	constraint PK_T1 PRIMARY KEY (`Lock`),
 	constraint CK_T1_Locked CHECK (`Lock`='X')
 )
