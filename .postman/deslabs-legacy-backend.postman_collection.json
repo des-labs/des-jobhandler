@@ -251,7 +251,7 @@
 				"method": "PUT",
 				"header": [],
 				"url": {
-					"raw": "{{api_base_url}}/job/submit?username={{username}}&job=cutout&ra=0.1&dec=0.1&make_fits=gri&xsize=1.0&ysize=1.0&colors=g,r,i&release=Y6A1",
+					"raw": "{{api_base_url}}/job/submit?username={{username}}&job=cutout&ra=0.2&dec=0.2&make_fits=true&xsize=0.1&ysize=0.1&colors=g,r,i&release=Y6A1",
 					"host": [
 						"{{api_base_url}}"
 					],
@@ -270,23 +270,23 @@
 						},
 						{
 							"key": "ra",
-							"value": "0.1"
+							"value": "0.2"
 						},
 						{
 							"key": "dec",
-							"value": "0.1"
+							"value": "0.2"
 						},
 						{
 							"key": "make_fits",
-							"value": "gri"
+							"value": "true"
 						},
 						{
 							"key": "xsize",
-							"value": "1.0"
+							"value": "0.1"
 						},
 						{
 							"key": "ysize",
-							"value": "1.0"
+							"value": "0.1"
 						},
 						{
 							"key": "colors",

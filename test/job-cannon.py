@@ -101,23 +101,38 @@ def monitor_test_job(job_id):
         time.sleep(3)
 
 
-def launch_multiple_jobs():
+def launch_multiple_jobs(job_type='test'):
     job_idx = 0
     loop_idx = 0
     while job_idx < config['max_jobs']:
         # Submit job with 50% probability per second
         if secrets.choice(range(0, 100)) < config['launch_probability']:
-            # Select a random job duration
-            duration = secrets.choice(
-                range(config['duration_min'], config['duration_max']))
-
-            r = requests.put(
-                '{}/job/submit'.format(config['apiBaseUrl']),
-                data={
+            if job_type == 'test':
+                # Select a random job duration
+                duration = secrets.choice(
+                    range(config['duration_min'], config['duration_max']))
+                data = {
                     'username': config['username'],
                     'job': 'test',
                     'time': duration
-                },
+                }
+            elif job_type == 'cutout':
+                # Select a random job duration
+                data = {
+                    'username': config['username'],
+                    'job': 'cutout',
+                    'ra': secrets.choice([0.1,0.2,0.3,0.4,0.5]),
+                    'dec': secrets.choice([0.1,0.2,0.3,0.4,0.5]),
+                    'make_fits': 'true',
+                    'xsize': secrets.choice([0.1,0.5,1.0,5.0]),
+                    'ysize': secrets.choice([0.1,0.5,1.0,5.0]),
+                    'colors': 'g,r,i',
+                    'release': 'Y6A1'
+                }
+
+            r = requests.put(
+                '{}/job/submit'.format(config['apiBaseUrl']),
+                data=data,
                 headers={'Authorization': 'Bearer {}'.format(
                     config['auth_token'])}
             )
@@ -135,4 +150,4 @@ if __name__ == '__main__':
     login()
     # job_id = submit_test_job()
     # monitor_test_job(job_id)
-    launch_multiple_jobs()
+    launch_multiple_jobs(job_type='cutout')

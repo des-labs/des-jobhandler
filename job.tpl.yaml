@@ -23,6 +23,14 @@ spec:
       - name: persistent-volume
         persistentVolumeClaim:
           claimName: {{ pvc_name }}
+      - name: desarchive-volume
+        readOnly: true
+        hostPath:
+          path: "/des003/desarchive"
+      - name: coadd-volume
+        readOnly: true
+        hostPath:
+          path: "/des004/coadd"
       initContainers:
       - name: init
         securityContext:
@@ -48,6 +56,10 @@ spec:
         - name: persistent-volume
           mountPath: '/home/worker/output'
           subPath: {{ username }}
+        - name: desarchive-volume
+          mountPath: '/des003/desarchive'
+        - name: coadd-volume
+          mountPath: '/des004/coadd'
         lifecycle:
           postStart:
             exec:
