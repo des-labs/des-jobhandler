@@ -117,17 +117,39 @@ def launch_multiple_jobs(job_type='test'):
                     'time': duration
                 }
             elif job_type == 'cutout':
-                # Select a random job duration
+
+                ra_dec = [
+                    [21.58813, 3.48611],
+                    [21.59813, 3.58611],
+                    [21.57813, 3.68611],
+                    [21.57213, 3.78611],
+                    [36.60840, -15.68889],
+                    [36.63840, -15.66889],
+                    [36.66840, -15.68889],
+                    [36.67840, -15.65889],
+                    [46.27566, -34.25000],
+                    [46.28566, -34.25500],
+                    [46.29566, -34.25600],
+                    [46.27566, -34.25900]
+                ]
+
                 data = {
                     'username': config['username'],
                     'job': 'cutout',
-                    'ra': secrets.choice([0.1,0.2,0.3,0.4,0.5]),
-                    'dec': secrets.choice([0.1,0.2,0.3,0.4,0.5]),
-                    'make_fits': 'true',
+                    'release': 'Y6A1',
+                    'db': 'dessci',
+                    'ra': secrets.choice(ra_dec)[0],
+                    'dec': secrets.choice(ra_dec)[1],
                     'xsize': secrets.choice([0.1,0.5,1.0,5.0]),
                     'ysize': secrets.choice([0.1,0.5,1.0,5.0]),
-                    'colors': 'g,r,i',
-                    'release': 'Y6A1'
+                    'make_fits': 'true',
+                    'make_pngs': 'true',
+                    'make_tiffs': 'true',
+                    'make_rgb_lupton': 'true',
+                    'make_rgb_stiff': 'true',
+                    'return_list': 'true',
+                    'colors_fits': 'g,r,i,z,y,a,b,c',
+                    'colors_rgb': 'g,r,i,a,b,c',
                 }
 
             r = requests.put(
@@ -150,4 +172,6 @@ if __name__ == '__main__':
     login()
     # job_id = submit_test_job()
     # monitor_test_job(job_id)
+
+
     launch_multiple_jobs(job_type='cutout')

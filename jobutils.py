@@ -11,6 +11,7 @@ import datetime
 import logging
 from cryptography.fernet import Fernet
 import base64
+import re
 
 STATUS_OK = 'ok'
 STATUS_ERROR = 'error'
@@ -554,6 +555,7 @@ def get_job_template_base():
         templateText = f.read()
     return Template(templateText)
 
+
 def get_job_template(job_type):
     # Import task config template file
     jobConfigTemplateFile = os.path.join(
@@ -567,11 +569,26 @@ def get_job_template(job_type):
         templateText = f.read()
     return Template(templateText)
 
+
 def submit_job(params):
+
+    def filter_and_order_colors(colorString):
+        # Returns a comma-separated string of color characters ordered by wavelength
+        if isinstance(colorString, str):
+            # Discard all invalid characters and delete redundancies
+            color_list_filtered_deduplicated = list(set(re.sub(r'([^grizy])', '', colorString.lower())))
+            ordered_colors = []
+            # Order the colors from long to short wavelength
+            for color in list('yzirg'):
+                if color in color_list_filtered_deduplicated:
+                    ordered_colors.append(color)
+            return ','.join(ordered_colors)
+
     status = STATUS_OK
     msg = ''
     # Common configurations to all tasks types:
     username = params["username"].lower()
+    password = JOBSDB.get_password(username)
     job_type = params["job"]
     job_id = generate_job_id()
     conf = {}
@@ -589,7 +606,7 @@ def submit_job(params):
         jobName=conf["job_name"],
         jobId=job_id,
         username=username,
-        password=JOBSDB.get_password(username),
+        password=password,
         logFilePath="./output/{}.log".format(conf["job_name"]),
         apiToken=secrets.token_hex(16),
         apiBaseUrl=envvars.API_BASE_URL,
@@ -603,53 +620,20 @@ def submit_job(params):
     conf["resource_request_cpu"] = 1
 
     # Custom configurations depending on the task type:
+
+    ############################################################################
+    # task type: test
+    ############################################################################
     if job_type == 'test':
         conf["image"] = envvars.DOCKER_IMAGE_TASK_TEST
         conf["command"] = ["python", "task.py"]
         conf["configjob"]["spec"] = yaml.safe_load(template.render(
             taskDuration=int(params["time"])
         ))
-    elif job_type == 'cutout':
-        conf["image"] = envvars.DOCKER_IMAGE_TASK_CUTOUT
-        conf["command"] = ["python3", "task.py"]
 
-        # Process job configuration parameters.
-        coadd = []
-        ra = []
-        dec = []
-        try:
-            # Determine if the cutout is coadd or ra/dec based.
-            if all(k in params for k in ("ra", "dec")):
-                ra = params["ra"]
-                dec = params["dec"]
-            elif "coadd" in params:
-                coadd = params["coadd"]
-        except:
-            pass
-
-        if (not ra or not dec) and not coadd:
-            status = STATUS_ERROR
-            msg = 'Cutout job requires RA/DEC coordinates or Coadd IDs.'
-            return status,msg,job_id
-
-        conf["configjob"]["spec"] = yaml.safe_load(template.render(
-            ra=ra,
-            dec=dec,
-            coadd=coadd,
-            make_fits=params["make_fits"],
-            xsize=params["xsize"],
-            ysize=params["ysize"],
-            colors=params["colors"].upper(),
-            db=params["db"].upper(),
-            release=params["release"]
-            # return_list=params["return_list"],
-            # make_pngs=params["make_pngs"],
-            # make_tiffs=params["make_tiffs"],
-            # make_rgbs=params["make_rgbs"],
-            # make_rgbs_stiff=params["make_rgbs_stiff"],
-            # colors_stiff=params["colors_stiff"]
-    ))
-
+    ############################################################################
+    # task type: query
+    ############################################################################
     elif job_type == 'query':
         conf["image"] = envvars.DOCKER_IMAGE_TASK_QUERY
         conf["command"] = ["python3", "task.py"]
@@ -663,6 +647,140 @@ def submit_job(params):
             queryString=params["query"],
             quickQuery=quickQuery
         ))
+
+    ############################################################################
+    # task type: cutout
+    ############################################################################
+    elif job_type == 'cutout':
+        conf["image"] = envvars.DOCKER_IMAGE_TASK_CUTOUT
+        conf["command"] = ["python3", "task.py"]
+
+        # Process job configuration parameters
+
+        # If RA/DEC are present in request parameters, ignore coadd if present.
+        # If RA/DEC are not both present, assume
+        coadd = ra = dec = []
+        if all(k in params for k in ("ra", "dec")):
+            ra = params["ra"]
+            dec = params["dec"]
+        elif "coadd" in params:
+            coadd = params["coadd"]
+        else:
+            status = STATUS_ERROR
+            msg = 'Cutout job requires RA/DEC coordinates or Coadd IDs.'
+            return status,msg,job_id
+        '''
+        # Example values for reference
+        default_args = {
+            'ra': [],
+            'dec': [],
+            'coadd': [],
+            'jobid': '',
+            'usernm': '',
+            'passwd': '',
+            'tiledir': '',
+            'outdir': '',
+            'db': 'DESSCI',
+            'release': 'Y6A1',
+            'make_tiffs': False,
+            'make_fits': False,
+            'make_pngs': False,
+            'make_rgb_lupton': False,
+            'make_rgb_stiff': False,
+            'return_list': False,
+            'xsize': 1.0,
+            'ysize': 1.0,
+            'colors_fits': 'g,r,i,z,Y',
+            'colors_rgb': 'g,r,i,z,Y',
+            'rgb_minimum': 1.0,
+            'rgb_stretch': 50.0,
+            'rgb_asinh': 10.0,
+        }
+        '''
+
+        # Initialize the job spec object
+        spec = {
+            'ra': ra,
+            'dec': dec,
+            'coadd': coadd,
+            'jobid': job_id,
+            'usernm': username,
+            'passwd': password,
+            'tiledir': 'auto',
+            'outdir': os.path.join('/home/worker/output', job_id),
+        }
+
+        if 'db' in params and params["db"].upper() in ['DESDR','DESSCI']:
+            spec['db'] = params["db"].upper()
+        else:
+            status = STATUS_ERROR
+            msg = 'Valid databases are DESDR and DESSCI'
+            return status,msg,job_id
+
+        if 'release' in params and params["release"].upper() in ['DR1','Y6A1','Y3A2','SVA1']:
+            spec['release'] = params["release"].upper()
+        else:
+            status = STATUS_ERROR
+            msg = "Valid releases are DR1,Y6A1,Y3A2,Y3A1,SVA1"
+            return status,msg,job_id
+
+        # Set color strings from request parameters
+        search_args = ['colors_rgb', 'colors_fits']
+        for string_param in search_args:
+            spec[string_param] = ''
+        for string_param in list(set(search_args).intersection(set(params))):
+            if isinstance(params[string_param], str) and len(params[string_param]) > 0:
+                spec[string_param] = params[string_param]
+        # Set default value if string is empty
+        if len(spec['colors_fits']) < 1:
+            spec['colors_fits'] = 'i'
+        # Set boolean arguments from request parameters
+        bool_param_found = False
+        search_args = ['make_tiffs', 'make_fits', 'make_pngs', 'make_rgb_lupton', 'make_rgb_stiff', 'return_list']
+        for bool_param in search_args:
+            spec[bool_param] = False
+        for bool_param in list(set(search_args).intersection(set(params))):
+            spec[bool_param] = params[bool_param] == 'true'
+            if spec[bool_param]:
+                bool_param_found = True
+        # If no booleans were set then no information was actually requested
+        if not bool_param_found:
+            status = STATUS_ERROR
+            msg = 'No information requested.'
+            return status,msg,job_id
+        # If color images were requested, colors must be specified
+        elif (spec['make_rgb_stiff'] or spec['make_rgb_lupton']) and len(spec['colors_rgb']) < 1:
+            status = STATUS_ERROR
+            msg = 'colors_rgb is required when requesting make_rgb_stiff or make_rgb_lupton'
+            return status,msg,job_id
+        # Filter and order color strings
+        for string_param in ['colors_rgb', 'colors_fits']:
+            if len(spec[string_param]) > 0:
+                spec[string_param] = filter_and_order_colors(spec[string_param])
+                # Error and return if no valid colors are specified
+                if not spec[string_param]:
+                    status = STATUS_ERROR
+                    msg = 'Valid colors are y,z,i,r,g'
+                    return status,msg,job_id
+                elif string_param == 'colors_rgb' and len(spec[string_param]) != 3:
+                    status = STATUS_ERROR
+                    msg = 'Exactly three colors must be specified for colors_rgb'
+                    return status,msg,job_id
+        # Process Lupton RGB options
+        search_args = ['rgb_minimum', 'rgb_stretch', 'rgb_asinh']
+        for rgb_param in list(set(search_args).intersection(set(params))):
+            try:
+                spec[rgb_param] = float(params[rgb_param])
+            except:
+                status = STATUS_ERROR
+                msg = 'rgb_minimum, rgb_stretch, rgb_asinh must be numerical values'
+                return status,msg,job_id
+
+        # Complete the job configuration by defining the `spec` node
+        # TODO: delete this log statement
+        logging.info(spec)
+        conf["configjob"]["spec"] = spec
+
     else:
         # Invalid job type
         job_id=''
