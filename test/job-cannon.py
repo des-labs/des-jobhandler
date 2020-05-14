@@ -2,6 +2,7 @@ import os
 import requests
 import time
 import secrets
+import itertools
 
 #
 # This script is designed to be executed outside the JobHandler as an independent
@@ -133,23 +134,35 @@ def launch_multiple_jobs(job_type='test'):
                     [46.27566, -34.25900]
                 ]
 
+                # Choose random set of colors for FITS
+                colors_fits = []
+                for i in range(0,secrets.choice(range(0,8))):
+                    colors_fits.append(secrets.choice(list('grizy')))
+                colors_fits = ','.join(colors_fits)
+                # Choose from combinations of
+                colors_rgb = []
+                combinations = []
+                for combination in list(itertools.combinations(list('grizy'), 3)):
+                    combinations.append(combination)
+                colors_rgb = ','.join(secrets.choice(combinations))
+
                 data = {
                     'username': config['username'],
                     'job': 'cutout',
-                    'release': 'Y6A1',
+                    'release': secrets.choice(['Y6A1','Y3A2']),
                     'db': 'dessci',
                     'ra': secrets.choice(ra_dec)[0],
                     'dec': secrets.choice(ra_dec)[1],
                     'xsize': secrets.choice([0.1,0.5,1.0,5.0]),
                     'ysize': secrets.choice([0.1,0.5,1.0,5.0]),
-                    'make_fits': 'true',
-                    'make_pngs': 'true',
-                    'make_tiffs': 'true',
-                    'make_rgb_lupton': 'true',
-                    'make_rgb_stiff': 'true',
-                    'return_list': 'true',
-                    'colors_fits': 'g,r,i,z,y,a,b,c',
-                    'colors_rgb': 'g,r,i,a,b,c',
+                    'make_fits': secrets.choice(['true', 'false']),
+                    'make_pngs': secrets.choice(['true', 'false']),
+                    'make_tiffs': secrets.choice(['true', 'false']),
+                    'make_rgb_lupton': secrets.choice(['true', 'false']),
+                    'make_rgb_stiff': secrets.choice(['true', 'false']),
+                    'return_list': secrets.choice(['true', 'false']),
+                    'colors_fits': colors_fits,
+                    'colors_rgb': colors_rgb,
                 }
 
             r = requests.put(
@@ -163,6 +176,91 @@ def launch_multiple_jobs(job_type='test'):
                 job_id = r.json()['jobid']
                 print('Job "{}" started at cycle {}.'.format(job_id, loop_idx))
             else:
+                print(data)
+                print(r.json()['message'])
+                print('Error submitting job at cycle {}'.format(loop_idx))
+        loop_idx = loop_idx + 1
+        time.sleep(config['launch_separation'])
+
+def launch_multiple_identical_jobs(job_type='test'):
+    job_idx = 0
+    loop_idx = 0
+    data = None
+    while job_idx < config['max_jobs']:
+        # Submit job with 50% probability per second
+        if secrets.choice(range(0, 100)) < config['launch_probability']:
+            if job_type == 'test':
+                # Select a random job duration
+                duration = secrets.choice(
+                    range(config['duration_min'], config['duration_max']))
+                if not data:
+                    data = {
+                        'username': config['username'],
+                        'job': 'test',
+                        'time': duration
+                    }
+            elif job_type == 'cutout':
+
+                ra_dec = [
+                    [21.58813, 3.48611],
+                    [21.59813, 3.58611],
+                    [21.57813, 3.68611],
+                    [21.57213, 3.78611],
+                    [36.60840, -15.68889],
+                    [36.63840, -15.66889],
+                    [36.66840, -15.68889],
+                    [36.67840, -15.65889],
+                    [46.27566, -34.25000],
+                    [46.28566, -34.25500],
+                    [46.29566, -34.25600],
+                    [46.27566, -34.25900]
+                ]
+
+                # Choose random set of colors for FITS
+                colors_fits = []
+                for i in range(0,secrets.choice(range(0,8))):
+                    colors_fits.append(secrets.choice(list('grizy')))
+                colors_fits = ','.join(colors_fits)
+                # Choose from combinations of
+                colors_rgb = []
+                combinations = []
+                for combination in list(itertools.combinations(list('grizy'), 3)):
+                    combinations.append(combination)
+                colors_rgb = ','.join(secrets.choice(combinations))
+
+                if not data:
+                    data = {
+                        'username': config['username'],
+                        'job': 'cutout',
+                        'release': secrets.choice(['Y6A1','Y3A2']),
+                        'db': 'dessci',
+                        'ra': secrets.choice(ra_dec)[0],
+                        'dec': secrets.choice(ra_dec)[1],
+                        'xsize': secrets.choice([0.1,0.5,1.0,5.0]),
+                        'ysize': secrets.choice([0.1,0.5,1.0,5.0]),
+                        'make_fits': secrets.choice(['true', 'false']),
+                        'make_pngs': secrets.choice(['true', 'false']),
+                        'make_tiffs': secrets.choice(['true', 'false']),
+                        'make_rgb_lupton': secrets.choice(['true', 'false']),
+                        'make_rgb_stiff': secrets.choice(['true', 'false']),
+                        'return_list': secrets.choice(['true', 'false']),
+                        'colors_fits': colors_fits,
+                        'colors_rgb': colors_rgb,
+                    }
+
+            r = requests.put(
+                '{}/job/submit'.format(config['apiBaseUrl']),
+                data=data,
+                headers={'Authorization': 'Bearer {}'.format(
+                    config['auth_token'])}
+            )
+            if r.json()['status'] == 'ok':
+                job_idx = job_idx + 1
+                job_id = r.json()['jobid']
+                print('Job "{}" started at cycle {}.'.format(job_id, loop_idx))
+            else:
+                print(data)
+                print(r.json()['message'])
                 print('Error submitting job at cycle {}'.format(loop_idx))
         loop_idx = loop_idx + 1
         time.sleep(config['launch_separation'])
@@ -174,4 +272,5 @@ if __name__ == '__main__':
     # monitor_test_job(job_id)
 
 
-    launch_multiple_jobs(job_type='cutout')
+    # launch_multiple_jobs(job_type='cutout')
+    launch_multiple_identical_jobs(job_type='cutout')

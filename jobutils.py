@@ -762,7 +762,7 @@ def submit_job(params):
                     status = STATUS_ERROR
                     msg = 'Valid colors are y,z,i,r,g'
                     return status,msg,job_id
-                elif string_param == 'colors_rgb' and len(spec[string_param]) != 3:
+                elif string_param == 'colors_rgb' and len(spec[string_param].split(',')) != 3:
                     status = STATUS_ERROR
                     msg = 'Exactly three colors must be specified for colors_rgb'
                     return status,msg,job_id
@@ -777,8 +777,6 @@ def submit_job(params):
                 return status,msg,job_id
 
         # Complete the job configuration by defining the `spec` node
-        # TODO: delete this log statement
-        logging.info(spec)
         conf["configjob"]["spec"] = spec
 
     else:
