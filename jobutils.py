@@ -15,7 +15,7 @@ import re
 
 STATUS_OK = 'ok'
 STATUS_ERROR = 'error'
-DB_SCHEMA_VERSION = 3
+DB_SCHEMA_VERSION = 4
 
 log_format = "%(asctime)s  %(name)8s  %(levelname)5s  %(message)s"
 logging.basicConfig(
@@ -80,6 +80,7 @@ class JobsDb:
         return [
             'job',
             'query',
+            'cutout',
             'role',
             'session',
             'meta'
@@ -253,8 +254,8 @@ class JobsDb:
 
         newJobSql = (
             "INSERT INTO `job` "
-            "(user, type, name, uuid, status, apitoken, spec, user_agent) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
+            "(user, type, name, uuid, status, apitoken, user_agent) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)"
         )
         newJobInfo = (
             conf["configjob"]["metadata"]["username"],
@@ -263,7 +264,6 @@ class JobsDb:
             conf["configjob"]["metadata"]["jobId"],
             'init',
             conf["configjob"]["metadata"]["apiToken"],
-            json.dumps(conf["configjob"]["spec"]),
             conf["user_agent"]
         )
         self.cur.execute(newJobSql, newJobInfo)
@@ -285,6 +285,44 @@ class JobsDb:
             elif conf["configjob"]["kind"] == 'test':
                 # TODO: Add test table row associated with test task
                 logger.info('Created new job of type "test"')
+            elif conf["configjob"]["kind"] == 'cutout':
+                opt_vals = {}
+                for key in ['ra', 'dec', 'coadd', 'xsize', 'ysize', 'rgb_minimum', 'rgb_stretch', 'rgb_asinh']:
+                    if key in conf["configjob"]["spec"]:
+                        opt_vals[key] = conf["configjob"]["spec"][key]
+                    else:
+                        opt_vals[key] = None
+                self.cur.execute(
+                    (
+                        "INSERT INTO `cutout` "
+                        "(`job_id`, `db`, `release`, `ra`, `dec`, `coadd`, `make_tiffs`, "
+                        "make_fits, make_pngs, make_rgb_lupton, make_rgb_stiff, "
+                        "return_list, xsize, ysize, colors_rgb, colors_fits, "
+                        "rgb_minimum, rgb_stretch, rgb_asinh) "
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+                    ),
+                    (
+                        self.cur.lastrowid,
+                        conf["configjob"]["spec"]["db"],
+                        conf["configjob"]["spec"]["release"],
+                        opt_vals['ra'],
+                        opt_vals['dec'],
+                        opt_vals['coadd'],
+                        conf["configjob"]["spec"]["make_tiffs"],
+                        conf["configjob"]["spec"]["make_fits"],
+                        conf["configjob"]["spec"]["make_pngs"],
+                        conf["configjob"]["spec"]["make_rgb_lupton"],
+                        conf["configjob"]["spec"]["make_rgb_stiff"],
+                        conf["configjob"]["spec"]["return_list"],
+                        conf["configjob"]["spec"]["xsize"],
+                        conf["configjob"]["spec"]["ysize"],
+                        conf["configjob"]["spec"]["colors_rgb"],
+                        conf["configjob"]["spec"]["colors_fits"],
+                        opt_vals['rgb_minimum'],
+                        opt_vals['rgb_stretch'],
+                        opt_vals['rgb_asinh'],
+                    )
+                )
         else:
             logger.error("Error inserting new job.")
         self.close_db_connection()
@@ -690,7 +728,15 @@ def submit_job(params):
             status = STATUS_ERROR
             msg = "Valid releases are Y6A1,Y3A2,Y1A1,SVA1"
             return status,msg,job_id
-
+        try:
+            if "xsize" in params:
+                spec['xsize'] = float(params["xsize"])
+            if "ysize" in params:
+                spec['ysize'] = float(params["ysize"])
+        except:
+            status = STATUS_ERROR
+            msg = 'xsize and ysize must be numerical values'
+            return status,msg,job_id
         # Set color strings from request parameters
         search_args = ['colors_rgb', 'colors_fits']
         for string_param in search_args:

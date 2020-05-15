@@ -8,7 +8,6 @@ CREATE TABLE IF NOT EXISTS `job`(
 	`time_start` datetime DEFAULT 0,
 	`time_complete` datetime DEFAULT 0,
 	`apitoken` char(32) NOT NULL,
-	`spec` MEDIUMTEXT NOT NULL DEFAULT '',
 	`msg` MEDIUMTEXT NOT NULL DEFAULT '',
 	`user_agent` TEXT NOT NULL DEFAULT '',
 	PRIMARY KEY (`id`), UNIQUE KEY `id` (`id`)
@@ -39,6 +38,30 @@ CREATE TABLE IF NOT EXISTS `query`(
 	`files` MEDIUMTEXT NOT NULL,
 	`sizes` MEDIUMTEXT NOT NULL,
 	`data` MEDIUMTEXT NOT NULL,
+	PRIMARY KEY (`id`), UNIQUE KEY `id` (`id`)
+)
+#---
+CREATE TABLE IF NOT EXISTS `cutout`(
+	`id` int NOT NULL AUTO_INCREMENT,
+	`job_id` int NOT NULL,
+	`db` varchar(50) NOT NULL,
+	`release` varchar(50) NOT NULL,
+	`ra` MEDIUMTEXT,
+	`dec` MEDIUMTEXT,
+	`coadd` MEDIUMTEXT,
+	`xsize` float,
+	`ysize` float,
+	`make_fits` boolean DEFAULT 0,
+	`make_tiffs` boolean DEFAULT 0,
+	`make_pngs` boolean DEFAULT 0,
+	`make_rgb_lupton` boolean DEFAULT 0,
+	`make_rgb_stiff` boolean DEFAULT 0,
+	`return_list` boolean DEFAULT 0,
+	`colors_fits` MEDIUMTEXT,
+	`colors_rgb` MEDIUMTEXT,
+	`rgb_minimum` float,
+	`rgb_stretch` float,
+	`rgb_asinh` float,
 	PRIMARY KEY (`id`), UNIQUE KEY `id` (`id`)
 )
 #---
