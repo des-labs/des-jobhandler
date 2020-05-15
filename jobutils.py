@@ -15,7 +15,6 @@ import re
 
 STATUS_OK = 'ok'
 STATUS_ERROR = 'error'
-DB_SCHEMA_VERSION = 4
 
 log_format = "%(asctime)s  %(name)8s  %(levelname)5s  %(message)s"
 logging.basicConfig(
@@ -48,6 +47,15 @@ class JobsDb:
         self.database = mysql_database
         self.cur = None
         self.cnx = None
+        self.db_schema_version = 4
+        self.table_names = [
+            'job',
+            'query',
+            'cutout',
+            'role',
+            'session',
+            'meta'
+        ]
 
     def open_db_connection(self):
         if self.cnx is None or self.cur is None:
@@ -75,16 +83,6 @@ class JobsDb:
                 self.cur = None
                 self.cnx = None
                 return False, error
-
-    def get_table_names(self):
-        return [
-            'job',
-            'query',
-            'cutout',
-            'role',
-            'session',
-            'meta'
-        ]
 
     def parse_sql_commands(self, sql_file):
         msg = ''
@@ -115,9 +113,9 @@ class JobsDb:
             for (schema_version,) in self.cur:
                 current_schema_version = schema_version
             # Update the database schema if the versions do not match
-            if current_schema_version < DB_SCHEMA_VERSION:
+            if current_schema_version < self.db_schema_version:
                 # Sequentially apply each DB update until the schema is fully updated
-                for db_update_idx in range(current_schema_version+1, DB_SCHEMA_VERSION+1, 1):
+                for db_update_idx in range(current_schema_version+1, self.db_schema_version+1, 1):
                     sql_file = os.path.join(os.path.dirname(__file__), "db_schema_update", "db_schema_update.{}.sql".format(db_update_idx))
                     commands, status, msg = self.parse_sql_commands(sql_file)
                     for cmd in commands:
@@ -137,7 +135,7 @@ class JobsDb:
         self.open_db_connection()
         try:
             # Drop all existing database tables
-            for table in self.get_table_names():
+            for table in self.table_names:
                 self.cur.execute("DROP TABLE IF EXISTS {}".format(table))
 
             # Create the database tables from the schema file.
@@ -148,7 +146,7 @@ class JobsDb:
 
             # Set the database schema version
             self.cur.execute(
-                "INSERT INTO `meta` (`schema_version`) VALUES ({})".format(DB_SCHEMA_VERSION)
+                "INSERT INTO `meta` (`schema_version`) VALUES ({})".format(self.db_schema_version)
             )
 
             # Initialize the database tables with info such as admin accounts
