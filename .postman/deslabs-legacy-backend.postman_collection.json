@@ -251,7 +251,7 @@
 				"method": "PUT",
 				"header": [],
 				"url": {
-					"raw": "{{api_base_url}}/job/submit?username={{username}}&job=cutout&ra=0.2&dec=0.2&make_fits=true&xsize=0.1&ysize=0.1&colors=g,r,i&release=Y6A1",
+					"raw": "{{api_base_url}}/job/submit?username={{username}}&job=cutout&db=dessci&release=Y6A1&ra=0.1&dec=0.1&coadd=66598640&make_fits=true&xsize=0.1&ysize=0.1&make_rgb_lupton=true&return_list=true&colors_fits=g,r,i,z,y,a,b,c&colors_rgb=g,r,z",
 					"host": [
 						"{{api_base_url}}"
 					],
@@ -269,12 +269,24 @@
 							"value": "cutout"
 						},
 						{
+							"key": "db",
+							"value": "dessci"
+						},
+						{
+							"key": "release",
+							"value": "Y6A1"
+						},
+						{
 							"key": "ra",
-							"value": "0.2"
+							"value": "0.1"
 						},
 						{
 							"key": "dec",
-							"value": "0.2"
+							"value": "0.1"
+						},
+						{
+							"key": "coadd",
+							"value": "66598640"
 						},
 						{
 							"key": "make_fits",
@@ -289,12 +301,50 @@
 							"value": "0.1"
 						},
 						{
-							"key": "colors",
-							"value": "g,r,i"
+							"key": "make_tiffs",
+							"value": "true",
+							"disabled": true
 						},
 						{
-							"key": "release",
-							"value": "Y6A1"
+							"key": "make_pngs",
+							"value": "true",
+							"disabled": true
+						},
+						{
+							"key": "make_rgb_lupton",
+							"value": "true"
+						},
+						{
+							"key": "make_rgb_stiff",
+							"value": "true",
+							"disabled": true
+						},
+						{
+							"key": "return_list",
+							"value": "true"
+						},
+						{
+							"key": "colors_fits",
+							"value": "g,r,i,z,y,a,b,c"
+						},
+						{
+							"key": "colors_rgb",
+							"value": "g,r,z"
+						},
+						{
+							"key": "rgb_minimum",
+							"value": "1.0",
+							"disabled": true
+						},
+						{
+							"key": "rgb_stretch",
+							"value": "50.0",
+							"disabled": true
+						},
+						{
+							"key": "rgb_asinh",
+							"value": "10.0",
+							"disabled": true
 						}
 					]
 				}
