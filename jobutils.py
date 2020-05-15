@@ -47,7 +47,7 @@ class JobsDb:
         self.database = mysql_database
         self.cur = None
         self.cnx = None
-        self.db_schema_version = 4
+        self.db_schema_version = 3
         self.table_names = [
             'job',
             'query',
@@ -105,13 +105,18 @@ class JobsDb:
     def update_db_tables(self):
         self.open_db_connection()
         try:
-            # Get currently applied database schema version
-            self.cur.execute(
-                "SELECT `schema_version` FROM `meta` LIMIT 1"
-            )
-            current_schema_version = None
-            for (schema_version,) in self.cur:
-                current_schema_version = schema_version
+            current_schema_version = 0
+            try:
+                # Get currently applied database schema version if tables have already been created
+                self.cur.execute(
+                    "SELECT `schema_version` FROM `meta` LIMIT 1"
+                )
+                for (schema_version,) in self.cur:
+                    current_schema_version = schema_version
+                logger.info("schema_version taken from meta table")
+            except:
+                logger.info("meta table not found")
+            logger.info('current schema version: {}'.format(current_schema_version))
             # Update the database schema if the versions do not match
             if current_schema_version < self.db_schema_version:
                 # Sequentially apply each DB update until the schema is fully updated
@@ -119,12 +124,25 @@ class JobsDb:
                     sql_file = os.path.join(os.path.dirname(__file__), "db_schema_update", "db_schema_update.{}.sql".format(db_update_idx))
                     commands, status, msg = self.parse_sql_commands(sql_file)
                     for cmd in commands:
+                        logger.info('Applying SQL command from "{}":'.format(sql_file))
+                        logger.info(cmd)
                         # Apply incremental update
                         self.cur.execute(cmd)
-                        # Update `meta` table to match
+                    # Update `meta` table to match
+                    logger.info("Updating `meta` table...")
+                    try:
+                        self.cur.execute(
+                            "INSERT INTO `meta` (`schema_version`) VALUES ({})".format(db_update_idx)
+                        )
+                    except:
                         self.cur.execute(
                             "UPDATE `meta` SET `schema_version`={}".format(db_update_idx)
                         )
+                    self.cur.execute(
+                        "SELECT `schema_version` FROM `meta` LIMIT 1"
+                    )
+                    for (schema_version,) in self.cur:
+                        logger.info('Current schema version: {}'.format(schema_version))
         except Exception as e:
             logger.error(str(e).strip())
 
@@ -132,25 +150,19 @@ class JobsDb:
 
 
     def reinitialize_tables(self):
-        self.open_db_connection()
         try:
             # Drop all existing database tables
+            self.open_db_connection()
             for table in self.table_names:
-                self.cur.execute("DROP TABLE IF EXISTS {}".format(table))
+                self.cur.execute("DROP TABLE IF EXISTS `{}`".format(table))
+            self.close_db_connection()
 
-            # Create the database tables from the schema file.
-            sql_file = os.path.join(os.path.dirname(__file__), "db_schema.sql")
-            commands, status, msg = self.parse_sql_commands(sql_file)
-            for cmd in commands:
-                self.cur.execute(cmd)
-
-            # Set the database schema version
-            self.cur.execute(
-                "INSERT INTO `meta` (`schema_version`) VALUES ({})".format(self.db_schema_version)
-            )
+            # Sequentially apply updates to database schema until latest version is reached
+            self.update_db_tables()
 
             # Initialize the database tables with info such as admin accounts
             # with open(os.path.join(os.path.dirname(__file__), "db_init", "db_init.yaml")) as f:
+            self.open_db_connection()
             with open(os.path.join(envvars.CONFIG_FOLDER_ROOT, "config", "db_init.yaml")) as f:
                 db_init = yaml.safe_load(f.read())
             roles_added = []
@@ -169,10 +181,10 @@ class JobsDb:
                             role["role_name"],
                         )
                     )
+            self.close_db_connection()
         except Exception as e:
             logger.error(str(e).strip())
 
-        self.close_db_connection()
 
     def validate_apitoken(self, apitoken):
         self.open_db_connection()
