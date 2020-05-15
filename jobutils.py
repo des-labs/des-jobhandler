@@ -47,7 +47,7 @@ class JobsDb:
         self.database = mysql_database
         self.cur = None
         self.cnx = None
-        self.db_schema_version = 3
+        self.db_schema_version = 4
         self.table_names = [
             'job',
             'query',
@@ -441,6 +441,20 @@ class JobsDb:
                         rowId
                     )
                     self.cur.execute(updateQuerySql, updateQueryInfo)
+                elif type == 'cutout':
+                    self.cur.execute(
+                        (
+                            "UPDATE `cutout` "
+                            "SET file_list=%s, file_size=%s, file_number=%s "
+                            "WHERE job_id=%s"
+                        ),
+                        (
+                            json.dumps(response["files"]),
+                            str(response["sizes"]),
+                            len(response["files"]),
+                            rowId
+                        )
+                    )
         self.close_db_connection()
         return error_msg
 

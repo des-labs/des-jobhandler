@@ -62,12 +62,30 @@ ra_decs = [
     [46.27566, -34.25900]
 ]
 
+# These coadd IDs are valid for release Y3A2:
+#     SELECT COADD_OBJECT_ID FROM Y3_GOLD_2_2 where ROWNUM < 20
+# Coadd IDs from the Y6A1 release can be found by:
+#     SELECT COADD_OBJECT_ID FROM Y6_GOLD_1_1 where ROWNUM < 20
 coadds = [
-    '66598640',
-    '256673605',
-    '131576233',
-    '343329159',
-    '353099285'
+    '61407318',
+    '61407322',
+    '61407330',
+    '61407332',
+    '61407340',
+    '61407380',
+    '61407409',
+    '61407410',
+    '61407412',
+    '61407424',
+    '61407430',
+    '61407435',
+    '61407478',
+    '61407507',
+    '61407519',
+    '61407550',
+    '61407559',
+    '61407563',
+    '61407582'
 ]
 
 def login():
@@ -183,7 +201,7 @@ def launch_multiple_jobs(job_type='test', randomize_each=False):
                         data['dec'] = ra_dec[1]
                     # or Coadd IDs
                     else:
-                        data['release'] = secrets.choice(['SVA1', 'Y1A1'])
+                        data['release'] = secrets.choice(['Y3A2'])
                         data['coadd'] = secrets.choice(coadds)
 
             # Submit job
