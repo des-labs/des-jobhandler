@@ -656,59 +656,26 @@ def submit_job(params):
         conf["command"] = ["python3", "task.py"]
 
         # Process job configuration parameters
-
+        #########################################
+        # Initialize the job spec object
+        spec = {
+        'jobid': job_id,
+        'usernm': username,
+        'passwd': password,
+        'tiledir': 'auto',
+        'outdir': os.path.join('/home/worker/output', job_id),
+        }
         # If RA/DEC are present in request parameters, ignore coadd if present.
         # If RA/DEC are not both present, assume
-        coadd = ra = dec = []
         if all(k in params for k in ("ra", "dec")):
-            ra = params["ra"]
-            dec = params["dec"]
+            spec['ra'] = params["ra"]
+            spec['dec'] = params["dec"]
         elif "coadd" in params:
-            coadd = params["coadd"]
+            spec['coadd'] = params["coadd"]
         else:
             status = STATUS_ERROR
             msg = 'Cutout job requires RA/DEC coordinates or Coadd IDs.'
             return status,msg,job_id
-        '''
-        # Example values for reference
-        default_args = {
-            'ra': [],
-            'dec': [],
-            'coadd': [],
-            'jobid': '',
-            'usernm': '',
-            'passwd': '',
-            'tiledir': '',
-            'outdir': '',
-            'db': 'DESSCI',
-            'release': 'Y6A1',
-            'make_tiffs': False,
-            'make_fits': False,
-            'make_pngs': False,
-            'make_rgb_lupton': False,
-            'make_rgb_stiff': False,
-            'return_list': False,
-            'xsize': 1.0,
-            'ysize': 1.0,
-            'colors_fits': 'g,r,i,z,Y',
-            'colors_rgb': 'g,r,i,z,Y',
-            'rgb_minimum': 1.0,
-            'rgb_stretch': 50.0,
-            'rgb_asinh': 10.0,
-        }
-        '''
-
-        # Initialize the job spec object
-        spec = {
-            'ra': ra,
-            'dec': dec,
-            'coadd': coadd,
-            'jobid': job_id,
-            'usernm': username,
-            'passwd': password,
-            'tiledir': 'auto',
-            'outdir': os.path.join('/home/worker/output', job_id),
-        }
 
         if 'db' in params and params["db"].upper() in ['DESDR','DESSCI']:
             spec['db'] = params["db"].upper()
@@ -717,11 +684,11 @@ def submit_job(params):
             msg = 'Valid databases are DESDR and DESSCI'
             return status,msg,job_id
 
-        if 'release' in params and params["release"].upper() in ['DR1','Y6A1','Y3A2','SVA1']:
+        if 'release' in params and params["release"].upper() in ['Y1A1','Y6A1','Y3A2','SVA1']:
             spec['release'] = params["release"].upper()
         else:
             status = STATUS_ERROR
-            msg = "Valid releases are DR1,Y6A1,Y3A2,Y3A1,SVA1"
+            msg = "Valid releases are Y6A1,Y3A2,Y1A1,SVA1"
             return status,msg,job_id
 
         # Set color strings from request parameters
