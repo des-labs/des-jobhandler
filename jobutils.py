@@ -424,7 +424,7 @@ class JobsDb:
                         "WHERE id=%s"
                     )
                     updateQueryInfo = (
-                        response['output'],
+                        response['msg'],
                         rowId
                     )
                     self.cur.execute(updateQuerySql, updateQueryInfo)
@@ -669,10 +669,10 @@ def submit_job(params):
         jobId=job_id,
         username=username,
         password=password,
-        logFilePath="./output/{}.log".format(conf["job_name"]),
+        logFilePath="./output/{}/{}.log".format(conf["job"], conf["job_name"]),
         apiToken=secrets.token_hex(16),
         apiBaseUrl=envvars.API_BASE_URL,
-        persistentVolumeClaim='{}{}'.format(envvars.PVC_NAME_BASE, conf["job"]),
+        persistentVolumeClaim=envvars.PVC_NAME_BASE,
         debug=False
     ))
     conf["configjob"]["spec"] = {}
@@ -725,7 +725,7 @@ def submit_job(params):
         'usernm': username,
         'passwd': password,
         'tiledir': 'auto',
-        'outdir': os.path.join('/home/worker/output', job_id),
+        'outdir': os.path.join('/home/worker/output/cutout', job_id),
         }
         # If RA/DEC are present in request parameters, ignore coadd if present.
         # If RA/DEC are not both present, assume
