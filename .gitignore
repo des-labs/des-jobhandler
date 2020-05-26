@@ -5,4 +5,4 @@ k8s.conf
 des-tasks/*
 local_dev/*
 .codesync
-config/*
+config/db_init.yaml

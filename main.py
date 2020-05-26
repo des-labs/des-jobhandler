@@ -11,6 +11,7 @@ from jwtutils import authenticated
 from jwtutils import encode_info
 import envvars
 import jobutils
+import time
 
 # Get global instance of the job handler database interface
 JOBSDB = jobutils.JobsDb(
@@ -380,7 +381,20 @@ if __name__ == "__main__":
 
     # Apply any database updates
     try:
+        # Wait for database to come online if it is still starting
+        waiting_for_db = True
+        while waiting_for_db:
+            try:
+                JOBSDB.open_db_connection()
+                waiting_for_db = False
+                JOBSDB.close_db_connection()
+            except:
+                logger.error('Unable to connect to database. Waiting to try again...')
+                time.sleep(5.0)
+        # Create/update database tables
         JOBSDB.update_db_tables()
+        # Initialize database
+        JOBSDB.init_db()
     except Exception as e:
         logger.error(str(e).strip())
 

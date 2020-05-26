@@ -148,18 +148,8 @@ class JobsDb:
 
         self.close_db_connection()
 
-
-    def reinitialize_tables(self):
+    def init_db(self):
         try:
-            # Drop all existing database tables
-            self.open_db_connection()
-            for table in self.table_names:
-                self.cur.execute("DROP TABLE IF EXISTS `{}`".format(table))
-            self.close_db_connection()
-
-            # Sequentially apply updates to database schema until latest version is reached
-            self.update_db_tables()
-
             # Initialize the database tables with info such as admin accounts
             # with open(os.path.join(os.path.dirname(__file__), "db_init", "db_init.yaml")) as f:
             self.open_db_connection()
@@ -182,6 +172,23 @@ class JobsDb:
                         )
                     )
             self.close_db_connection()
+        except Exception as e:
+            logger.error(str(e).strip())
+
+    def reinitialize_tables(self):
+        try:
+            # Drop all existing database tables
+            self.open_db_connection()
+            for table in self.table_names:
+                self.cur.execute("DROP TABLE IF EXISTS `{}`".format(table))
+            self.close_db_connection()
+
+            # Sequentially apply updates to database schema until latest version is reached
+            self.update_db_tables()
+
+            # Initialize database
+            self.init_db()
+
         except Exception as e:
             logger.error(str(e).strip())
 
