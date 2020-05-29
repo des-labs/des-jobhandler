@@ -8,3 +8,4 @@ cx_Oracle
 tenacity
 rpdb
 cryptography
+pandas
