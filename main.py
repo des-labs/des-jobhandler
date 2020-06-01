@@ -185,24 +185,26 @@ class LogoutHandler(BaseHandler):
 class JobHandler(BaseHandler):
     # API endpoint: /job/submit
     def put(self):
-        body = {k: self.get_argument(k) for k in self.request.arguments}
+        try:
+            params = json.loads(self.request.body.decode('utf-8'))
+        except:
+            params = {k: self.get_argument(k) for k in self.request.arguments}
         # If username is not specified, assume it is the authenticated user
         try:
-            username = body["username"].lower()
+            username = params["username"].lower()
         except:
             username = self._token_decoded["username"]
-        body["db"] = self._token_decoded["db"]
+        params["db"] = self._token_decoded["db"]
         try:
-            body["user_agent"] = self.request.headers["User-Agent"]
+            params["user_agent"] = self.request.headers["User-Agent"]
         except:
-            body["user_agent"] = ''
+            params["user_agent"] = ''
         # TODO: Allow users with "admin" role to specify any username
         if username == self._token_decoded["username"]:
-            status,message,jobid = jobutils.submit_job(body)
+            status,message,jobid = jobutils.submit_job(params)
         else:
             status = 'error'
             message = 'Username specified must belong to the authenticated user.'
-        logger.info(message)
         out = dict(status=status, message=message, jobid=jobid)
         self.write(json.dumps(out, indent=4))
 
@@ -249,24 +251,6 @@ class JobHandler(BaseHandler):
             if isinstance(o, datetime.datetime):
                 return o.__str__()
         self.write(json.dumps(out, indent=4, default = myconverter))
-
-
-# ## This is the one providing a list of hidden/allowed resources
-# class InitHandler(BaseHandler):
-#     # API endpoint: /init
-#     def post(self):
-#         cnx, cur = open_db_connection()
-#         username = self.getarg("username")
-#         logger.info(username)
-#         t = cur.execute(
-#             "select pages from access where username = '{}'".format(username))
-#         d = t.fetchone()
-#         close_db_connection(cnx, cur)
-#         pages = []
-#         if d is not None:
-#             pages = d[0].replace(" ", "").split(",")
-#         out = dict(access=pages)
-#         self.write(json.dumps(out, indent=4))
 
 
 class JobStart(BaseHandler):
@@ -344,19 +328,22 @@ class DbWipe(BaseHandler):
                 "msg": "Invalid JSON in HTTP request body."
             })
 
+
 class ValidateCsvHandler(BaseHandler):
     def post(self):
         data = json.loads(self.request.body.decode('utf-8'))
         tempCsvFile = '.temp.csv'
         try:
 
-            parsedData = read_csv(StringIO(data['csvText']))
+            parsedData = read_csv(StringIO(data['csvText']), dtype={'RA': float, 'DEC': float})
 
             if all(k in parsedData for k in ("RA", "DEC")):
-                DataFrame(parsedData, columns=['RA','DEC']).to_csv(tempCsvFile, index=False)
+                df = DataFrame(parsedData, columns=['RA','DEC']) #.round(5).map(lambda x: '%.5g' % x)
+                df.to_csv(tempCsvFile, index=False, float_format='%.5f')
                 type = "coords"
             elif 'COADD_OBJECT_ID' in parsedData:
-                DataFrame(parsedData, columns=['COADD_OBJECT_ID']).to_csv(tempCsvFile, index=False)
+                df = DataFrame(parsedData, columns=['COADD_OBJECT_ID']) #.round(5)
+                df.to_csv(tempCsvFile, index=False, float_format='%.0f')
                 type = "id"
             else:
                 logger.info('CSV header must have RA/DEC or COADD_OBJECT_ID')
@@ -401,7 +388,6 @@ def make_app(basePath=''):
             (r"{}/logout/?".format(basePath), LogoutHandler),
             (r"{}/page/cutout/csv/validate/?".format(basePath), ValidateCsvHandler),
             ## Test Endpoints
-            # (r"{}/init/?".format(basePath), InitHandler),
             (r"{}/dev/debug/trigger?".format(basePath), DebugTrigger),
             (r"{}/dev/db/wipe?".format(basePath), DbWipe),
         ],
