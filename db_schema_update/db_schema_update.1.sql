@@ -8,8 +8,8 @@ CREATE TABLE IF NOT EXISTS `job`(
 	`time_start` datetime DEFAULT 0,
 	`time_complete` datetime DEFAULT 0,
 	`apitoken` char(32) NOT NULL,
-	`spec` MEDIUMTEXT NOT NULL DEFAULT '',
-	`msg` MEDIUMTEXT NOT NULL DEFAULT '',
+	`spec` MEDIUMTEXT NOT NULL,
+	`msg` MEDIUMTEXT NOT NULL,
 	PRIMARY KEY (`id`), UNIQUE KEY `id` (`id`)
 )
 #---

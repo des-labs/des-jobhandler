@@ -1,8 +1,10 @@
 __pycache__/
+.cache/
+.local/
 .vscode/
 *.log
 k8s.conf
-des-tasks/*
 local_dev/*
 .codesync
-config/*
+config/db_init.yaml
+des-tasks/

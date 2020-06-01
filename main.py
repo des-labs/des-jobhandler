@@ -11,6 +11,13 @@ from jwtutils import authenticated
 from jwtutils import encode_info
 import envvars
 import jobutils
+import time
+from io import StringIO
+from pandas import read_csv, DataFrame
+import os
+
+STATUS_OK = 'ok'
+STATUS_ERROR = 'error'
 
 # Get global instance of the job handler database interface
 JOBSDB = jobutils.JobsDb(
@@ -322,18 +329,56 @@ class DbWipe(BaseHandler):
                 JOBSDB.reinitialize_tables()
                 # TODO: We might wish to verify if tables were actually cleared and return error if not.
                 self.write({
-                    "status": "ok",
+                    "status": STATUS_OK,
                     "msg": ""
                 })
                 return
             self.write({
-                "status": "error",
+                "status": STATUS_ERROR,
                 "msg": "Invalid password or DROP_TABLES environment variable not true."
             })
         except:
             logger.info('Error decoding JSON data or invalid password')
             self.write({
-                "status": "error",
+                "status": STATUS_ERROR,
+                "msg": "Invalid JSON in HTTP request body."
+            })
+
+class ValidateCsvHandler(BaseHandler):
+    def post(self):
+        data = json.loads(self.request.body.decode('utf-8'))
+        tempCsvFile = '.temp.csv'
+        try:
+
+            parsedData = read_csv(StringIO(data['csvText']))
+
+            if all(k in parsedData for k in ("RA", "DEC")):
+                DataFrame(parsedData, columns=['RA','DEC']).to_csv(tempCsvFile, index=False)
+                type = "coords"
+            elif 'COADD_OBJECT_ID' in parsedData:
+                DataFrame(parsedData, columns=['COADD_OBJECT_ID']).to_csv(tempCsvFile, index=False)
+                type = "id"
+            else:
+                logger.info('CSV header must have RA/DEC or COADD_OBJECT_ID')
+                self.write({
+                    "status": STATUS_ERROR,
+                    "msg": 'CSV header must have RA/DEC or COADD_OBJECT_ID'
+                })
+                return
+
+            with open(tempCsvFile) as f:
+                processedCsvText = f.read()
+            os.remove(tempCsvFile)
+            self.write({
+                "status": STATUS_OK,
+                "msg": "",
+                "csv": processedCsvText,
+                "type": type
+            })
+        except:
+            logger.info('Error decoding JSON data')
+            self.write({
+                "status": STATUS_ERROR,
                 "msg": "Invalid JSON in HTTP request body."
             })
 
@@ -354,6 +399,7 @@ def make_app(basePath=''):
             (r"{}/profile/update/info?".format(basePath), ProfileUpdateHandler),
             (r"{}/profile/update/password?".format(basePath), ProfileUpdatePasswordHandler),
             (r"{}/logout/?".format(basePath), LogoutHandler),
+            (r"{}/page/cutout/csv/validate/?".format(basePath), ValidateCsvHandler),
             ## Test Endpoints
             # (r"{}/init/?".format(basePath), InitHandler),
             (r"{}/dev/debug/trigger?".format(basePath), DebugTrigger),
@@ -380,7 +426,20 @@ if __name__ == "__main__":
 
     # Apply any database updates
     try:
+        # Wait for database to come online if it is still starting
+        waiting_for_db = True
+        while waiting_for_db:
+            try:
+                JOBSDB.open_db_connection()
+                waiting_for_db = False
+                JOBSDB.close_db_connection()
+            except:
+                logger.error('Unable to connect to database. Waiting to try again...')
+                time.sleep(5.0)
+        # Create/update database tables
         JOBSDB.update_db_tables()
+        # Initialize database
+        JOBSDB.init_db()
     except Exception as e:
         logger.error(str(e).strip())
 
