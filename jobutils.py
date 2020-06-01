@@ -12,6 +12,8 @@ import logging
 from cryptography.fernet import Fernet
 import base64
 import re
+from io import StringIO
+from pandas import read_csv, DataFrame
 
 STATUS_OK = 'ok'
 STATUS_ERROR = 'error'
@@ -655,18 +657,23 @@ def submit_job(params):
 
     status = STATUS_OK
     msg = ''
-    # Common configurations to all tasks types:
-    username = params["username"].lower()
-    password = JOBSDB.get_password(username)
-    job_type = params["job"]
-    job_id = generate_job_id()
-    conf = {}
-    conf["job"] = job_type
-    conf["namespace"] = get_namespace()
-    conf["cm_name"] = get_job_configmap_name(conf["job"], job_id, username)
-    conf["job_name"] = get_job_name(conf["job"], job_id, username)
-    conf["host_network"] = envvars.HOST_NETWORK
-    conf["user_agent"] = params["user_agent"]
+    try:
+        # Common configurations to all tasks types:
+        username = params["username"].lower()
+        password = JOBSDB.get_password(username)
+        job_type = params["job"]
+        job_id = generate_job_id()
+        conf = {}
+        conf["job"] = job_type
+        conf["namespace"] = get_namespace()
+        conf["cm_name"] = get_job_configmap_name(conf["job"], job_id, username)
+        conf["job_name"] = get_job_name(conf["job"], job_id, username)
+        conf["host_network"] = envvars.HOST_NETWORK
+        conf["user_agent"] = params["user_agent"]
+    except:
+        status = STATUS_ERROR
+        msg = 'username, job, and user_agent must be specified.'
+        return status,msg,''
     template = get_job_template(job_type)
     base_template = get_job_template_base()
     # Render the base YAML template for the job configuration data structure
@@ -734,6 +741,20 @@ def submit_job(params):
         'tiledir': 'auto',
         'outdir': os.path.join('/home/worker/output/cutout', job_id),
         }
+
+        # logger.info('params: {}'.format(json.dumps(params, indent=2)))
+        # If the `positions` key is found, assume the value is CSV-formatted
+        # text and clobber any `ra`, `dec`, and `coadd` key-values present
+        if 'positions' in params and isinstance(params['positions'], str):
+            parsedData = read_csv(StringIO(params['positions']), dtype={'RA': float, 'DEC': float, 'COADD_OBJECT_ID': int})
+            if all(k in parsedData for k in ("RA", "DEC")):
+                df = DataFrame(parsedData, columns=['RA','DEC']).round(5)
+                params['ra'] = df.loc[:, 'RA'].tolist()
+                params['dec'] = df.loc[:, 'DEC'].tolist()
+            elif 'COADD_OBJECT_ID' in parsedData:
+                df = DataFrame(parsedData, columns=['COADD_OBJECT_ID'])
+                params['coadd'] = df.loc[:, 'COADD_OBJECT_ID'].tolist()
+
         # If RA/DEC are present in request parameters, ignore coadd if present.
         # If RA/DEC are not both present, assume
         if all(k in params for k in ("ra", "dec")):
@@ -745,7 +766,7 @@ def submit_job(params):
             status = STATUS_ERROR
             msg = 'Cutout job requires RA/DEC coordinates or Coadd IDs.'
             return status,msg,job_id
-
+        # logger.info('spec: {}'.format(json.dumps(spec, indent=2)))
         if 'db' in params and params["db"].upper() in ['DESDR','DESSCI']:
             spec['db'] = params["db"].upper()
         else:
@@ -761,9 +782,9 @@ def submit_job(params):
             return status,msg,job_id
         try:
             if "xsize" in params:
-                spec['xsize'] = float(params["xsize"])
+                spec['xsize'] = float("{:.2f}".format(float(params["xsize"])))
             if "ysize" in params:
-                spec['ysize'] = float(params["ysize"])
+                spec['ysize'] = float("{:.2f}".format(float(params["ysize"])))
         except:
             status = STATUS_ERROR
             msg = 'xsize and ysize must be numerical values'
@@ -784,7 +805,7 @@ def submit_job(params):
         for bool_param in search_args:
             spec[bool_param] = False
         for bool_param in list(set(search_args).intersection(set(params))):
-            spec[bool_param] = params[bool_param] == 'true'
+            spec[bool_param] = params[bool_param] == 'true' or str(params[bool_param]) == 'True'
             if spec[bool_param]:
                 bool_param_found = True
         # If no booleans were set then no information was actually requested
@@ -822,6 +843,7 @@ def submit_job(params):
 
         # Complete the job configuration by defining the `spec` node
         conf["configjob"]["spec"] = spec
+        # logger.info('Job config spec: \n{}'.format(conf["configjob"]["spec"]))
 
     else:
         # Invalid job type
