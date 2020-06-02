@@ -16,6 +16,7 @@ JWT_TTL_SECONDS = int(os.environ['JWT_TTL_SECONDS'])
 HOST_NETWORK = os.environ['HOST_NETWORK']
 JWT_HS256_SECRET = os.environ['JWT_HS256_SECRET']
 DROP_TABLES = os.environ['DROP_TABLES'].lower() == 'true'
+DEBUG_JOB = os.environ['DEBUG_JOB'].lower() == 'true'
 CONFIG_FOLDER_ROOT = os.environ['CONFIG_FOLDER_ROOT']
 ORACLE_USER_MANAGER = os.environ['ORACLE_USER_MANAGER']
 ORACLE_PWD_MANAGER = os.environ['ORACLE_PWD_MANAGER']

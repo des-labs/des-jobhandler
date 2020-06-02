@@ -335,14 +335,14 @@ class ValidateCsvHandler(BaseHandler):
         tempCsvFile = '.temp.csv'
         try:
 
-            parsedData = read_csv(StringIO(data['csvText']), dtype={'RA': float, 'DEC': float})
+            parsedData = read_csv(StringIO(data['csvText']), dtype={'RA': float, 'DEC': float, 'COADD_OBJECT_ID': int})
 
             if all(k in parsedData for k in ("RA", "DEC")):
                 df = DataFrame(parsedData, columns=['RA','DEC']) #.round(5).map(lambda x: '%.5g' % x)
-                df.to_csv(tempCsvFile, index=False, float_format='%.5f')
+                df.to_csv(tempCsvFile, index=False, float_format='%.12f')
                 type = "coords"
             elif 'COADD_OBJECT_ID' in parsedData:
-                df = DataFrame(parsedData, columns=['COADD_OBJECT_ID']) #.round(5)
+                df = DataFrame(parsedData, columns=['COADD_OBJECT_ID', 'TILENAME']) #.round(5)
                 df.to_csv(tempCsvFile, index=False, float_format='%.0f')
                 type = "id"
             else:

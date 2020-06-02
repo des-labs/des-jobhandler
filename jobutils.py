@@ -687,7 +687,7 @@ def submit_job(params):
         apiToken=secrets.token_hex(16),
         apiBaseUrl=envvars.API_BASE_URL,
         persistentVolumeClaim=envvars.PVC_NAME_BASE,
-        debug=False
+        debug=envvars.DEBUG_JOB
     ))
     conf["configjob"]["spec"] = {}
 
@@ -742,19 +742,6 @@ def submit_job(params):
         'outdir': os.path.join('/home/worker/output/cutout', job_id),
         }
 
-        # logger.info('params: {}'.format(json.dumps(params, indent=2)))
-        # If the `positions` key is found, assume the value is CSV-formatted
-        # text and clobber any `ra`, `dec`, and `coadd` key-values present
-        if 'positions' in params and isinstance(params['positions'], str):
-            parsedData = read_csv(StringIO(params['positions']), dtype={'RA': float, 'DEC': float, 'COADD_OBJECT_ID': int})
-            if all(k in parsedData for k in ("RA", "DEC")):
-                df = DataFrame(parsedData, columns=['RA','DEC']).round(5)
-                params['ra'] = df.loc[:, 'RA'].tolist()
-                params['dec'] = df.loc[:, 'DEC'].tolist()
-            elif 'COADD_OBJECT_ID' in parsedData:
-                df = DataFrame(parsedData, columns=['COADD_OBJECT_ID'])
-                params['coadd'] = df.loc[:, 'COADD_OBJECT_ID'].tolist()
-
         # If RA/DEC are present in request parameters, ignore coadd if present.
         # If RA/DEC are not both present, assume
         if all(k in params for k in ("ra", "dec")):
@@ -762,6 +749,8 @@ def submit_job(params):
             spec['dec'] = params["dec"]
         elif "coadd" in params:
             spec['coadd'] = params["coadd"]
+        elif "positions" in params:
+            spec['positions'] = params["positions"].encode('utf-8').decode('unicode-escape')
         else:
             status = STATUS_ERROR
             msg = 'Cutout job requires RA/DEC coordinates or Coadd IDs.'
