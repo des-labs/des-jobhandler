@@ -199,13 +199,20 @@ class JobHandler(BaseHandler):
             params["user_agent"] = self.request.headers["User-Agent"]
         except:
             params["user_agent"] = ''
-        # TODO: Allow users with "admin" role to specify any username
-        if username == self._token_decoded["username"]:
-            status,message,jobid = jobutils.submit_job(params)
-        else:
-            status = 'error'
-            message = 'Username specified must belong to the authenticated user.'
-        out = dict(status=status, message=message, jobid=jobid)
+        out = dict(status=STATUS_OK, message='', jobid='')
+        try:
+            # TODO: Allow users with "admin" role to specify any username
+            if username == self._token_decoded["username"]:
+                status,message,jobid = jobutils.submit_job(params)
+                out = dict(status=status, message=message, jobid=jobid)
+            else:
+                out['status'] = STATUS_ERROR
+                out['message'] = 'Username specified must belong to the authenticated user.'
+                logger.error(out['message'])
+        except Exception as e:
+            out['status'] = STATUS_ERROR
+            out['message'] = str(e).strip()
+            logger.error(out['message'])
         self.write(json.dumps(out, indent=4))
 
     # API endpoint: /job/delete

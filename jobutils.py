@@ -12,8 +12,7 @@ import logging
 from cryptography.fernet import Fernet
 import base64
 import re
-from io import StringIO
-from pandas import read_csv, DataFrame
+import email_utils
 
 STATUS_OK = 'ok'
 STATUS_ERROR = 'error'
@@ -49,7 +48,7 @@ class JobsDb:
         self.database = mysql_database
         self.cur = None
         self.cnx = None
-        self.db_schema_version = 4
+        self.db_schema_version = 5
         self.table_names = [
             'job',
             'query',
@@ -198,12 +197,12 @@ class JobsDb:
     def validate_apitoken(self, apitoken):
         self.open_db_connection()
         self.cur.execute(
-            "SELECT id FROM `job` WHERE apitoken = '{}' LIMIT 1".format(
+            "SELECT id,user,uuid FROM `job` WHERE apitoken = '{}' LIMIT 1".format(
                 apitoken)
         )
         # If there is a result, assume only one exists and return the record id, otherwise return None
         rowId = None
-        for (id,) in self.cur:
+        for (id,user,uuid) in self.cur:
             rowId = id
         self.close_db_connection()
         return rowId
@@ -270,11 +269,14 @@ class JobsDb:
 
     def register_job(self, conf):
         self.open_db_connection()
-
+        if 'email' in conf:
+            email = conf['email']
+        else:
+            email = ''
         newJobSql = (
             "INSERT INTO `job` "
-            "(user, type, name, uuid, status, apitoken, user_agent) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)"
+            "(user, type, name, uuid, status, apitoken, user_agent, email) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
         )
         newJobInfo = (
             conf["configjob"]["metadata"]["username"],
@@ -283,7 +285,8 @@ class JobsDb:
             conf["configjob"]["metadata"]["jobId"],
             'init',
             conf["configjob"]["metadata"]["apiToken"],
-            conf["user_agent"]
+            conf["user_agent"],
+            email
         )
         self.cur.execute(newJobSql, newJobInfo)
         if self.cur.lastrowid:
@@ -400,7 +403,7 @@ class JobsDb:
             updateJobInfo = (
                 job_status,
                 datetime.datetime.utcnow(),
-                response['msg'],
+                '' if response['msg'] is None else response['msg'],
                 rowId
             )
             self.cur.execute(updateJobSql, updateJobInfo)
@@ -412,19 +415,20 @@ class JobsDb:
             error_msg = 'Error updating job record {}'.format(rowId)
         else:
             selectJobSql = (
-                "SELECT user,type,uuid from `job` WHERE id=%s"
+                "SELECT user,type,uuid,email from `job` WHERE id=%s"
             )
             selectJobInfo = (
                 rowId,
             )
             self.cur.execute(selectJobSql, selectJobInfo)
-            for (user, type, uuid) in self.cur:
+            for (user, type, uuid, email) in self.cur:
+                job_id = uuid
                 if job_status == "unknown":
-                    logger.warning('Job {} completion report did not include a final status.'.format(uuid))
+                    logger.warning('Job {} completion report did not include a final status.'.format(job_id))
                 conf = {"job": type}
                 conf['namespace'] = get_namespace()
-                conf["job_name"] = get_job_name(type, uuid, user)
-                conf["cm_name"] = get_job_configmap_name(type, uuid, user)
+                conf["job_name"] = get_job_name(type, job_id, user)
+                conf["cm_name"] = get_job_configmap_name(type, job_id, user)
                 kubejob.delete_job(conf)
                 if type == 'test':
                     updateQuerySql = (
@@ -433,7 +437,7 @@ class JobsDb:
                         "WHERE id=%s"
                     )
                     updateQueryInfo = (
-                        response['msg'],
+                        '' if response['msg'] is None else response['msg'],
                         rowId
                     )
                     self.cur.execute(updateQuerySql, updateQueryInfo)
@@ -464,6 +468,8 @@ class JobsDb:
                             rowId
                         )
                     )
+                if len(email) > 4:
+                    email_utils.send_note(user, job_id, email)
         self.close_db_connection()
         return error_msg
 
@@ -667,9 +673,25 @@ def submit_job(params):
         conf["job"] = job_type
         conf["namespace"] = get_namespace()
         conf["cm_name"] = get_job_configmap_name(conf["job"], job_id, username)
-        conf["job_name"] = get_job_name(conf["job"], job_id, username)
         conf["host_network"] = envvars.HOST_NETWORK
         conf["user_agent"] = params["user_agent"]
+        if 'job_name' in params and isinstance(params['job_name'], str):
+            if len(params['job_name']) > 128:
+                status = STATUS_ERROR
+                msg = 'job_name maximum length is 128 characters'
+                return status,msg,''
+            else:
+                conf["job_name"] = params['job_names']
+        else:
+            conf["job_name"] = get_job_name(conf["job"], job_id, username)
+        if 'email' in params and isinstance(params['email'], str):
+            # This is only a rudimentary validation of an email address
+            if re.match(r"[^@]+@[^@]+\.[^@]+", params['email']):
+                conf["email"] = params['email']
+            else:
+                status = STATUS_ERROR
+                msg = 'Invalid email address'
+                return status,msg,''
     except:
         status = STATUS_ERROR
         msg = 'username, job, and user_agent must be specified.'
@@ -844,8 +866,15 @@ def submit_job(params):
         return status,msg,job_id
     else:
         msg = "Job:{} id:{} by:{}".format(job_type, job_id, username)
-
-    kubejob.create_configmap(conf)
-    kubejob.create_job(conf)
-    JOBSDB.register_job(conf)
+    try:
+        kubejob.create_configmap(conf)
+        kubejob.create_job(conf)
+    except Exception as e:
+        status = STATUS_ERROR
+        msg = str(e).strip()
+    try:
+        JOBSDB.register_job(conf)
+    except Exception as e:
+        status = STATUS_ERROR
+        msg = str(e).strip()
     return status,msg,job_id
