@@ -281,7 +281,7 @@ class JobsDb:
         newJobInfo = (
             conf["configjob"]["metadata"]["username"],
             conf["configjob"]["kind"],
-            conf["configjob"]["metadata"]["name"],
+            conf["configjob"]["metadata"]["job_name"],
             conf["configjob"]["metadata"]["jobId"],
             'init',
             conf["configjob"]["metadata"]["apiToken"],
@@ -415,19 +415,20 @@ class JobsDb:
             error_msg = 'Error updating job record {}'.format(rowId)
         else:
             selectJobSql = (
-                "SELECT user,type,uuid,email from `job` WHERE id=%s"
+                "SELECT user,type,uuid,name,email from `job` WHERE id=%s"
             )
             selectJobInfo = (
                 rowId,
             )
             self.cur.execute(selectJobSql, selectJobInfo)
-            for (user, type, uuid, email) in self.cur:
+            for (user, type, uuid, name, email) in self.cur:
                 job_id = uuid
                 if job_status == "unknown":
                     logger.warning('Job {} completion report did not include a final status.'.format(job_id))
                 conf = {"job": type}
                 conf['namespace'] = get_namespace()
                 conf["job_name"] = get_job_name(type, job_id, user)
+                conf["job_id"] = job_id
                 conf["cm_name"] = get_job_configmap_name(type, job_id, user)
                 kubejob.delete_job(conf)
                 if type == 'test':
@@ -469,6 +470,10 @@ class JobsDb:
                         )
                     )
                 if len(email) > 4:
+                    # if len(name) > 0:
+                    #     job_ref = name
+                    # else:
+                    #     job_ref = job_id
                     email_utils.send_note(user, job_id, email)
         self.close_db_connection()
         return error_msg
@@ -676,12 +681,16 @@ def submit_job(params):
         conf["host_network"] = envvars.HOST_NETWORK
         conf["user_agent"] = params["user_agent"]
         if 'job_name' in params and isinstance(params['job_name'], str):
-            if len(params['job_name']) > 128:
+            if len(params['job_name']) > 128 or len(params['job_name']) == 0:
                 status = STATUS_ERROR
-                msg = 'job_name maximum length is 128 characters'
+                msg = 'job_name valid length is 1-128 characters'
+                return status,msg,''
+            elif not re.match(r'^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$', params['job_name']):
+                status = STATUS_ERROR
+                msg = "Custom job name must consist of lower case alphanumeric characters, '-' and/or '.', and must start and end with an alphanumeric character."
                 return status,msg,''
             else:
-                conf["job_name"] = params['job_names']
+                conf['job_name'] = params['job_name'].encode('utf-8').decode('unicode-escape')
         else:
             conf["job_name"] = get_job_name(conf["job"], job_id, username)
         if 'email' in params and isinstance(params['email'], str):
@@ -701,11 +710,12 @@ def submit_job(params):
     # Render the base YAML template for the job configuration data structure
     conf["configjob"] = yaml.safe_load(base_template.render(
         taskType=conf["job"],
-        jobName=conf["job_name"],
+        jobName=job_id,
+        job_name=conf['job_name'],
         jobId=job_id,
         username=username,
         password=password,
-        logFilePath="./output/{}/{}.log".format(conf["job"], conf["job_name"]),
+        logFilePath="./output/{}/{}.log".format(conf["job"], job_id),
         apiToken=secrets.token_hex(16),
         apiBaseUrl=envvars.API_BASE_URL,
         persistentVolumeClaim=envvars.PVC_NAME_BASE,
@@ -777,7 +787,6 @@ def submit_job(params):
             status = STATUS_ERROR
             msg = 'Cutout job requires RA/DEC coordinates or Coadd IDs.'
             return status,msg,job_id
-        # logger.info('spec: {}'.format(json.dumps(spec, indent=2)))
         if 'db' in params and params["db"].upper() in ['DESDR','DESSCI']:
             spec['db'] = params["db"].upper()
         else:
@@ -854,7 +863,6 @@ def submit_job(params):
 
         # Complete the job configuration by defining the `spec` node
         conf["configjob"]["spec"] = spec
-        # logger.info('Job config spec: \n{}'.format(conf["configjob"]["spec"]))
 
     else:
         # Invalid job type
@@ -868,10 +876,16 @@ def submit_job(params):
         msg = "Job:{} id:{} by:{}".format(job_type, job_id, username)
     try:
         kubejob.create_configmap(conf)
-        kubejob.create_job(conf)
+        kubejob_status, kubejob_msg = kubejob.create_job(conf)
+        if kubejob_status == STATUS_ERROR:
+            status = STATUS_ERROR
+            msg = kubejob_msg
+            return status,msg,job_id
     except Exception as e:
         status = STATUS_ERROR
         msg = str(e).strip()
+        logger.error(msg)
+        return status,msg,job_id
     try:
         JOBSDB.register_job(conf)
     except Exception as e:

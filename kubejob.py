@@ -6,6 +6,9 @@ from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 from jinja2 import Template
 
+STATUS_OK = 'ok'
+STATUS_ERROR = 'error'
+
 logger = logging.getLogger(__name__)
 try:
     config.load_kube_config(config_file="k8s.conf")
@@ -31,7 +34,7 @@ def job(input):
 
     template = Template(templateText)
     body = yaml.safe_load(template.render(
-        name=input["job_name"],
+        name=input["configjob"]["metadata"]["jobId"],
         namespace=input["namespace"],
         backoffLimit=2,
         hostNetwork=input["host_network"],
@@ -46,16 +49,14 @@ def job(input):
         resource_limit_cpu=input["resource_limit_cpu"],
         resource_request_cpu=input["resource_request_cpu"],
     ))
-
     return body
 
 
 def status_job(input):
     try:
         api_response = api_batch_v1.read_namespaced_job_status(
-            name=input["job_name"], namespace=input["namespace"], pretty=False
+            name=input["job_id"], namespace=input["namespace"], pretty=False
         )
-        logger.info(api_response.status)
         return "ok",api_response.status
     except ApiException as e:
         logger.info(
@@ -69,13 +70,13 @@ def status_job(input):
 def delete_job(input):
     try:
         api_response = api_batch_v1.delete_namespaced_job(
-            name=input["job_name"],
+            name=input["job_id"],
             namespace=input["namespace"],
             body=client.V1DeleteOptions(
                 propagation_policy="Foreground", grace_period_seconds=5
             ),
         )
-        logger.info("Job {} deleted".format(input["job_name"]))
+        logger.info("Job {} deleted".format(input["job_id"]))
     except ApiException as e:
         logger.error(
             "Exception when calling BatchV1Api->delete_namespaced_job: {}\n".format(e)
@@ -98,16 +99,20 @@ def delete_job(input):
 
 
 def create_job(input):
+    status = STATUS_OK
+    msg = ''
     try:
         api_response = api_batch_v1.create_namespaced_job(
             namespace=input["namespace"], body=job(input)
         )
-        logger.info("Job {} created".format(input["job_name"]))
+        logger.info("Job {} created".format(input["configjob"]["metadata"]["jobId"]))
     except ApiException as e:
         logger.error(
             "Exception when calling BatchV1Api->create_namespaced_job: {}\n".format(e)
         )
-    return
+        msg = "Exception when calling BatchV1Api->create_namespaced_job: {}\n".format(e)
+        status = STATUS_ERROR
+    return status, msg
 
 
 def config_map(input):

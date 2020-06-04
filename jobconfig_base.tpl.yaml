@@ -1,7 +1,8 @@
 apiVersion: v1
 kind: {{ taskType }}
 metadata:
-  name: {{ jobName }}
+  name: {{ jobId }}
+  job_name: {{ job_name }}
   username: {{ username }}
   password: {{ password }}
   jobId: {{ jobId }}
