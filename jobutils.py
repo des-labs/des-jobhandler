@@ -233,9 +233,6 @@ class JobsDb:
                     job_info["job_time_start"] = time_start
                     job_info["job_time_complete"] = time_complete
                     job_info_list.append(job_info)
-                if job_info == None:
-                    request_status = 'error'
-                    msg = 'Error retrieving all job statuses for user {}'.format(username)
             else:
                 self.cur.execute(
                     (
@@ -275,8 +272,8 @@ class JobsDb:
             email = ''
         newJobSql = (
             "INSERT INTO `job` "
-            "(user, type, name, uuid, status, apitoken, user_agent, email) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
+            "(user, type, name, uuid, status, apitoken, user_agent, email, msg) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
         )
         newJobInfo = (
             conf["configjob"]["metadata"]["username"],
@@ -286,7 +283,8 @@ class JobsDb:
             'init',
             conf["configjob"]["metadata"]["apiToken"],
             conf["user_agent"],
-            email
+            email,
+            ''
         )
         self.cur.execute(newJobSql, newJobInfo)
         if self.cur.lastrowid:
