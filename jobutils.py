@@ -763,9 +763,9 @@ def submit_job(params):
         quickQuery = "false"
         checkQuery = "false"
         try:
-            if params["quick"].lower() in ['true', '1', 'yes']:
+            if "quick" in params and params["quick"].lower() in ['true', '1', 'yes']:
                 quickQuery = "true"
-            if params["check"].lower() in ['true', '1', 'yes']:
+            if "check" in params and params["check"].lower() in ['true', '1', 'yes']:
                 checkQuery = "true"
         except:
             pass
