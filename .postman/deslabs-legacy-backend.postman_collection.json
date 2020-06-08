@@ -14,7 +14,6 @@
 						"id": "01d2b750-1ef4-4e02-9d58-3c5766616e17",
 						"exec": [
 							"var data = pm.response.json();",
-							"//console.log(data.token);",
 							"pm.environment.set(\"auth_token\", data.token);"
 						],
 						"type": "text/javascript"
@@ -51,16 +50,14 @@
 			"response": []
 		},
 		{
-			"name": "dev/db/wipe",
+			"name": "logout",
 			"event": [
 				{
 					"listen": "test",
 					"script": {
-						"id": "0061a010-069d-4c58-866e-17f022f08458",
+						"id": "9f65c71b-2446-4029-86d2-6bd086ab4af1",
 						"exec": [
-							"var data = pm.response.json();",
-							"//console.log(data.token);",
-							"pm.environment.set(\"auth_token\", data.token);"
+							""
 						],
 						"type": "text/javascript"
 					}
@@ -70,19 +67,17 @@
 				"method": "POST",
 				"header": [],
 				"url": {
-					"raw": "{{api_base_url}}/dev/db/wipe?password={{db_passwd}}",
+					"raw": "{{api_base_url}}/logout?username={{username}}",
 					"host": [
 						"{{api_base_url}}"
 					],
 					"path": [
-						"dev",
-						"db",
-						"wipe"
+						"logout"
 					],
 					"query": [
 						{
-							"key": "password",
-							"value": "{{db_passwd}}"
+							"key": "username",
+							"value": "{{username}}"
 						}
 					]
 				}
@@ -98,8 +93,8 @@
 						"id": "9f65c71b-2446-4029-86d2-6bd086ab4af1",
 						"exec": [
 							"var data = pm.response.json();",
-							"//console.log(data.token);",
-							"pm.environment.set(\"job_id\", data.jobid);"
+							"pm.environment.set(\"job_id\", data.jobid);",
+							"pm.environment.set(\"auth_token\", data.new_token);"
 						],
 						"type": "text/javascript"
 					}
@@ -144,8 +139,8 @@
 						"id": "9f65c71b-2446-4029-86d2-6bd086ab4af1",
 						"exec": [
 							"var data = pm.response.json();",
-							"//console.log(data.token);",
-							"pm.environment.set(\"job_id\", data.jobid);"
+							"pm.environment.set(\"job_id\", data.jobid);",
+							"pm.environment.set(\"auth_token\", data.new_token);"
 						],
 						"type": "text/javascript"
 					}
@@ -190,8 +185,8 @@
 						"id": "9f65c71b-2446-4029-86d2-6bd086ab4af1",
 						"exec": [
 							"var data = pm.response.json();",
-							"//console.log(data.token);",
-							"pm.environment.set(\"job_id\", data.jobid);"
+							"pm.environment.set(\"job_id\", data.jobid);",
+							"pm.environment.set(\"auth_token\", data.new_token);"
 						],
 						"type": "text/javascript"
 					}
@@ -232,12 +227,12 @@
 			"response": []
 		},
 		{
-			"name": "job/submit (task: cutout)",
+			"name": "job/submit (task: query, check)",
 			"event": [
 				{
 					"listen": "test",
 					"script": {
-						"id": "da718185-85e7-4519-81f2-7d3a9cb46632",
+						"id": "f8c52261-ad4b-4b96-8e0d-96945e580db9",
 						"exec": [
 							"var data = pm.response.json();",
 							"//console.log(data.token);",
@@ -251,7 +246,57 @@
 				"method": "PUT",
 				"header": [],
 				"url": {
-					"raw": "{{api_base_url}}/job/submit?username={{username}}&job=cutout&db=dessci&release=Y6A1&ra=0.1&dec=0.1&coadd=66598640&make_fits=true&xsize=0.1&ysize=0.1&make_rgb_lupton=true&return_list=true&colors_fits=g,r,i,z,y,a,b,c&colors_rgb=g,r,z",
+					"raw": "{{api_base_url}}/job/submit?username={{username}}&job=query&query=SELECT RA, DEC, MAG_AUTO_G, TILENAME from Y3_GOLD_2_2 FETCH FIRST 5 ROWS ONLY\"&check=true",
+					"host": [
+						"{{api_base_url}}"
+					],
+					"path": [
+						"job",
+						"submit"
+					],
+					"query": [
+						{
+							"key": "username",
+							"value": "{{username}}"
+						},
+						{
+							"key": "job",
+							"value": "query"
+						},
+						{
+							"key": "query",
+							"value": "SELECT RA, DEC, MAG_AUTO_G, TILENAME from Y3_GOLD_2_2 FETCH FIRST 5 ROWS ONLY\""
+						},
+						{
+							"key": "check",
+							"value": "true"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "job/submit (task: cutout)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "da718185-85e7-4519-81f2-7d3a9cb46632",
+						"exec": [
+							"var data = pm.response.json();",
+							"pm.environment.set(\"job_id\", data.jobid);",
+							"pm.environment.set(\"auth_token\", data.new_token);"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "PUT",
+				"header": [],
+				"url": {
+					"raw": "{{api_base_url}}/job/submit?username={{username}}&job=cutout&db=dessci&release=Y6A1&make_fits=true&xsize=0.1&ysize=0.1&make_rgb_lupton=true&return_list=true&colors_fits=g&colors_rgb=g,r,z&positions=\"COADD_OBJECT_ID,TILENAME\\n61407330,DES0159-6414\\n61407322,DES0159-6414\\n61407330,DES0159-6414\\n61407318,DES0159-6414\\n\"",
 					"host": [
 						"{{api_base_url}}"
 					],
@@ -278,15 +323,18 @@
 						},
 						{
 							"key": "ra",
-							"value": "0.1"
+							"value": "0.1",
+							"disabled": true
 						},
 						{
 							"key": "dec",
-							"value": "0.1"
+							"value": "0.1",
+							"disabled": true
 						},
 						{
 							"key": "coadd",
-							"value": "66598640"
+							"value": "61407330",
+							"disabled": true
 						},
 						{
 							"key": "make_fits",
@@ -325,7 +373,7 @@
 						},
 						{
 							"key": "colors_fits",
-							"value": "g,r,i,z,y,a,b,c"
+							"value": "g"
 						},
 						{
 							"key": "colors_rgb",
@@ -345,6 +393,10 @@
 							"key": "rgb_asinh",
 							"value": "10.0",
 							"disabled": true
+						},
+						{
+							"key": "positions",
+							"value": "\"COADD_OBJECT_ID,TILENAME\\n61407330,DES0159-6414\\n61407322,DES0159-6414\\n61407330,DES0159-6414\\n61407318,DES0159-6414\\n\""
 						}
 					]
 				}
@@ -359,7 +411,8 @@
 					"script": {
 						"id": "9f65c71b-2446-4029-86d2-6bd086ab4af1",
 						"exec": [
-							""
+							"var data = pm.response.json();",
+							"pm.environment.set(\"auth_token\", data.new_token);"
 						],
 						"type": "text/javascript"
 					}
@@ -393,16 +446,14 @@
 			"response": []
 		},
 		{
-			"name": "logout",
+			"name": "dev/db/wipe",
 			"event": [
 				{
 					"listen": "test",
 					"script": {
-						"id": "9f65c71b-2446-4029-86d2-6bd086ab4af1",
+						"id": "0061a010-069d-4c58-866e-17f022f08458",
 						"exec": [
-							"var data = pm.response.json();",
-							"//console.log(data.token);",
-							"pm.environment.set(\"job_id\", data.jobid);"
+							""
 						],
 						"type": "text/javascript"
 					}
@@ -412,17 +463,19 @@
 				"method": "POST",
 				"header": [],
 				"url": {
-					"raw": "{{api_base_url}}/logout?username={{username}}",
+					"raw": "{{api_base_url}}/dev/db/wipe?password={{db_passwd}}",
 					"host": [
 						"{{api_base_url}}"
 					],
 					"path": [
-						"logout"
+						"dev",
+						"db",
+						"wipe"
 					],
 					"query": [
 						{
-							"key": "username",
-							"value": "{{username}}"
+							"key": "password",
+							"value": "{{db_passwd}}"
 						}
 					]
 				}

@@ -36,7 +36,6 @@ def authenticated(cls_handler):
                 token = parts[1]
                 try:
                     decode = jwt.decode(token, envvars.JWT_HS256_SECRET, algorithms=["HS256"])
-                    handler._token_decoded = decode
                 except jwt.InvalidSignatureError:
                     response["status"] = "error"
                     response["message"] = "Signature verification failed"
@@ -63,6 +62,19 @@ def authenticated(cls_handler):
                     handler.write(e.message)
                     handler.finish()
                     return
+                # If the token was valid, issue a new token to extend the session
+                new_token = encode_info(
+                    decode['name'],
+                    decode['lastname'],
+                    decode['username'],
+                    decode['email'],
+                    decode['db'],
+                    decode['roles'],
+                    envvars.JWT_TTL_SECONDS
+                )
+                decode = jwt.decode(new_token, envvars.JWT_HS256_SECRET, algorithms=["HS256"])
+                handler._token_decoded = decode
+                handler._token_encoded = new_token.decode(encoding='UTF-8')
             else:
                 response["status"] = "error"
                 response["message"] = "Missing authorization"

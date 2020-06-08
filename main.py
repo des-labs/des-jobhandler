@@ -74,6 +74,7 @@ class ProfileHandler(BaseHandler):
         response["db"] = decoded["db"]
         response["roles"] = decoded["roles"]
         response["ttl"] = ttl
+        response["new_token"] = self._token_encoded
         self.flush()
         self.write(response)
         self.finish()
@@ -85,6 +86,7 @@ class ProfileUpdateHandler(BaseHandler):
     # API endpoint: /profile/update/info
     def post(self):
         response = {}
+        response["new_token"] = self._token_encoded
         body = {k: self.get_argument(k) for k in self.request.arguments}
         # Enforce lowercase usernames
         username = body['username'].lower()
@@ -179,6 +181,7 @@ class LogoutHandler(BaseHandler):
         response["status"] = "ok"
         response["message"] = "logout {}".format(self._token_decoded["username"])
         response["status"] = JOBSDB.session_logout(self._token_decoded["username"])
+        response["new_token"] = self._token_encoded
         self.write(json.dumps(response))
 
 @authenticated
@@ -199,20 +202,25 @@ class JobHandler(BaseHandler):
             params["user_agent"] = self.request.headers["User-Agent"]
         except:
             params["user_agent"] = ''
-        out = dict(status=STATUS_OK, message='', jobid='')
+        jobid = ''
         try:
             # TODO: Allow users with "admin" role to specify any username
             if username == self._token_decoded["username"]:
                 status,message,jobid = jobutils.submit_job(params)
-                out = dict(status=status, message=message, jobid=jobid)
             else:
-                out['status'] = STATUS_ERROR
-                out['message'] = 'Username specified must belong to the authenticated user.'
-                logger.error(out['message'])
+                status = STATUS_ERROR
+                message = 'Username specified must belong to the authenticated user.'
+                logger.error(message)
         except Exception as e:
-            out['status'] = STATUS_ERROR
-            out['message'] = str(e).strip()
-            logger.error(out['message'])
+            status = STATUS_ERROR
+            message = str(e).strip()
+            logger.error(message)
+        out = {
+            'status': status,
+            'message': message,
+            'jobid': jobid,
+            'new_token': self._token_encoded
+        }
         self.write(json.dumps(out, indent=4))
 
     # API endpoint: /job/delete
@@ -221,42 +229,55 @@ class JobHandler(BaseHandler):
         try:
             username = self.getarg("username").lower()
         except:
+            pass
+        if username == '':
             username = self._token_decoded["username"]
+
         # TODO: Allow users with "admin" role to specify any username
         if username == self._token_decoded["username"]:
             job = self.getarg("job")
-            # TODO: Allow specifying jobid "all" to delete all of user's jobs
-            jobid = self.getarg("jobid")
+            # TODO: Allow specifying job-id "all" to delete all of user's jobs
+            job_id = self.getarg("job-id")
             conf = {"job": job}
             conf["namespace"] = jobutils.get_namespace()
-            conf["job_name"] = jobutils.get_job_name(conf["job"], jobid, username)
-            conf["cm_name"] = jobutils.get_job_configmap_name(conf["job"], jobid, username)
+            conf["job_id"] = job_id
+            conf["job_name"] = jobutils.get_job_name(conf["job"], job_id, username)
+            conf["cm_name"] = jobutils.get_job_configmap_name(conf["job"], job_id, username)
             kubejob.delete_job(conf)
             status = 'ok'
-            message = 'Job "{}" deleted.'.format(jobid)
+            message = JOBSDB.delete_job(job_id)
+            if message == '':
+                message = 'Job "{}" deleted.'.format(job_id)
+            else:
+                status = 'error'
         else:
             status = 'error'
             message = 'Username specified must be the authenticated user.'
-        out = dict(status=status, message=message, jobid=jobid)
+        out = {
+            'status': status,
+            'message': message,
+            'new_token': self._token_encoded
+        }
         self.write(json.dumps(out, indent=4))
 
     # API endpoint: /job/status
     def post(self):
+        # The datetime type is not JSON serializable, so convert to string
+        def myconverter(o):
+            if isinstance(o, datetime.datetime):
+                return o.__str__()
         # TODO: Use role-based access control to allow a username parameter different
         #       from the authenticated user. For example, a user with role "admin" could
         #       obtain job status for any user.
         username = self._token_decoded["username"]
         job_id = self.getarg("job-id")
-        job_info_list, status, msg = JOBSDB.job_status(username, job_id)
-        out = dict(
-            status=status,
-            message=msg,
-            jobs=job_info_list
-        )
-        # The datetime type is not JSON serializable, so convert to string
-        def myconverter(o):
-            if isinstance(o, datetime.datetime):
-                return o.__str__()
+        job_info_list, status, message = JOBSDB.job_status(username, job_id)
+        out = {
+            'status': status,
+            'message': message,
+            'jobs': job_info_list,
+            'new_token': self._token_encoded
+        }
         self.write(json.dumps(out, indent=4, default = myconverter))
 
 

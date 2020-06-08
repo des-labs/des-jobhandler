@@ -48,7 +48,7 @@ class JobsDb:
         self.database = mysql_database
         self.cur = None
         self.cnx = None
-        self.db_schema_version = 5
+        self.db_schema_version = 7
         self.table_names = [
             'job',
             'query',
@@ -217,7 +217,7 @@ class JobsDb:
                 self.cur.execute(
                     (
                     "SELECT type, name, uuid, status, time_start, time_complete "
-                    "FROM `job` WHERE user = %s ORDER BY time_start DESC"
+                    "FROM `job` WHERE user = %s AND `deleted` = 0 ORDER BY time_start DESC"
                     ),
                     (
                     username,
@@ -495,11 +495,10 @@ class JobsDb:
                 self.cur.execute(
                     (
                         "UPDATE `session` "
-                        "SET token_value=%s, last_login=%s, password=%s "
+                        "SET last_login=%s, password=%s "
                         "WHERE username=%s"
                     ),
                     (
-                        token,
                         datetime.datetime.utcnow(),
                         ciphertext,
                         username,
@@ -509,12 +508,11 @@ class JobsDb:
                 self.cur.execute(
                     (
                         "INSERT INTO `session` "
-                        "(username, token_value, last_login, password) "
-                        "VALUES (%s, %s, %s, %s) "
+                        "(username, last_login, password) "
+                        "VALUES (%s, %s, %s) "
                     ),
                     (
                         username,
-                        token,
                         datetime.datetime.utcnow(),
                         ciphertext,
                     )
@@ -533,11 +531,10 @@ class JobsDb:
             self.cur.execute(
                 (
                     "UPDATE `session` "
-                    "SET token_value=%s, password=%s "
+                    "SET password=%s "
                     "WHERE username=%s"
                 ),
                 (
-                    '',
                     '',
                     username,
                 )
@@ -591,6 +588,26 @@ class JobsDb:
             logger.error(str(e).strip())
         self.close_db_connection()
 
+    def delete_job(self, job_id):
+        error_msg = ''
+        self.open_db_connection()
+        try:
+            self.cur.execute(
+                (
+                    "UPDATE `job` SET `deleted`=%s WHERE `uuid` = %s"
+                ),
+                (
+                    True,
+                    job_id,
+                )
+            )
+            if self.cur.rowcount != 1:
+                error_msg = 'Error updating job record'
+        except Exception as e:
+            error_msg = str(e).strip()
+            logger.error(error_msg)
+        self.close_db_connection()
+        return error_msg
 
 # Get global instance of the job handler database interface
 JOBSDB = JobsDb(
@@ -744,14 +761,18 @@ def submit_job(params):
         conf["image"] = envvars.DOCKER_IMAGE_TASK_QUERY
         conf["command"] = ["python3", "task.py"]
         quickQuery = "false"
+        checkQuery = "false"
         try:
             if params["quick"].lower() in ['true', '1', 'yes']:
                 quickQuery = "true"
+            if params["check"].lower() in ['true', '1', 'yes']:
+                checkQuery = "true"
         except:
             pass
         conf["configjob"]["spec"] = yaml.safe_load(template.render(
             queryString=params["query"],
-            quickQuery=quickQuery
+            quickQuery=quickQuery,
+            checkQuery=checkQuery
         ))
 
     ############################################################################
