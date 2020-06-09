@@ -209,22 +209,25 @@ class JobsDb:
 
     def job_status(self, username, job_id):
         self.open_db_connection()
-        request_status = 'ok'
+        request_status = STATUS_OK
         msg = ''
         job_info_list = []
         try:
             if job_id == "all":
                 self.cur.execute(
                     (
-                    "SELECT type, name, uuid, status, time_start, time_complete "
-                    "FROM `job` WHERE user = %s AND `deleted` = 0 ORDER BY time_start DESC"
+                        "SELECT j.type, j.name, j.uuid, j.status, j.time_start, j.time_complete, q.data "
+                        "FROM `job` j "
+                        "LEFT JOIN `query` q "
+                        "ON j.id = q.job_id "
+                        "WHERE j.user = %s AND j.deleted = 0 ORDER BY j.time_start DESC"
                     ),
                     (
-                    username,
+                        username,
                     )
                 )
                 job_info = None
-                for (type, name, uuid, status, time_start, time_complete) in self.cur:
+                for (type, name, uuid, status, time_start, time_complete, data) in self.cur:
                     job_info = {}
                     job_info["job_type"] = type
                     job_info["job_name"] = name
@@ -232,13 +235,16 @@ class JobsDb:
                     job_info["job_status"] = status
                     job_info["job_time_start"] = time_start
                     job_info["job_time_complete"] = time_complete
+                    job_info["data"] = {} if data is None else json.loads(data)
                     job_info_list.append(job_info)
             else:
                 self.cur.execute(
                     (
-                    "SELECT type, name, uuid, status, time_start, time_complete "
-                    "FROM `job` "
-                    "WHERE user = %s AND uuid = %s LIMIT 1"
+                        "SELECT j.type, j.name, j.uuid, j.status, j.time_start, j.time_complete, q.data "
+                        "FROM `job` j "
+                        "LEFT JOIN `query` q "
+                        "ON j.id = q.job_id "
+                        "WHERE j.user = %s AND j.uuid = %s AND j.deleted = 0 ORDER BY j.time_start DESC LIMIT 1"
                     ),
                     (
                         username,
@@ -246,7 +252,7 @@ class JobsDb:
                     )
                 )
                 job_info = None
-                for (type, name, uuid, status, time_start, time_complete) in self.cur:
+                for (type, name, uuid, status, time_start, time_complete, data) in self.cur:
                     job_info = {}
                     job_info["job_type"] = type
                     job_info["job_name"] = name
@@ -254,13 +260,16 @@ class JobsDb:
                     job_info["job_status"] = status
                     job_info["job_time_start"] = time_start
                     job_info["job_time_complete"] = time_complete
+                    job_info["data"] = {} if data is None else json.loads(data)
                     job_info_list.append(job_info)
                 if job_info == None:
                     request_status = 'error'
-                    msg = 'Error retrieving job status for user {}, job_id {}'.format(username, job_id)
+                    msg = 'Error retrieving job status for user {}, specific job_id {}'.format(username, job_id)
+                    logger.error(msg)
         except:
             request_status = 'error'
             msg = 'Error retrieving job status for user {}, job_id {}'.format(username, job_id)
+            logger.error(msg)
         self.close_db_connection()
         return [job_info_list, request_status, msg]
 
@@ -783,15 +792,19 @@ def submit_job(params):
                     msg = status_msg
                 else:
                     delete_path = os.path.join('/home/worker/output', job_info_list[0]['job_type'], params['job-id'])
-            conf["configjob"]["spec"] = yaml.safe_load(template.render(
-                action=action,
-                delete_paths=[delete_path]
-            ))
+                    conf["configjob"]["spec"] = yaml.safe_load(template.render(
+                        action=action,
+                        delete_paths=[delete_path]
+                    ))
+            else:
+                status = STATUS_ERROR
+                msg = 'Supported actions include "delete_job_files"'
+                return status,msg,job_id
+
         except:
             status = STATUS_ERROR
             msg = 'Invalid options for utility job type'
             return status,msg,job_id
-
     ############################################################################
     # task type: query
     ############################################################################
