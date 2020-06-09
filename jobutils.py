@@ -588,7 +588,7 @@ class JobsDb:
             logger.error(str(e).strip())
         self.close_db_connection()
 
-    def delete_job(self, job_id):
+    def mark_job_deleted(self, job_id):
         error_msg = ''
         self.open_db_connection()
         try:
@@ -667,6 +667,7 @@ def get_job_template(job_type):
     return Template(templateText)
 
 
+
 def submit_job(params):
 
     def filter_and_order_colors(colorString):
@@ -692,7 +693,7 @@ def submit_job(params):
         conf = {}
         conf["job"] = job_type
         conf["namespace"] = get_namespace()
-        conf["cm_name"] = get_job_configmap_name(conf["job"], job_id, username)
+        conf["cm_name"] = get_job_configmap_name(job_type, job_id, username)
         conf["host_network"] = envvars.HOST_NETWORK
         conf["user_agent"] = params["user_agent"]
         if 'job_name' in params and isinstance(params['job_name'], str):
@@ -722,6 +723,17 @@ def submit_job(params):
         return status,msg,''
     template = get_job_template(job_type)
     base_template = get_job_template_base()
+
+    if job_type == 'utility':
+        try:
+            logFilePath = "./output/{}_{}_{}.log".format(job_type, params['action'], params['job-id'])
+        except:
+            status = STATUS_ERROR
+            msg = 'Invalid options for utility job type'
+            return status,msg,''
+    else:
+        logFilePath = "./output/{}/{}.log".format(conf["job"], job_id)
+
     # Render the base YAML template for the job configuration data structure
     conf["configjob"] = yaml.safe_load(base_template.render(
         taskType=conf["job"],
@@ -730,7 +742,7 @@ def submit_job(params):
         jobId=job_id,
         username=username,
         password=password,
-        logFilePath="./output/{}/{}.log".format(conf["job"], job_id),
+        logFilePath=logFilePath,
         apiToken=secrets.token_hex(16),
         apiBaseUrl=envvars.API_BASE_URL,
         persistentVolumeClaim=envvars.PVC_NAME_BASE,
@@ -753,6 +765,32 @@ def submit_job(params):
         conf["configjob"]["spec"] = yaml.safe_load(template.render(
             taskDuration=int(params["time"])
         ))
+
+    ############################################################################
+    # task type: utility
+    ############################################################################
+    elif job_type == 'utility':
+        conf["image"] = envvars.DOCKER_IMAGE_TASK_UTILITY
+        try:
+            action = params['action']
+            delete_path = ''
+            conf["command"] = ["python", "task.py"]
+            if action == 'delete_job_files':
+                # Get the type of job in order to construct the path to be deleted
+                job_info_list, request_status, status_msg = JOBSDB.job_status(username, params['job-id'])
+                if request_status == STATUS_ERROR:
+                    status = STATUS_ERROR
+                    msg = status_msg
+                else:
+                    delete_path = os.path.join('/home/worker/output', job_info_list[0]['job_type'], params['job-id'])
+            conf["configjob"]["spec"] = yaml.safe_load(template.render(
+                action=action,
+                delete_paths=[delete_path]
+            ))
+        except:
+            status = STATUS_ERROR
+            msg = 'Invalid options for utility job type'
+            return status,msg,job_id
 
     ############################################################################
     # task type: query
@@ -906,7 +944,9 @@ def submit_job(params):
         logger.error(msg)
         return status,msg,job_id
     try:
-        JOBSDB.register_job(conf)
+        # Register the job in the database unless it is a utility job
+        if job_type != 'utility':
+            JOBSDB.register_job(conf)
     except Exception as e:
         status = STATUS_ERROR
         msg = str(e).strip()
