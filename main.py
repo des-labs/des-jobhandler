@@ -15,6 +15,7 @@ import time
 from io import StringIO
 from pandas import read_csv, DataFrame
 import os
+import easyaccess as ea
 
 STATUS_OK = 'ok'
 STATUS_ERROR = 'error'
@@ -424,6 +425,41 @@ class ValidateCsvHandler(BaseHandler):
             })
 
 
+@authenticated
+class CheckQuerySyntaxHandler(BaseHandler):
+    def post(self):
+        data = json.loads(self.request.body.decode('utf-8'))
+        response = {
+            "status": STATUS_OK,
+            "msg": "",
+            "valid": True
+        }
+        username = self._token_decoded["username"]
+        password = JOBSDB.get_password(username)
+        db = self._token_decoded["db"]
+        try:
+            query = data['query']
+            try:
+                connection = ea.connect(db, user=username, passwd=password)
+                cursor = connection.cursor()
+            except Exception as e:
+                response['status'] = STATUS_ERROR
+                response['msg'] = str(e).strip()
+            try:
+                cursor.parse(query.encode())
+            except Exception as e:
+                response['status'] = STATUS_ERROR
+                response['msg'] = str(e).strip()
+                response['valid'] = False
+            cursor.close()
+            connection.close()
+        except:
+            logger.info('Error decoding JSON data')
+            response['status'] = STATUS_ERROR
+            response['msg'] = "Invalid JSON in HTTP request body."
+        self.write(response)
+
+
 def make_app(basePath=''):
     settings = {"debug": True}
     return tornado.web.Application(
@@ -441,6 +477,7 @@ def make_app(basePath=''):
             (r"{}/profile/update/password?".format(basePath), ProfileUpdatePasswordHandler),
             (r"{}/logout/?".format(basePath), LogoutHandler),
             (r"{}/page/cutout/csv/validate/?".format(basePath), ValidateCsvHandler),
+            (r"{}/page/db-access/check/?".format(basePath), CheckQuerySyntaxHandler),
             ## Test Endpoints
             (r"{}/dev/debug/trigger?".format(basePath), DebugTrigger),
             (r"{}/dev/db/wipe?".format(basePath), DbWipe),

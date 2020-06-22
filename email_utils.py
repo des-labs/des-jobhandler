@@ -34,8 +34,7 @@ class SingleEmailHeader(object):
 
 
 def send_note(username, jobid, toemail):
-    bcc = 'mgckind@gmail.com'
-    link = envvars.API_BASE_URL
+    link = '{}/status/{}'.format(envvars.FRONTEND_BASE_URL, jobid)
     context = {
         "Subject": "Job {} is completed".format(jobid),
         "username": username,
@@ -47,6 +46,6 @@ def send_note(username, jobid, toemail):
     header = SingleEmailHeader(username, toemail, context, char='c')
     MP1 = MIMEText(header.html, 'html')
     header.msg.attach(MP1)
-    header.s.sendmail(header.fromemail, [header.toemail, bcc], header.msg.as_string())
+    header.s.sendmail(header.fromemail, [header.toemail], header.msg.as_string())
     header.s.quit()
     return "Email Sent to %s" % header.toemail

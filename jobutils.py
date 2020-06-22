@@ -477,10 +477,6 @@ class JobsDb:
                         )
                     )
                 if len(email) > 4:
-                    # if len(name) > 0:
-                    #     job_ref = name
-                    # else:
-                    #     job_ref = job_id
                     email_utils.send_note(user, job_id, email)
         self.close_db_connection()
         return error_msg
