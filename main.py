@@ -108,6 +108,7 @@ class ProfileUpdateHandler(BaseHandler):
         return
 
 
+@authenticated
 class ProfileUpdatePasswordHandler(BaseHandler):
     # API endpoint: /profile/update/password
     def post(self):
