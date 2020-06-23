@@ -216,18 +216,20 @@ class JobsDb:
             if job_id == "all":
                 self.cur.execute(
                     (
-                        "SELECT j.type, j.name, j.uuid, j.status, j.time_start, j.time_complete, q.data "
+                        "SELECT j.type, j.name, j.uuid, j.status, j.time_start, j.time_complete, q.data, q.query, q.files, c.file_list "
                         "FROM `job` j "
                         "LEFT JOIN `query` q "
                         "ON j.id = q.job_id "
-                        "WHERE j.user = %s AND j.deleted = 0 ORDER BY j.time_start DESC"
+                        "LEFT JOIN `cutout` c "
+                        "ON j.id = c.job_id "
+                        "WHERE j.user = %s AND j.deleted = 0 ORDER BY j.time_start DESC "
                     ),
                     (
                         username,
                     )
                 )
                 job_info = None
-                for (type, name, uuid, status, time_start, time_complete, data) in self.cur:
+                for (type, name, uuid, status, time_start, time_complete, data, query, files, file_list) in self.cur:
                     job_info = {}
                     job_info["job_type"] = type
                     job_info["job_name"] = name
@@ -236,14 +238,19 @@ class JobsDb:
                     job_info["job_time_start"] = time_start
                     job_info["job_time_complete"] = time_complete
                     job_info["data"] = {} if data is None else json.loads(data)
+                    job_info["query"] = query
+                    job_info["query_files"] = files
+                    job_info["cutout_files"] = file_list
                     job_info_list.append(job_info)
             else:
                 self.cur.execute(
                     (
-                        "SELECT j.type, j.name, j.uuid, j.status, j.time_start, j.time_complete, q.data "
+                        "SELECT j.type, j.name, j.uuid, j.status, j.time_start, j.time_complete, q.data, q.query, q.files, c.file_list "
                         "FROM `job` j "
                         "LEFT JOIN `query` q "
                         "ON j.id = q.job_id "
+                        "LEFT JOIN `cutout` c "
+                        "ON j.id = c.job_id "
                         "WHERE j.user = %s AND j.uuid = %s AND j.deleted = 0 ORDER BY j.time_start DESC LIMIT 1"
                     ),
                     (
@@ -261,6 +268,9 @@ class JobsDb:
                     job_info["job_time_start"] = time_start
                     job_info["job_time_complete"] = time_complete
                     job_info["data"] = {} if data is None else json.loads(data)
+                    job_info["query"] = query
+                    job_info["query_files"] = files
+                    job_info["cutout_files"] = file_list
                     job_info_list.append(job_info)
                 if job_info == None:
                     request_status = 'error'
