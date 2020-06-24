@@ -259,7 +259,7 @@ class JobsDb:
                     )
                 )
                 job_info = None
-                for (type, name, uuid, status, time_start, time_complete, data) in self.cur:
+                for (type, name, uuid, status, time_start, time_complete, data, query, files, file_list) in self.cur:
                     job_info = {}
                     job_info["job_type"] = type
                     job_info["job_name"] = name
@@ -396,6 +396,17 @@ class JobsDb:
 
     def update_job_complete(self, apitoken, response):
         error_msg = None
+        try:
+            if response['config']['kind'] == 'utility':
+                conf = {"job": response['config']['kind']}
+                conf['namespace'] = get_namespace()
+                conf["job_name"] = response['config']['metadata']['job_name']
+                conf["job_id"] = response['config']['metadata']['jobId']
+                conf["cm_name"] = get_job_configmap_name(response['config']['kind'], response['config']['metadata']['jobId'], response['config']['metadata']['username'])
+                kubejob.delete_job(conf)
+                return error_msg
+        except:
+            pass
         rowId = self.validate_apitoken(apitoken)
         if not isinstance(rowId, int):
             error_msg = 'Invalid apitoken'
