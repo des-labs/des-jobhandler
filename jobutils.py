@@ -635,6 +635,27 @@ class JobsDb:
         self.close_db_connection()
         return error_msg
 
+    def rename_job(self, job_id, job_name):
+        error_msg = ''
+        self.open_db_connection()
+        try:
+            self.cur.execute(
+                (
+                    "UPDATE `job` SET `name`=%s WHERE `uuid` = %s"
+                ),
+                (
+                    job_name,
+                    job_id,
+                )
+            )
+            if self.cur.rowcount != 1:
+                error_msg = 'Error updating job record'
+        except Exception as e:
+            error_msg = str(e).strip()
+            logger.error(error_msg)
+        self.close_db_connection()
+        return error_msg
+
 # Get global instance of the job handler database interface
 JOBSDB = JobsDb(
     mysql_host=envvars.MYSQL_HOST,

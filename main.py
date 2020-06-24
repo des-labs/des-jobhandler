@@ -351,6 +351,54 @@ class JobComplete(BaseHandler):
             logger.error(error_msg)
 
 
+@authenticated
+class JobRename(BaseHandler):
+    # API endpoint: /job/rename
+    def post(self):
+        status = STATUS_OK
+        message = ''
+        # If username is not specified, assume it is the authenticated user
+        try:
+            params = json.loads(self.request.body.decode('utf-8'))
+        except:
+            params = {k: self.get_argument(k) for k in self.request.arguments}
+        try:
+            if 'username' in params and isinstance(params['username'], str):
+                username = params['username'].lower()
+            else:
+                username = self._token_decoded["username"]
+            # Get job ID of job to delete
+            job_id = params['job-id']
+            # Determine the type of the job to delete
+            job_info_list, request_status, status_msg = JOBSDB.job_status(username, job_id)
+            if request_status == STATUS_ERROR:
+                status = STATUS_ERROR
+                message = status_msg
+            else:
+                job_name = job_info_list[0]['job_name']
+        except:
+            status = STATUS_ERROR
+            message = 'Invalid username or job ID specified.'
+
+        # TODO: Allow users with "admin" role to specify any username
+        if status == STATUS_OK and job_name != params['job-name']:
+            if username == self._token_decoded["username"]:
+                message = JOBSDB.rename_job(job_id, params['job-name'])
+                if message != '':
+                    status = STATUS_ERROR
+                else:
+                    message = 'Job "{}" renamed to {}.'.format(job_id, params['job-name'])
+            else:
+                status = STATUS_ERROR
+                message = 'Username specified must be the authenticated user.'
+        out = {
+        'status': status,
+        'message': message,
+        'new_token': self._token_encoded
+        }
+        self.write(json.dumps(out, indent=4))
+
+
 class DebugTrigger(BaseHandler):
     # API endpoint: /dev/debug/trigger
     def post(self):
@@ -471,6 +519,7 @@ def make_app(basePath=''):
             (r"{}/job/submit?".format(basePath), JobHandler),
             (r"{}/job/complete?".format(basePath), JobComplete),
             (r"{}/job/start?".format(basePath), JobStart),
+            (r"{}/job/rename?".format(basePath), JobRename),
             ## Profile Endpoints
             (r"{}/login/?".format(basePath), LoginHandler),
             (r"{}/profile/?".format(basePath), ProfileHandler),
