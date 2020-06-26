@@ -451,11 +451,12 @@ class JobsDb:
             self.cur.execute(selectJobSql, selectJobInfo)
             for (user, type, uuid, name, email) in self.cur:
                 job_id = uuid
+                job_name = name
                 if job_status == "unknown":
                     logger.warning('Job {} completion report did not include a final status.'.format(job_id))
                 conf = {"job": type}
                 conf['namespace'] = get_namespace()
-                conf["job_name"] = get_job_name(type, job_id, user)
+                conf["job_name"] = job_name
                 conf["job_id"] = job_id
                 conf["cm_name"] = get_job_configmap_name(type, job_id, user)
                 kubejob.delete_job(conf)
@@ -498,7 +499,7 @@ class JobsDb:
                         )
                     )
                 if len(email) > 4:
-                    email_utils.send_note(user, job_id, email)
+                    email_utils.send_note(user, job_id, job_name, email)
         self.close_db_connection()
         return error_msg
 

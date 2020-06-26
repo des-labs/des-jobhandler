@@ -26,21 +26,45 @@ class SingleEmailHeader(object):
         self.msg['To'] = self.toemail
         self.context = context
         if ps is None:
-            self.ps = 'PS: This is the full link you can copy/paste into the browser:<br /> <span style="font-size: 11px">{link}</span>'.format(link=self.context['link'])
+            self.ps = '''
+                <span style="font-size: 11px">
+                Trouble opening the link above? Copy and paste the URL directly:
+                <br /> {link}
+                </span>
+                '''.format(link=self.context['link'])
         else:
             self.ps = ps
         self.context['ps'] = self.ps
-        self.html = render(os.path.join(os.path.dirname(__file__), 'template.html'), self.context)
+        self.html = render(os.path.join(os.path.dirname(__file__), 'email_template.html'), self.context)
 
 
-def send_note(username, jobid, toemail):
+def send_note(username, jobid, job_name, toemail):
     link = '{}/status/{}'.format(envvars.FRONTEND_BASE_URL, jobid)
     context = {
-        "Subject": "Job {} is completed".format(jobid),
+        "Subject": "DESaccess Job Complete: {}".format(job_name),
         "username": username,
-        "msg": """The job <b>{}</b> was completed. <br>
-        The results can be retrieved from the link below""".format(jobid),
-        "action": "Click Here To See Your Jobs",
+        "msg": """
+        <p>Your DESaccess job is complete.
+        <table width="100%" border="0">
+            <tr>
+                <td align="left"><b>User<b>:</td>
+                <td align="left">{}</td>
+            </tr>
+            <tr>
+                <td align="left"><b>Job name<b>:</td>
+                <td align="left" style="font-family: monospace;">{}</td>
+            </tr>
+            <tr>
+                <td align="left"><b>Job ID<b>:</td>
+                <td align="left" style="font-family: monospace;">{}</td>
+            </tr>
+            <tr>
+                <td align="left"><b>Status<b>:</td>
+                <td align="left">Complete</td>
+            </tr>
+        </table>
+        """.format(username, job_name, jobid),
+        "action": "Click Here To View Results",
         "link": link,
     }
     header = SingleEmailHeader(username, toemail, context, char='c')
