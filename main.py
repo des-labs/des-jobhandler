@@ -439,15 +439,31 @@ class ValidateCsvHandler(BaseHandler):
         tempCsvFile = '.temp.csv'
         try:
 
-            parsedData = read_csv(StringIO(data['csvText']), dtype={'RA': float, 'DEC': float, 'COADD_OBJECT_ID': int})
+            parsedData = read_csv(StringIO(data['csvText']), dtype={
+                'RA': float,
+                'DEC': float,
+                'COADD_OBJECT_ID': int,
+                'XSIZE': float,
+                'YSIZE': float
+            })
 
-            if all(k in parsedData for k in ("RA", "DEC")):
-                df = DataFrame(parsedData, columns=['RA','DEC']) #.round(5).map(lambda x: '%.5g' % x)
+            if all(k in parsedData for k in ('RA','DEC','XSIZE','YSIZE')):
+                df = DataFrame(parsedData, columns=['RA','DEC','XSIZE','YSIZE'])
+                df['XSIZE'] = df['XSIZE'].map(lambda x: '%.2f' % x)
+                df['YSIZE'] = df['YSIZE'].map(lambda x: '%.2f' % x)
                 df.to_csv(tempCsvFile, index=False, float_format='%.12f')
                 type = "coords"
+            elif all(k in parsedData for k in ('RA','DEC')):
+                df = DataFrame(parsedData, columns=['RA','DEC'])
+                df.to_csv(tempCsvFile, index=False, float_format='%.12f')
+                type = "coords"
+            elif all(k in parsedData for k in ('COADD_OBJECT_ID','XSIZE','YSIZE')):
+                df = DataFrame(parsedData, columns=['COADD_OBJECT_ID','XSIZE','YSIZE'])
+                df.to_csv(tempCsvFile, index=False, float_format='%.2f')
+                type = "id"
             elif 'COADD_OBJECT_ID' in parsedData:
-                df = DataFrame(parsedData, columns=['COADD_OBJECT_ID', 'TILENAME']) #.round(5)
-                df.to_csv(tempCsvFile, index=False, float_format='%.0f')
+                df = DataFrame(parsedData, columns=['COADD_OBJECT_ID'])
+                df.to_csv(tempCsvFile, index=False, float_format='%.2f')
                 type = "id"
             else:
                 logger.info('CSV header must have RA/DEC or COADD_OBJECT_ID')
