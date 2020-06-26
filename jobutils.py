@@ -851,18 +851,28 @@ def submit_job(params):
         conf["command"] = ["python3", "task.py"]
         quickQuery = "false"
         checkQuery = "false"
+        compression = "false"
         try:
             if "quick" in params and params["quick"].lower() in ['true', '1', 'yes']:
                 quickQuery = "true"
             if "check" in params and params["check"].lower() in ['true', '1', 'yes']:
                 checkQuery = "true"
+            if "compression" in params and params["compression"].lower() in ['true', '1', 'yes']:
+                compression = "true"
         except:
             pass
-        conf["configjob"]["spec"] = yaml.safe_load(template.render(
-            queryString=params["query"],
-            quickQuery=quickQuery,
-            checkQuery=checkQuery
-        ))
+        try:
+            conf["configjob"]["spec"] = yaml.safe_load(template.render(
+                queryString=params["query"],
+                fileName=params["filename"],
+                quickQuery=quickQuery,
+                checkQuery=checkQuery,
+                compression=compression
+            ))
+        except:
+            status = STATUS_ERROR
+            msg = 'query and filename are required'
+            return status,msg,job_id
 
     ############################################################################
     # task type: cutout
