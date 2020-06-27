@@ -513,7 +513,7 @@ class CheckQuerySyntaxHandler(BaseHandler):
             try:
                 cursor.parse(query.encode())
             except Exception as e:
-                response['status'] = STATUS_ERROR
+                # response['status'] = STATUS_ERROR
                 response['msg'] = str(e).strip()
                 response['valid'] = False
             cursor.close()
