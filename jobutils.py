@@ -217,7 +217,7 @@ class JobsDb:
             if job_id == "all":
                 self.cur.execute(
                     (
-                        "SELECT j.type, j.name, j.uuid, j.status, j.time_start, j.time_complete, q.data, q.query, q.files, c.file_list "
+                        "SELECT j.type, j.name, j.uuid, j.status, j.msg, j.time_start, j.time_complete, q.data, q.query, q.files, c.file_list "
                         "FROM `job` j "
                         "LEFT JOIN `query` q "
                         "ON j.id = q.job_id "
@@ -230,12 +230,13 @@ class JobsDb:
                     )
                 )
                 job_info = None
-                for (type, name, uuid, status, time_start, time_complete, data, query, files, file_list) in self.cur:
+                for (type, name, uuid, status, msg, time_start, time_complete, data, query, files, file_list) in self.cur:
                     job_info = {}
                     job_info["job_type"] = type
                     job_info["job_name"] = name
                     job_info["job_id"] = uuid
                     job_info["job_status"] = status
+                    job_info["job_status_message"] = msg
                     job_info["job_time_start"] = time_start
                     job_info["job_time_complete"] = time_complete
                     job_info["data"] = {} if data is None else json.loads(data)
@@ -246,7 +247,7 @@ class JobsDb:
             else:
                 self.cur.execute(
                     (
-                        "SELECT j.type, j.name, j.uuid, j.status, j.time_start, j.time_complete, q.data, q.query, q.files, c.file_list "
+                        "SELECT j.type, j.name, j.uuid, j.status, j.msg, j.time_start, j.time_complete, q.data, q.query, q.files, c.file_list "
                         "FROM `job` j "
                         "LEFT JOIN `query` q "
                         "ON j.id = q.job_id "
@@ -260,12 +261,13 @@ class JobsDb:
                     )
                 )
                 job_info = None
-                for (type, name, uuid, status, time_start, time_complete, data, query, files, file_list) in self.cur:
+                for (type, name, uuid, status, msg, time_start, time_complete, data, query, files, file_list) in self.cur:
                     job_info = {}
                     job_info["job_type"] = type
                     job_info["job_name"] = name
                     job_info["job_id"] = uuid
                     job_info["job_status"] = status
+                    job_info["job_status_message"] = msg
                     job_info["job_time_start"] = time_start
                     job_info["job_time_complete"] = time_complete
                     job_info["data"] = {} if data is None else json.loads(data)
@@ -760,6 +762,7 @@ def submit_job(params):
         job_id = generate_job_id()
         conf = {}
         conf["job"] = job_type
+        conf["db"] = params['db']
         conf["namespace"] = get_namespace()
         conf["cm_name"] = get_job_configmap_name(job_type, job_id, username)
         conf["host_network"] = envvars.HOST_NETWORK
@@ -810,6 +813,7 @@ def submit_job(params):
         jobId=job_id,
         username=username,
         password=password,
+        database=conf['db'],
         logFilePath=logFilePath,
         apiToken=secrets.token_hex(16),
         apiBaseUrl=envvars.API_BASE_URL,

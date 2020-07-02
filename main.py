@@ -199,7 +199,10 @@ class JobHandler(BaseHandler):
             username = params["username"].lower()
         except:
             username = self._token_decoded["username"]
-        params["db"] = self._token_decoded["db"]
+        # If the database is not specified in the request, assume the database to
+        # use is the one encoded in the authentication token
+        if 'db' not in params or not isinstance(params['db'], str) or len(params['db']) < 1:
+            params["db"] = self._token_decoded["db"]
         try:
             params["user_agent"] = self.request.headers["User-Agent"]
         except:
