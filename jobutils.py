@@ -13,6 +13,7 @@ from cryptography.fernet import Fernet
 import base64
 import re
 import email_utils
+import shutil
 
 STATUS_OK = 'ok'
 STATUS_ERROR = 'error'
@@ -635,6 +636,25 @@ class JobsDb:
             logger.error(error_msg)
         self.close_db_connection()
         return error_msg
+
+    def delete_job_files(self, job_id, username):
+        status = STATUS_OK
+        error_msg = ''
+        self.open_db_connection()
+        try:
+            job_info_list, request_status, status_msg = JOBSDB.job_status(username, job_id)
+            if request_status == STATUS_ERROR:
+                status = STATUS_ERROR
+                error_msg = status_msg
+            else:
+                delete_path = os.path.join('/jobfiles', username, job_info_list[0]['job_type'], job_id)
+                if os.path.isdir(delete_path):
+                    shutil.rmtree(delete_path)
+        except Exception as e:
+            error_msg = str(e).strip()
+            logger.error(error_msg)
+        self.close_db_connection()
+        return [status, error_msg]
 
     def rename_job(self, job_id, job_name):
         error_msg = ''
