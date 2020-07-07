@@ -652,6 +652,9 @@ class JobsDb:
                 delete_path = os.path.join('/jobfiles', username, job_info_list[0]['job_type'], job_id)
                 if os.path.isdir(delete_path):
                     shutil.rmtree(delete_path)
+                archive_file = os.path.join('/jobfiles', username, job_info_list[0]['job_type'], '{}.tar.gz'.format(job_id))
+                if os.path.isfile(archive_file):
+                    os.remove(archive_file)
         except Exception as e:
             error_msg = str(e).strip()
             logger.error(error_msg)
