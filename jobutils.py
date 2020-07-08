@@ -162,17 +162,31 @@ class JobsDb:
                 # Ignore redundant role definitions
                 if role not in roles_added:
                     roles_added.append(role)
+                    # Only add the role if the record does not already exist.
                     self.cur.execute(
                         (
-                            "INSERT INTO `role` "
-                            "(username, role_name) "
-                            "VALUES (%s, %s)"
+                            "SELECT id FROM `role` WHERE username = %s AND role_name = %s LIMIT 1"
                         ),
                         (
                             role["username"],
                             role["role_name"],
                         )
                     )
+                    rowId = None
+                    for (id,) in self.cur:
+                        rowId = id
+                    if rowId == None:
+                        self.cur.execute(
+                            (
+                                "INSERT INTO `role` "
+                                "(username, role_name) "
+                                "VALUES (%s, %s)"
+                            ),
+                            (
+                                role["username"],
+                                role["role_name"],
+                            )
+                        )
             self.close_db_connection()
         except Exception as e:
             logger.error(str(e).strip())
@@ -597,6 +611,30 @@ class JobsDb:
             logger.error(str(e).strip())
         self.close_db_connection()
         return roles
+
+    def get_all_users(self):
+        self.open_db_connection()
+        users = {}
+        users_array = []
+        try:
+            self.cur.execute("SELECT username,role_name from `role`")
+            for (username, role_name,) in self.cur:
+                # Assume that if the user is in this table, it must have at least one associated role
+                if username in users:
+                    users[username]['roles'].append(role_name)
+                else:
+                    users[username] = {
+                    'roles': [role_name]
+                    }
+            for username in users:
+                users_array.append({
+                    'username': username,
+                    'roles': users[username]['roles']
+                })
+        except Exception as e:
+            logger.error(str(e).strip())
+        self.close_db_connection()
+        return users_array
 
     def get_password(self, username):
         self.open_db_connection()

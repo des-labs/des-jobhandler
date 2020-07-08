@@ -562,6 +562,29 @@ class CheckQuerySyntaxHandler(BaseHandler):
         self.write(response)
 
 
+@authenticated
+class UsersListHandler(BaseHandler):
+    def post(self):
+        # data = json.loads(self.request.body.decode('utf-8'))
+        response = {
+            "status": STATUS_OK,
+            "msg": "",
+            'users': {}
+        }
+        roles = self._token_decoded["roles"]
+        try:
+            if 'admin' in roles:
+                response['users'] = JOBSDB.get_all_users()
+            else:
+                response['status'] = STATUS_ERROR
+                response['msg'] = "Permission denied: You must be an admin."
+        except:
+            logger.info('Error decoding JSON data')
+            response['status'] = STATUS_ERROR
+            response['msg'] = "Invalid JSON in HTTP request body."
+        self.write(response)
+
+
 def make_app(basePath=''):
     settings = {"debug": True}
     return tornado.web.Application(
@@ -581,6 +604,7 @@ def make_app(basePath=''):
             (r"{}/logout/?".format(basePath), LogoutHandler),
             (r"{}/page/cutout/csv/validate/?".format(basePath), ValidateCsvHandler),
             (r"{}/page/db-access/check/?".format(basePath), CheckQuerySyntaxHandler),
+            (r"{}/page/users/list/?".format(basePath), UsersListHandler),
             ## Test Endpoints
             (r"{}/dev/debug/trigger?".format(basePath), DebugTrigger),
             (r"{}/dev/db/wipe?".format(basePath), DbWipe),
