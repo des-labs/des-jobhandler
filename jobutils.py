@@ -612,7 +612,7 @@ class JobsDb:
         self.close_db_connection()
         return roles
 
-    def get_all_users(self):
+    def get_all_user_roles(self):
         self.open_db_connection()
         users = {}
         users_array = []
@@ -754,6 +754,72 @@ class JobsDb:
                 )
                 if self.cur.rowcount != 1:
                     error_msg = 'Error adding user role: {}'.format(role)
+        except Exception as e:
+            error_msg = str(e).strip()
+            logger.error(error_msg)
+        self.close_db_connection()
+        return error_msg
+
+    def set_user_roles(self, username, new_roles):
+        error_msg = ''
+        self.open_db_connection()
+        try:
+            for role in new_roles:
+                # Sanitize input role name to enforce only lowercase letters
+                if role != re.sub(r'([^a-z])', '', role.lower()):
+                    self.close_db_connection()
+                    error_msg = 'Role names may only consist of lowercase letters.'
+                    return error_msg
+            self.cur.execute(
+                (
+                    "SELECT id FROM `role` WHERE `username` = %s LIMIT 1"
+                ),
+                (
+                    username,
+                )
+            )
+            uid = None
+            for (id,) in self.cur:
+                uid = id
+            if uid != None:
+                error_msg = 'User already exists: {}'.format(username)
+            else:
+                for role in new_roles:
+                    # Sanitize input role name to enforce only lowercase letters
+                    role = re.sub(r'([^a-z])', '', role.lower())
+                    self.cur.execute(
+                        (
+                            "INSERT INTO `role` "
+                            "(username, role_name) "
+                            "VALUES (%s, %s)"
+                        ),
+                        (
+                            username,
+                            role,
+                        )
+                    )
+                    if self.cur.rowcount != 1:
+                        error_msg = 'Error adding user role: {}'.format(role)
+        except Exception as e:
+            error_msg = str(e).strip()
+            logger.error(error_msg)
+        self.close_db_connection()
+        return error_msg
+
+    def reset_user_roles(self, username):
+        error_msg = ''
+        self.open_db_connection()
+        try:
+            self.cur.execute(
+                (
+                    "DELETE FROM `role` WHERE `username` = %s"
+                ),
+                (
+                    username,
+                )
+            )
+            if self.cur.rowcount < 1:
+                error_msg = 'Error deleting user: {}'.format(username)
         except Exception as e:
             error_msg = str(e).strip()
             logger.error(error_msg)

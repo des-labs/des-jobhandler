@@ -54,6 +54,18 @@ def get_basic_info(user):
     dbh.close()
     return cc
 
+def list_all_users():
+    kwargs = {'host': dbConf.host, 'port': dbConf.port, 'service_name': dbConf.db_manager}
+    dsn = cx_Oracle.makedsn(**kwargs)
+    dbh = cx_Oracle.connect(dbConf.user_manager, dbConf.pwd_manager, dsn=dsn)
+    cursor = dbh.cursor()
+    try:
+        cc = cursor.execute("select username,firstname,lastname,email from des_users").fetchall()
+    except:
+        cc = ('','','','')
+    cursor.close()
+    dbh.close()
+    return cc
 
 def update_info(username, firstname, lastname, email):
     kwargs = {'host': dbConf.host, 'port': dbConf.port, 'service_name': dbConf.db_manager}
@@ -100,5 +112,4 @@ def change_credentials(username, oldpwd, newpwd, db):
             error = str(e).strip()
             return 'error', error
     else:
-        return 'error', error 
-
+        return 'error', error

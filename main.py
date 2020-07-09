@@ -563,7 +563,7 @@ class CheckQuerySyntaxHandler(BaseHandler):
 
 
 @authenticated
-class UsersListHandler(BaseHandler):
+class ListUserRolesHandler(BaseHandler):
     def post(self):
         # data = json.loads(self.request.body.decode('utf-8'))
         response = {
@@ -574,7 +574,7 @@ class UsersListHandler(BaseHandler):
         roles = self._token_decoded["roles"]
         try:
             if 'admin' in roles:
-                response['users'] = JOBSDB.get_all_users()
+                response['users'] = JOBSDB.get_all_user_roles()
             else:
                 response['status'] = STATUS_ERROR
                 response['msg'] = "Permission denied: You must be an admin."
@@ -591,8 +591,7 @@ class UpdateUserRolesHandler(BaseHandler):
         data = json.loads(self.request.body.decode('utf-8'))
         response = {
             "status": STATUS_OK,
-            "msg": "",
-            'users': {}
+            "msg": ""
         }
         roles = self._token_decoded["roles"]
         try:
@@ -601,6 +600,84 @@ class UpdateUserRolesHandler(BaseHandler):
                 response['msg'] = JOBSDB.update_user_roles(data['username'], data['new_roles'])
                 if response['msg'] != '':
                     response['status'] = STATUS_ERROR
+            else:
+                response['status'] = STATUS_ERROR
+                response['msg'] = "Permission denied: You must be an admin."
+        except:
+            logger.info('Error decoding JSON data')
+            response['status'] = STATUS_ERROR
+            response['msg'] = "Invalid JSON in HTTP request body."
+        self.write(response)
+
+
+@authenticated
+class SetUserRolesHandler(BaseHandler):
+    def post(self):
+        data = json.loads(self.request.body.decode('utf-8'))
+        response = {
+            "status": STATUS_OK,
+            "msg": ""
+        }
+        roles = self._token_decoded["roles"]
+        try:
+            if 'admin' in roles:
+                response['msg'] = JOBSDB.set_user_roles(data['username'], data['roles'])
+                if response['msg'] != '':
+                    response['status'] = STATUS_ERROR
+            else:
+                response['status'] = STATUS_ERROR
+                response['msg'] = "Permission denied: You must be an admin."
+        except:
+            logger.info('Error decoding JSON data')
+            response['status'] = STATUS_ERROR
+            response['msg'] = "Invalid JSON in HTTP request body."
+        self.write(response)
+
+
+@authenticated
+class ResetUserRoleHandler(BaseHandler):
+    def post(self):
+        data = json.loads(self.request.body.decode('utf-8'))
+        response = {
+            "status": STATUS_OK,
+            "msg": ""
+        }
+        roles = self._token_decoded["roles"]
+        try:
+            if 'admin' in roles:
+                response['msg'] = JOBSDB.reset_user_roles(data['username'])
+                if response['msg'] != '':
+                    response['status'] = STATUS_ERROR
+            else:
+                response['status'] = STATUS_ERROR
+                response['msg'] = "Permission denied: You must be an admin."
+        except:
+            logger.info('Error decoding JSON data')
+            response['status'] = STATUS_ERROR
+            response['msg'] = "Invalid JSON in HTTP request body."
+        self.write(response)
+
+
+@authenticated
+class ListUsersHandler(BaseHandler):
+    def post(self):
+        data = json.loads(self.request.body.decode('utf-8'))
+        response = {
+            "status": STATUS_OK,
+            "msg": "",
+            "users": {}
+        }
+        roles = self._token_decoded["roles"]
+        try:
+            if 'admin' in roles:
+                if 'username' in data:
+                    if data['username'] == 'all':
+                        response['users'] = dbutils.list_all_users()
+                    else:
+                        response['users'] = dbutils.get_basic_info(data['username'])
+                else:
+                    response['status'] = STATUS_ERROR
+                    response['msg'] = "Parameter username must be specified. To list all users use value \"all\""
             else:
                 response['status'] = STATUS_ERROR
                 response['msg'] = "Permission denied: You must be an admin."
@@ -627,11 +704,15 @@ def make_app(basePath=''):
             (r"{}/profile/?".format(basePath), ProfileHandler),
             (r"{}/profile/update/info?".format(basePath), ProfileUpdateHandler),
             (r"{}/profile/update/password?".format(basePath), ProfileUpdatePasswordHandler),
-            (r"{}/user/update/roles?".format(basePath), UpdateUserRolesHandler),
+            # TODO: Consider replacing user add/delete/update handlers with single handler using request types PUT/DELETE/POST
+            (r"{}/user/role/update?".format(basePath), UpdateUserRolesHandler),
+            (r"{}/user/role/add?".format(basePath), SetUserRolesHandler),
+            (r"{}/user/role/reset?".format(basePath), ResetUserRoleHandler),
+            (r"{}/user/role/list?".format(basePath), ListUserRolesHandler),
+            (r"{}/user/list?".format(basePath), ListUsersHandler),
             (r"{}/logout/?".format(basePath), LogoutHandler),
             (r"{}/page/cutout/csv/validate/?".format(basePath), ValidateCsvHandler),
             (r"{}/page/db-access/check/?".format(basePath), CheckQuerySyntaxHandler),
-            (r"{}/page/users/list/?".format(basePath), UsersListHandler),
             ## Test Endpoints
             (r"{}/dev/debug/trigger?".format(basePath), DebugTrigger),
             (r"{}/dev/db/wipe?".format(basePath), DbWipe),
