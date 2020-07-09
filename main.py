@@ -585,6 +585,32 @@ class UsersListHandler(BaseHandler):
         self.write(response)
 
 
+@authenticated
+class UpdateUserRolesHandler(BaseHandler):
+    def post(self):
+        data = json.loads(self.request.body.decode('utf-8'))
+        response = {
+            "status": STATUS_OK,
+            "msg": "",
+            'users': {}
+        }
+        roles = self._token_decoded["roles"]
+        try:
+            new_roles = data['new_roles']
+            if 'admin' in roles:
+                response['msg'] = JOBSDB.update_user_roles(data['username'], data['new_roles'])
+                if response['msg'] != '':
+                    response['status'] = STATUS_ERROR
+            else:
+                response['status'] = STATUS_ERROR
+                response['msg'] = "Permission denied: You must be an admin."
+        except:
+            logger.info('Error decoding JSON data')
+            response['status'] = STATUS_ERROR
+            response['msg'] = "Invalid JSON in HTTP request body."
+        self.write(response)
+
+
 def make_app(basePath=''):
     settings = {"debug": True}
     return tornado.web.Application(
@@ -601,6 +627,7 @@ def make_app(basePath=''):
             (r"{}/profile/?".format(basePath), ProfileHandler),
             (r"{}/profile/update/info?".format(basePath), ProfileUpdateHandler),
             (r"{}/profile/update/password?".format(basePath), ProfileUpdatePasswordHandler),
+            (r"{}/user/update/roles?".format(basePath), UpdateUserRolesHandler),
             (r"{}/logout/?".format(basePath), LogoutHandler),
             (r"{}/page/cutout/csv/validate/?".format(basePath), ValidateCsvHandler),
             (r"{}/page/db-access/check/?".format(basePath), CheckQuerySyntaxHandler),

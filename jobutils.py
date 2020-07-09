@@ -720,6 +720,46 @@ class JobsDb:
         self.close_db_connection()
         return error_msg
 
+    def update_user_roles(self, username, new_roles):
+        error_msg = ''
+        self.open_db_connection()
+        try:
+            for role in new_roles:
+                # Sanitize input role name to enforce only lowercase letters
+                if role != re.sub(r'([^a-z])', '', role.lower()):
+                    self.close_db_connection()
+                    error_msg = 'Role names may only consist of lowercase letters.'
+                    return error_msg
+            self.cur.execute(
+                (
+                    "DELETE FROM `role` WHERE `username` = %s"
+                ),
+                (
+                    username,
+                )
+            )
+            for role in new_roles:
+                # Sanitize input role name to enforce only lowercase letters
+                role = re.sub(r'([^a-z])', '', role.lower())
+                self.cur.execute(
+                    (
+                        "INSERT INTO `role` "
+                        "(username, role_name) "
+                        "VALUES (%s, %s)"
+                    ),
+                    (
+                        username,
+                        role,
+                    )
+                )
+                if self.cur.rowcount != 1:
+                    error_msg = 'Error adding user role: {}'.format(role)
+        except Exception as e:
+            error_msg = str(e).strip()
+            logger.error(error_msg)
+        self.close_db_connection()
+        return error_msg
+
 # Get global instance of the job handler database interface
 JOBSDB = JobsDb(
     mysql_host=envvars.MYSQL_HOST,
