@@ -9,3 +9,4 @@ tenacity
 rpdb
 cryptography
 pandas
+jira

@@ -3,6 +3,7 @@ import tornado.ioloop
 import tornado.web
 import tornado
 import json
+import yaml
 import datetime
 import logging
 import kubejob
@@ -16,6 +17,9 @@ from io import StringIO
 from pandas import read_csv, DataFrame
 import os
 import easyaccess as ea
+import jira.client
+import base64
+from jinja2 import Template
 
 STATUS_OK = 'ok'
 STATUS_ERROR = 'error'
@@ -586,6 +590,76 @@ class ListUserRolesHandler(BaseHandler):
 
 
 @authenticated
+class HelpFormHandler(BaseHandler):
+    def post(self):
+        data = json.loads(self.request.body.decode('utf-8'))
+        response = {
+            "status": STATUS_OK,
+            "msg": ""
+        }
+        data['username'] = self._token_decoded["username"]
+        # TODO: Consider reconciling any differences between the
+        # user profile data in the auth token with the custom
+        # name and email provided by the help form
+        try:
+            response['msg'] = JOBSDB.process_help_request(data)
+            if response['msg'] != '':
+                response['status'] = STATUS_ERROR
+                self.write(response)
+                return
+            # Obtain the Jira API auth credentials from the mounted secret
+            jira_access_file = os.path.join(
+                os.path.dirname(__file__),
+                "jira_access.yaml"
+            )
+            with open(jira_access_file, 'r') as cfile:
+                conf = yaml.load(cfile)['jira']
+            # Initialize Jira API object
+            jira_api = jira.client.JIRA(
+                options={'server': 'https://opensource.ncsa.illinois.edu/jira'},
+                basic_auth=(
+                    base64.b64decode(conf['uu']).decode().strip(),
+                    base64.b64decode(conf['pp']).decode().strip()
+                )
+            )
+            # Construct Jira issue body from template file
+            jiraIssueTemplateFile = os.path.join(
+                os.path.dirname(__file__),
+                "jira_issue.tpl"
+            )
+            with open(jiraIssueTemplateFile) as f:
+                templateText = f.read()
+            body = Template(templateText).render(
+                email=data['email'],
+                firstname=data['firstname'],
+                lastname=data['lastname'],
+                topics=', \n'.join(data['topics']),
+                message=data['message'],
+                othertopic=data['othertopic']
+            )
+            issue = {
+                'project' : {'key': 'DESLABS'},
+                'issuetype': {'name': 'Task'},
+                'summary': 'DESaccess (alpha release) help request',
+                'description' : body,
+                #'reporter' : {'name': 'desdm-wufoo'},
+            }
+            # Generate a new Jira ticket using the Jira API
+            try:
+                new_issue = jira_api.create_issue(fields=issue)
+                response['msg'] = 'Jira issue created: {}'.format(new_issue)
+            except:
+                response['status'] = STATUS_ERROR
+                response['msg'] = "Error while creating Jira issue"
+                logger.error('{}:\n{}'.format(response['msg'], issue))
+        except:
+            logger.info('Error decoding JSON data')
+            response['status'] = STATUS_ERROR
+            response['msg'] = "Invalid JSON in HTTP request body."
+        self.write(response)
+
+
+@authenticated
 class UpdateUserRolesHandler(BaseHandler):
     def post(self):
         data = json.loads(self.request.body.decode('utf-8'))
@@ -595,7 +669,6 @@ class UpdateUserRolesHandler(BaseHandler):
         }
         roles = self._token_decoded["roles"]
         try:
-            new_roles = data['new_roles']
             if 'admin' in roles:
                 response['msg'] = JOBSDB.update_user_roles(data['username'], data['new_roles'])
                 if response['msg'] != '':
@@ -713,6 +786,7 @@ def make_app(basePath=''):
             (r"{}/logout/?".format(basePath), LogoutHandler),
             (r"{}/page/cutout/csv/validate/?".format(basePath), ValidateCsvHandler),
             (r"{}/page/db-access/check/?".format(basePath), CheckQuerySyntaxHandler),
+            (r"{}/page/help/form/?".format(basePath), HelpFormHandler),
             ## Test Endpoints
             (r"{}/dev/debug/trigger?".format(basePath), DebugTrigger),
             (r"{}/dev/db/wipe?".format(basePath), DbWipe),

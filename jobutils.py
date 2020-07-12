@@ -49,14 +49,15 @@ class JobsDb:
         self.database = mysql_database
         self.cur = None
         self.cnx = None
-        self.db_schema_version = 7
+        self.db_schema_version = 8
         self.table_names = [
             'job',
             'query',
             'cutout',
             'role',
             'session',
-            'meta'
+            'meta',
+            'help'
         ]
 
     def open_db_connection(self):
@@ -820,6 +821,34 @@ class JobsDb:
             )
             if self.cur.rowcount < 1:
                 error_msg = 'Error deleting user: {}'.format(username)
+        except Exception as e:
+            error_msg = str(e).strip()
+            logger.error(error_msg)
+        self.close_db_connection()
+        return error_msg
+
+    def process_help_request(self, form_data):
+        error_msg = ''
+        self.open_db_connection()
+        try:
+            self.cur.execute(
+                (
+                    "INSERT INTO `help` "
+                    "(user, firstname, lastname, email, message, topics, othertopic) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s)"
+                ),
+                (
+                    form_data['username'],
+                    form_data['firstname'],
+                    form_data['lastname'],
+                    form_data['email'],
+                    form_data['message'],
+                    json.dumps(form_data['topics']),
+                    form_data['othertopic'],
+                )
+            )
+            if self.cur.rowcount < 1:
+                error_msg = 'Error adding help form to DB'
         except Exception as e:
             error_msg = str(e).strip()
             logger.error(error_msg)
