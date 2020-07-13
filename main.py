@@ -40,6 +40,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger("main")
 
+# Initialize global Jira API object
+#
+# Obtain the Jira API auth credentials from the mounted secret
+jira_access_file = os.path.join(
+    os.path.dirname(__file__),
+    "jira_access.yaml"
+)
+with open(jira_access_file, 'r') as cfile:
+    conf = yaml.load(cfile)['jira']
+# Initialize Jira API object
+JIRA_API = jira.client.JIRA(
+    options={'server': 'https://opensource.ncsa.illinois.edu/jira'},
+    basic_auth=(
+        base64.b64decode(conf['uu']).decode().strip(),
+        base64.b64decode(conf['pp']).decode().strip()
+    )
+)
+
 class BaseHandler(tornado.web.RequestHandler):
     def set_default_headers(self):
         self.set_header("Access-Control-Allow-Origin", "*")
@@ -578,7 +596,10 @@ class ListUserRolesHandler(BaseHandler):
         roles = self._token_decoded["roles"]
         try:
             if 'admin' in roles:
-                response['users'] = JOBSDB.get_all_user_roles()
+                # Sync status of help request table records with their Jira issues
+                response['msg'] = JOBSDB.sync_help_requests_with_jira()
+                # Compile user list with role and help request data
+                response['users'] = JOBSDB.get_all_user_roles_and_help_requests()
             else:
                 response['status'] = STATUS_ERROR
                 response['msg'] = "Permission denied: You must be an admin."
@@ -602,26 +623,20 @@ class HelpFormHandler(BaseHandler):
         # user profile data in the auth token with the custom
         # name and email provided by the help form
         try:
-            response['msg'] = JOBSDB.process_help_request(data)
-            if response['msg'] != '':
-                response['status'] = STATUS_ERROR
-                self.write(response)
-                return
-            # Obtain the Jira API auth credentials from the mounted secret
-            jira_access_file = os.path.join(
-                os.path.dirname(__file__),
-                "jira_access.yaml"
-            )
-            with open(jira_access_file, 'r') as cfile:
-                conf = yaml.load(cfile)['jira']
-            # Initialize Jira API object
-            jira_api = jira.client.JIRA(
-                options={'server': 'https://opensource.ncsa.illinois.edu/jira'},
-                basic_auth=(
-                    base64.b64decode(conf['uu']).decode().strip(),
-                    base64.b64decode(conf['pp']).decode().strip()
-                )
-            )
+            email = data['email']
+            firstname = data['firstname']
+            lastname = data['lastname']
+            topics = ', \n'.join(data['topics'])
+            message = data['message']
+            othertopic = data['othertopic']
+        except:
+            logger.info('Error decoding JSON data')
+            response['status'] = STATUS_ERROR
+            response['msg'] = "Invalid JSON in HTTP request body."
+            self.write(response)
+            return
+        # Generate a new Jira ticket using the Jira API
+        try:
             # Construct Jira issue body from template file
             jiraIssueTemplateFile = os.path.join(
                 os.path.dirname(__file__),
@@ -630,12 +645,12 @@ class HelpFormHandler(BaseHandler):
             with open(jiraIssueTemplateFile) as f:
                 templateText = f.read()
             body = Template(templateText).render(
-                email=data['email'],
-                firstname=data['firstname'],
-                lastname=data['lastname'],
-                topics=', \n'.join(data['topics']),
-                message=data['message'],
-                othertopic=data['othertopic']
+                email=email,
+                firstname=firstname,
+                lastname=lastname,
+                topics=topics,
+                message=message,
+                othertopic=othertopic
             )
             issue = {
                 'project' : {'key': 'DESLABS'},
@@ -644,18 +659,27 @@ class HelpFormHandler(BaseHandler):
                 'description' : body,
                 #'reporter' : {'name': 'desdm-wufoo'},
             }
-            # Generate a new Jira ticket using the Jira API
-            try:
-                new_issue = jira_api.create_issue(fields=issue)
-                response['msg'] = 'Jira issue created: {}'.format(new_issue)
-            except:
-                response['status'] = STATUS_ERROR
-                response['msg'] = "Error while creating Jira issue"
-                logger.error('{}:\n{}'.format(response['msg'], issue))
+            new_jira_issue = JIRA_API.create_issue(fields=issue)
+            data['jira_issue_number'] = '{}'.format(new_jira_issue)
+            response['msg'] = 'Jira issue created: {}'.format(data['jira_issue_number'])
         except:
-            logger.info('Error decoding JSON data')
             response['status'] = STATUS_ERROR
-            response['msg'] = "Invalid JSON in HTTP request body."
+            response['msg'] = "Error while creating Jira issue"
+            logger.error('{}:\n{}'.format(response['msg'], issue))
+            self.write(response)
+            return
+        # Store the help request information in the database
+        try:
+            response['msg'] = JOBSDB.process_help_request(data)
+            if response['msg'] != '':
+                response['status'] = STATUS_ERROR
+                self.write(response)
+                return
+        except:
+            logger.info('Error adding record to help table in DB')
+            response['status'] = STATUS_ERROR
+            response['msg'] = "Error inserting help request record into database table."
+
         self.write(response)
 
 

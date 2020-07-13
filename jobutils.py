@@ -14,6 +14,7 @@ import base64
 import re
 import email_utils
 import shutil
+import jira.client
 
 STATUS_OK = 'ok'
 STATUS_ERROR = 'error'
@@ -25,6 +26,25 @@ logging.basicConfig(
     format=log_format,
 )
 logger = logging.getLogger("main")
+
+
+# Initialize global Jira API object
+#
+# Obtain the Jira API auth credentials from the mounted secret
+jira_access_file = os.path.join(
+    os.path.dirname(__file__),
+    "jira_access.yaml"
+)
+with open(jira_access_file, 'r') as cfile:
+    conf = yaml.load(cfile)['jira']
+# Initialize Jira API object
+JIRA_API = jira.client.JIRA(
+    options={'server': 'https://opensource.ncsa.illinois.edu/jira'},
+    basic_auth=(
+        base64.b64decode(conf['uu']).decode().strip(),
+        base64.b64decode(conf['pp']).decode().strip()
+    )
+)
 
 
 def password_encrypt(password):
@@ -613,29 +633,72 @@ class JobsDb:
         self.close_db_connection()
         return roles
 
-    def get_all_user_roles(self):
+    def get_all_user_roles_and_help_requests(self):
         self.open_db_connection()
         users = {}
         users_array = []
         try:
-            self.cur.execute("SELECT username,role_name from `role`")
+            self.cur.execute("SELECT username, role_name from `role`")
             for (username, role_name,) in self.cur:
                 # Assume that if the user is in this table, it must have at least one associated role
                 if username in users:
                     users[username]['roles'].append(role_name)
                 else:
                     users[username] = {
-                    'roles': [role_name]
+                    'roles': [role_name],
+                    'help_requests': []
+                    }
+            self.cur.execute("SELECT user, jira_issue from `help` WHERE resolved = 0 ")
+            for (user, jira_issue,) in self.cur:
+                if user in users:
+                    users[user]['help_requests'].append(jira_issue)
+                else:
+                    users[user] = {
+                    'roles': [],
+                    'help_requests': [jira_issue]
                     }
             for username in users:
                 users_array.append({
                     'username': username,
-                    'roles': users[username]['roles']
+                    'roles': users[username]['roles'],
+                    'help_requests': users[username]['help_requests']
                 })
         except Exception as e:
             logger.error(str(e).strip())
         self.close_db_connection()
         return users_array
+
+    def sync_help_requests_with_jira(self):
+        error_msg = ''
+        self.open_db_connection()
+        try:
+            self.cur.execute("SELECT id, user, jira_issue from `help` ")
+            # Compile the records in an array before executing more SQL commands to empty the cursor
+            jira_issues = []
+            for (id, user, jira_issue,) in self.cur:
+                jira_issues.append({
+                    'id': id,
+                    'user': user,
+                    'jira_issue': jira_issue
+                })
+            for x in jira_issues:
+                try:
+                    issue = JIRA_API.issue(x['jira_issue'])
+                    # View the fields and their values for the issue:
+                    # for field_name in issue.raw['fields']:
+                    #     logger.info("Field: {}\nValue: {}".format(field_name, issue.raw['fields'][field_name]))
+                    if issue.fields.resolution == None:
+                        self.cur.execute("UPDATE `help` SET resolved = 0 WHERE id = {}".format(x['id']))
+                    else:
+                        self.cur.execute("UPDATE `help` SET resolved = 1 WHERE id = {}".format(x['id']))
+                except Exception as e:
+                    error_msg = '{}\n{}'.format(error_msg, str(e).strip())
+                    logger.error(error_msg)
+        except Exception as e:
+            error_msg = str(e).strip()
+            logger.error(error_msg)
+        self.close_db_connection()
+        return error_msg
 
     def get_password(self, username):
         self.open_db_connection()
@@ -834,8 +897,8 @@ class JobsDb:
             self.cur.execute(
                 (
                     "INSERT INTO `help` "
-                    "(user, firstname, lastname, email, message, topics, othertopic) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s)"
+                    "(user, firstname, lastname, email, message, topics, othertopic, jira_issue) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
                 ),
                 (
                     form_data['username'],
@@ -845,6 +908,7 @@ class JobsDb:
                     form_data['message'],
                     json.dumps(form_data['topics']),
                     form_data['othertopic'],
+                    form_data['jira_issue_number'],
                 )
             )
             if self.cur.rowcount < 1:

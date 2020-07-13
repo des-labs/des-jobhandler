@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS `help`(
 	`email` varchar(128) NOT NULL,
 	`message` MEDIUMTEXT NOT NULL,
 	`topics` MEDIUMTEXT NOT NULL,
-	`othertopic` varchar(128) NOT NULL,
-	`processed` boolean DEFAULT 0,
+	`othertopic` varchar(128) NOT NULL DEFAULT '',
+	`jira_issue` varchar(64) NOT NULL DEFAULT '',
+	`resolved` boolean DEFAULT 0,
 	PRIMARY KEY (`id`), UNIQUE KEY `id` (`id`)
 )
