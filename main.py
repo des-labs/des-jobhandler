@@ -20,6 +20,7 @@ import easyaccess as ea
 import jira.client
 import base64
 from jinja2 import Template
+import email_utils
 
 STATUS_OK = 'ok'
 STATUS_ERROR = 'error'
@@ -662,6 +663,15 @@ class HelpFormHandler(BaseHandler):
             new_jira_issue = JIRA_API.create_issue(fields=issue)
             data['jira_issue_number'] = '{}'.format(new_jira_issue)
             response['msg'] = 'Jira issue created: {}'.format(data['jira_issue_number'])
+            try:
+                # Send notification email to admins
+                recipients, error_msg = JOBSDB.get_admin_emails()
+                if error_msg == '':
+                    email_utils.help_request_notification(data['username'], recipients, data['jira_issue_number'], body)
+                else:
+                    logger.error('Error sending notification email to admins ({}):\n{}'.format(data['jira_issue_number'], error_msg))
+            except:
+                logger.error('Error sending notification email to admins')
         except:
             response['status'] = STATUS_ERROR
             response['msg'] = "Error while creating Jira issue"

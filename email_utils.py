@@ -14,8 +14,8 @@ def render(tpl_path, context):
     ).get_template(filename).render(context)
 
 class SingleEmailHeader(object):
-    def __init__(self, username, toemail, context, char='r', ps=None):
-        self.toemail = toemail
+    def __init__(self, username, recipients, context, char='r', ps=None):
+        self.recipients = recipients
         self.server = 'smtp.ncsa.illinois.edu'
         # self.server = 'localhost'
         self.fromemail = 'devnull@ncsa.illinois.edu'
@@ -23,7 +23,7 @@ class SingleEmailHeader(object):
         self.msg = MIMEMultipart('alternative')
         self.msg['Subject'] = context['Subject']
         self.msg['From'] = formataddr((str(Header('DESDM Release Team', 'utf-8')), self.fromemail))
-        self.msg['To'] = self.toemail
+        self.msg['To'] = ', '.join(self.recipients)
         self.context = context
         if ps is None:
             self.ps = '''
@@ -38,13 +38,15 @@ class SingleEmailHeader(object):
         self.html = render(os.path.join(os.path.dirname(__file__), 'email_template.html'), self.context)
 
 
-def send_note(username, jobid, job_name, toemail):
+def send_note(username, jobid, job_name, recipients):
+    if not isinstance(recipients, list):
+        recipients = [recipients]
     link = '{}/status/{}'.format(envvars.FRONTEND_BASE_URL, jobid)
     context = {
         "Subject": "DESaccess Job Complete: {}".format(job_name),
         "username": username,
         "msg": """
-        <p>Your DESaccess job is complete.
+        <p>Your DESaccess job is complete.</p>
         <table width="100%" border="0">
             <tr>
                 <td align="left"><b>User<b>:</td>
@@ -67,9 +69,32 @@ def send_note(username, jobid, job_name, toemail):
         "action": "Click Here To View Results",
         "link": link,
     }
-    header = SingleEmailHeader(username, toemail, context, char='c')
+    header = SingleEmailHeader(username, recipients, context, char='c')
     MP1 = MIMEText(header.html, 'html')
     header.msg.attach(MP1)
-    header.s.sendmail(header.fromemail, [header.toemail], header.msg.as_string())
+    header.s.sendmail(header.fromemail, header.recipients, header.msg.as_string())
     header.s.quit()
-    return "Email Sent to %s" % header.toemail
+    return "Email Sent to {}".format(header.recipients)
+
+
+def help_request_notification(username, recipients, jira_issue_number, jira_issue_description):
+    if not isinstance(recipients, list):
+        recipients = [recipients]
+    link = 'https://opensource.ncsa.illinois.edu/jira/browse/{}'.format(jira_issue_number)
+    context = {
+        "Subject": "New DESaccess Help Request: {}".format(jira_issue_number),
+        "username": username,
+        "msg": """
+        <p>New DESaccess Help Request: {}</p>
+        <p>Help request:</p>
+        <pre>{}<pre>
+        """.format(jira_issue_number, jira_issue_description),
+        "action": "Open Jira Issue",
+        "link": link,
+    }
+    header = SingleEmailHeader(username, recipients, context, char='c')
+    MP1 = MIMEText(header.html, 'html')
+    header.msg.attach(MP1)
+    header.s.sendmail(header.fromemail, header.recipients, header.msg.as_string())
+    header.s.quit()
+    return "Email Sent to {}".format(header.recipients)

@@ -15,6 +15,7 @@ import re
 import email_utils
 import shutil
 import jira.client
+import dbutils
 
 STATUS_OK = 'ok'
 STATUS_ERROR = 'error'
@@ -536,8 +537,11 @@ class JobsDb:
                             rowId
                         )
                     )
-                if len(email) > 4:
-                    email_utils.send_note(user, job_id, job_name, email)
+                try:
+                    if len(email) > 4:
+                        email_utils.send_note(user, job_id, job_name, email)
+                except:
+                    logger.error('Failed to send job complete email: {}/{}.'.format(user, job_id))
         self.close_db_connection()
         return error_msg
 
@@ -632,6 +636,28 @@ class JobsDb:
             logger.error(str(e).strip())
         self.close_db_connection()
         return roles
+
+    def get_admin_emails(self):
+        self.open_db_connection()
+        error_msg = ''
+        emails = []
+        try:
+            self.cur.execute(
+                (
+                    "SELECT username from `role` WHERE role_name = %s"
+                ),
+                (
+                    'admin',
+                )
+            )
+            for (username,) in self.cur:
+                name, last, email = dbutils.get_basic_info(username)
+                emails.append(email)
+        except Exception as e:
+            error_msg = str(e).strip()
+            logger.error(error_msg)
+        self.close_db_connection()
+        return emails, error_msg
 
     def get_all_user_roles_and_help_requests(self):
         self.open_db_connection()
