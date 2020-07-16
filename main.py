@@ -612,6 +612,93 @@ class ListUserRolesHandler(BaseHandler):
 
 
 @authenticated
+class NotificationsCreateHandler(BaseHandler):
+    # Messages are created by admins using the PUT request type
+    def put(self):
+        data = json.loads(self.request.body.decode('utf-8'))
+        response = {
+            "status": STATUS_OK,
+            "msg": ""
+        }
+        roles = self._token_decoded["roles"]
+        try:
+            if 'admin' in roles:
+                # If the roles array is empty or missing, include the default role
+                if 'roles' not in data or data['roles'] == []:
+                    data['roles'] = ['default']
+                # Insert message into database table
+                error_msg = JOBSDB.create_notification(data['title'], data['body'], data['roles'], datetime.datetime.utcnow())
+                if error_msg != '':
+                    response['status'] = STATUS_ERROR
+                    response['msg'] = response['msg']
+            else:
+                response['status'] = STATUS_ERROR
+                response['msg'] = "Permission denied: You must be an admin."
+        except:
+            logger.info('Error decoding JSON data')
+            response['status'] = STATUS_ERROR
+            response['msg'] = "Invalid JSON in HTTP request body."
+        self.write(response)
+
+@authenticated
+class NotificationsFetchHandler(BaseHandler):
+    def post(self):
+        # The datetime type is not JSON serializable, so convert to string
+        def myconverter(o):
+            if isinstance(o, datetime.datetime):
+                return o.__str__()
+
+        data = json.loads(self.request.body.decode('utf-8'))
+        response = {
+            "status": STATUS_OK,
+            "msg": "",
+            'messages': []
+        }
+        # Get roles from token and avoid a database query
+        roles = self._token_decoded["roles"]
+        username = self._token_decoded["username"]
+        try:
+            # Validate the API request parameters
+            message = data['message']
+            if not isinstance(message, str) or message not in ['all', 'new']:
+                response['status'] = STATUS_ERROR
+                response['msg'] = 'Parameter "message" must be a message ID or the word "all" or "new".'
+            else:
+                # Query database for requested messages
+                response['messages'], error_msg = JOBSDB.get_notifications(message, username, roles)
+                if error_msg != '':
+                    response['status'] = STATUS_ERROR
+                    response['msg'] = response['msg']
+        except:
+            logger.info('Error decoding JSON data')
+            response['status'] = STATUS_ERROR
+            response['msg'] = "Invalid JSON in HTTP request body."
+        self.write(json.dumps(response, indent=4, default = myconverter))
+
+
+@authenticated
+class NotificationsMarkHandler(BaseHandler):
+    # Messages are marked read by users using the POST request type
+    def post(self):
+        data = json.loads(self.request.body.decode('utf-8'))
+        response = {
+            "status": STATUS_OK,
+            "msg": ""
+        }
+        username = self._token_decoded["username"]
+        try:
+            error_msg = JOBSDB.mark_notification_read(data['message-id'], username)
+            if error_msg != '':
+                response['status'] = STATUS_ERROR
+                response['msg'] = response['msg']
+        except:
+            logger.info('Error decoding JSON data')
+            response['status'] = STATUS_ERROR
+            response['msg'] = "Invalid JSON in HTTP request body."
+        self.write(response)
+
+
+@authenticated
 class HelpFormHandler(BaseHandler):
     def post(self):
         data = json.loads(self.request.body.decode('utf-8'))
@@ -821,6 +908,9 @@ def make_app(basePath=''):
             (r"{}/page/cutout/csv/validate/?".format(basePath), ValidateCsvHandler),
             (r"{}/page/db-access/check/?".format(basePath), CheckQuerySyntaxHandler),
             (r"{}/page/help/form/?".format(basePath), HelpFormHandler),
+            (r"{}/notifications/create/?".format(basePath), NotificationsCreateHandler),
+            (r"{}/notifications/fetch/?".format(basePath), NotificationsFetchHandler),
+            (r"{}/notifications/mark/?".format(basePath), NotificationsMarkHandler),
             ## Test Endpoints
             (r"{}/dev/debug/trigger?".format(basePath), DebugTrigger),
             (r"{}/dev/db/wipe?".format(basePath), DbWipe),

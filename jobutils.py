@@ -70,7 +70,7 @@ class JobsDb:
         self.database = mysql_database
         self.cur = None
         self.cnx = None
-        self.db_schema_version = 8
+        self.db_schema_version = 9
         self.table_names = [
             'job',
             'query',
@@ -78,7 +78,11 @@ class JobsDb:
             'role',
             'session',
             'meta',
-            'help'
+            'help',
+            'message',
+            'message_read',
+            'message_role',
+            'user_preferences',
         ]
 
     def open_db_connection(self):
@@ -939,6 +943,170 @@ class JobsDb:
             )
             if self.cur.rowcount < 1:
                 error_msg = 'Error adding help form to DB'
+        except Exception as e:
+            error_msg = str(e).strip()
+            logger.error(error_msg)
+        self.close_db_connection()
+        return error_msg
+
+    def create_notification(self, title, body, roles, time):
+        error_msg = ''
+        self.open_db_connection()
+        try:
+            # Deduplicate input roles list and ensure default is included
+            roles_dedup = []
+            for role_name in roles:
+                if role_name not in roles_dedup:
+                    roles_dedup.append(role_name)
+            roles = roles_dedup
+            if roles == []:
+                roles = ['default']
+            self.cur.execute(
+                (
+                    "INSERT INTO `message` "
+                    "(title, body, date) "
+                    "VALUES (%s, %s, %s)"
+                ),
+                (
+                    title,
+                    body,
+                    time,
+                )
+            )
+            if self.cur.rowcount < 1 or not self.cur.lastrowid:
+                error_msg = 'Error adding message to message database table'
+            else:
+                message_id = self.cur.lastrowid
+                for role_name in roles:
+                    self.cur.execute(
+                        (
+                            "INSERT INTO `message_role` "
+                            "(message_id, role_name) "
+                            "VALUES (%s, %s)"
+                        ),
+                        (
+                            message_id,
+                            role_name
+                        )
+                    )
+                    if not self.cur.lastrowid:
+                        error_msg = 'Error adding message to message_role database table'
+        except Exception as e:
+            error_msg = str(e).strip()
+            logger.error(error_msg)
+        self.close_db_connection()
+        return error_msg
+
+    def get_notifications(self, message, username, roles):
+        error_msg = ''
+        messages = []
+        self.open_db_connection()
+        try:
+            # Deduplicate input roles list and ensure default is included
+            roles_dedup = ['default']
+            roles_sql = '("{}"'.format(roles_dedup[0])
+            for role_name in roles:
+                if role_name not in roles_dedup:
+                    roles_dedup.append(role_name)
+                    roles_sql = '{},"{}"'.format(roles_sql, role_name)
+            roles = roles_dedup
+            roles_sql = '{})'.format(roles_sql)
+            # message_ids = []
+            if message == 'all':
+                # Get message IDs visible to each of the user's roles
+                sql_query = '''
+                    SELECT t1.id, t1.date, t1.title, t1.body
+                    FROM `message` t1
+                    INNER JOIN `message_role` t2
+                    ON t2.role_name IN {} AND t1.id = t2.message_id
+                '''.format(roles_sql)
+                self.cur.execute(sql_query)
+                for (id, date, title, body,) in self.cur:
+                    new_message = {
+                        'id': id,
+                        'time': date,
+                        'title': title,
+                        'body': body
+                    }
+                    if new_message not in messages:
+                        messages.append(new_message)
+            elif message == 'new':
+                # Get message IDs visible to each of the user's roles
+                sql_query = '''
+                    SELECT t1.id, t1.date, t1.title, t1.body
+                    FROM `message` t1
+                    INNER JOIN `message_role` t2
+                    ON t2.role_name IN {} AND t1.id = t2.message_id
+                '''.format(roles_sql)
+                self.cur.execute(sql_query)
+                all_messages = []
+                for (id, date, title, body,) in self.cur:
+                    all_messages.append({
+                        'id': id,
+                        'date': date,
+                        'title': title,
+                        'body': body
+                    })
+                for msg in all_messages:
+                    self.cur.execute(
+                        (
+                            "SELECT id FROM `message_read` WHERE message_id = %s and username = %s "
+                        ),
+                        (
+                            msg['id'],
+                            username
+                        )
+                    )
+                    rowId = None
+                    for (id,) in self.cur:
+                        rowId = id
+                    if rowId == None:
+                        new_message = {
+                            'id':  msg['id'],
+                            'time':  msg['date'],
+                            'title': msg['title'],
+                            'body':  msg['body'],
+                        }
+                        if new_message not in messages:
+                            messages.append(new_message)
+        except Exception as e:
+            error_msg = str(e).strip()
+            logger.error(error_msg)
+        self.close_db_connection()
+        return messages, error_msg
+
+    def mark_notification_read(self, message_id, username):
+        error_msg = ''
+        self.open_db_connection()
+        try:
+            # TODO: Validate message_id to ensure it exists in `message` table
+            # Only add the role if the record does not already exist.
+            self.cur.execute(
+                (
+                    "SELECT id FROM `message_read` WHERE username = %s AND message_id = %s LIMIT 1"
+                ),
+                (
+                    username,
+                    message_id
+                )
+            )
+            rowId = None
+            for (id,) in self.cur:
+                rowId = id
+            if rowId == None:
+                self.cur.execute(
+                    (
+                        "INSERT INTO `message_read` "
+                        "(username, message_id) "
+                        "VALUES (%s, %s)"
+                    ),
+                    (
+                        username,
+                        message_id
+                    )
+                )
+                if not self.cur.lastrowid:
+                    error_msg = 'Error marking message read in message_read database table'
         except Exception as e:
             error_msg = str(e).strip()
             logger.error(error_msg)
