@@ -997,6 +997,26 @@ class JobsDb:
         self.close_db_connection()
         return error_msg
 
+    def delete_notification(self, message_id):
+        error_msg = ''
+        self.open_db_connection()
+        try:
+            self.cur.execute(
+                (
+                    "DELETE FROM `message` WHERE id = %s"
+                ),
+                (
+                    message_id,
+                )
+            )
+            if self.cur.rowcount < 1:
+                error_msg = 'Error deleting message from message database table'
+        except Exception as e:
+            error_msg = str(e).strip()
+            logger.error(error_msg)
+        self.close_db_connection()
+        return error_msg
+
     def get_notifications(self, message, username, roles):
         error_msg = ''
         messages = []

@@ -630,7 +630,7 @@ class NotificationsCreateHandler(BaseHandler):
                 error_msg = JOBSDB.create_notification(data['title'], data['body'], data['roles'], datetime.datetime.utcnow())
                 if error_msg != '':
                     response['status'] = STATUS_ERROR
-                    response['msg'] = response['msg']
+                    response['msg'] = error_msg
             else:
                 response['status'] = STATUS_ERROR
                 response['msg'] = "Permission denied: You must be an admin."
@@ -639,6 +639,34 @@ class NotificationsCreateHandler(BaseHandler):
             response['status'] = STATUS_ERROR
             response['msg'] = "Invalid JSON in HTTP request body."
         self.write(response)
+
+
+@authenticated
+class NotificationsDeleteHandler(BaseHandler):
+    def post(self):
+        error_msg = ''
+        data = json.loads(self.request.body.decode('utf-8'))
+        response = {
+            "status": STATUS_OK,
+            "msg": ""
+        }
+        roles = self._token_decoded["roles"]
+        try:
+            if 'admin' in roles:
+                # Delete message from database table
+                error_msg = JOBSDB.delete_notification(data['message-id'])
+                if error_msg != '':
+                    response['status'] = STATUS_ERROR
+                    response['msg'] = error_msg
+            else:
+                response['status'] = STATUS_ERROR
+                response['msg'] = "Permission denied: You must be an admin."
+        except:
+            logger.info('Error decoding JSON data')
+            response['status'] = STATUS_ERROR
+            response['msg'] = "Invalid JSON in HTTP request body."
+        self.write(response)
+
 
 @authenticated
 class NotificationsFetchHandler(BaseHandler):
@@ -668,7 +696,7 @@ class NotificationsFetchHandler(BaseHandler):
                 response['messages'], error_msg = JOBSDB.get_notifications(message, username, roles)
                 if error_msg != '':
                     response['status'] = STATUS_ERROR
-                    response['msg'] = response['msg']
+                    response['msg'] = error_msg
         except:
             logger.info('Error decoding JSON data')
             response['status'] = STATUS_ERROR
@@ -690,7 +718,7 @@ class NotificationsMarkHandler(BaseHandler):
             error_msg = JOBSDB.mark_notification_read(data['message-id'], username)
             if error_msg != '':
                 response['status'] = STATUS_ERROR
-                response['msg'] = response['msg']
+                response['msg'] = error_msg
         except:
             logger.info('Error decoding JSON data')
             response['status'] = STATUS_ERROR
@@ -911,6 +939,7 @@ def make_app(basePath=''):
             (r"{}/notifications/create/?".format(basePath), NotificationsCreateHandler),
             (r"{}/notifications/fetch/?".format(basePath), NotificationsFetchHandler),
             (r"{}/notifications/mark/?".format(basePath), NotificationsMarkHandler),
+            (r"{}/notifications/delete/?".format(basePath), NotificationsDeleteHandler),
             ## Test Endpoints
             (r"{}/dev/debug/trigger?".format(basePath), DebugTrigger),
             (r"{}/dev/db/wipe?".format(basePath), DbWipe),
