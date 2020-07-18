@@ -1031,7 +1031,7 @@ class JobsDb:
                     roles_sql = '{},"{}"'.format(roles_sql, role_name)
             roles = roles_dedup
             roles_sql = '{})'.format(roles_sql)
-            # message_ids = []
+            messages_without_roles = []
             if message == 'all':
                 # Get message IDs visible to each of the user's roles
                 sql_query = '''
@@ -1048,8 +1048,21 @@ class JobsDb:
                         'title': title,
                         'body': body
                     }
-                    if new_message not in messages:
-                        messages.append(new_message)
+                    if new_message not in messages_without_roles:
+                        messages_without_roles.append(new_message)
+                for msg in messages_without_roles:
+                    self.cur.execute(
+                        (
+                            "SELECT role_name FROM `message_role` WHERE message_id = %s"
+                        ),
+                        (
+                            msg['id'],
+                        )
+                    )
+                    msg['roles'] = []
+                    for (role_name,) in self.cur:
+                        msg['roles'].append(role_name)
+                    messages.append(msg)
             elif message == 'new':
                 # Get message IDs visible to each of the user's roles
                 sql_query = '''
