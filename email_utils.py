@@ -82,10 +82,10 @@ def help_request_notification(username, recipients, jira_issue_number, jira_issu
         recipients = [recipients]
     link = 'https://opensource.ncsa.illinois.edu/jira/browse/{}'.format(jira_issue_number)
     context = {
-        "Subject": "New DESaccess Help Request: {}".format(jira_issue_number),
+        "Subject": "DESaccess Help Request: {}".format(jira_issue_number),
         "username": username,
         "msg": """
-        <p>New DESaccess Help Request: {}</p>
+        <p>DESaccess Help Request: {}</p>
         <p>Help request:</p>
         <pre>{}<pre>
         """.format(jira_issue_number, jira_issue_description),
