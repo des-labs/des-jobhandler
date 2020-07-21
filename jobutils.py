@@ -70,7 +70,7 @@ class JobsDb:
         self.database = mysql_database
         self.cur = None
         self.cnx = None
-        self.db_schema_version = 9
+        self.db_schema_version = 10
         self.table_names = [
             'job',
             'query',
@@ -257,7 +257,7 @@ class JobsDb:
             if job_id == "all":
                 self.cur.execute(
                     (
-                        "SELECT j.type, j.name, j.uuid, j.status, j.msg, j.time_start, j.time_complete, q.data, q.query, q.files, c.file_list "
+                        "SELECT j.type, j.name, j.uuid, j.status, j.msg, j.time_start, j.time_complete, j.time_submitted, q.data, q.query, q.files, c.file_list "
                         "FROM `job` j "
                         "LEFT JOIN `query` q "
                         "ON j.id = q.job_id "
@@ -270,7 +270,7 @@ class JobsDb:
                     )
                 )
                 job_info = None
-                for (type, name, uuid, status, msg, time_start, time_complete, data, query, files, file_list) in self.cur:
+                for (type, name, uuid, status, msg, time_start, time_complete, time_submitted, data, query, files, file_list) in self.cur:
                     job_info = {}
                     job_info["job_type"] = type
                     job_info["job_name"] = name
@@ -279,6 +279,7 @@ class JobsDb:
                     job_info["job_status_message"] = msg
                     job_info["job_time_start"] = time_start
                     job_info["job_time_complete"] = time_complete
+                    job_info["job_time_submitted"] = time_submitted
                     job_info["data"] = {} if data is None else json.loads(data)
                     job_info["query"] = query
                     job_info["query_files"] = files
@@ -287,7 +288,7 @@ class JobsDb:
             else:
                 self.cur.execute(
                     (
-                        "SELECT j.type, j.name, j.uuid, j.status, j.msg, j.time_start, j.time_complete, q.data, q.query, q.files, c.file_list "
+                        "SELECT j.type, j.name, j.uuid, j.status, j.msg, j.time_start, j.time_complete, j.time_submitted, q.data, q.query, q.files, c.file_list "
                         "FROM `job` j "
                         "LEFT JOIN `query` q "
                         "ON j.id = q.job_id "
@@ -301,7 +302,7 @@ class JobsDb:
                     )
                 )
                 job_info = None
-                for (type, name, uuid, status, msg, time_start, time_complete, data, query, files, file_list) in self.cur:
+                for (type, name, uuid, status, msg, time_start, time_complete, time_submitted, data, query, files, file_list) in self.cur:
                     job_info = {}
                     job_info["job_type"] = type
                     job_info["job_name"] = name
@@ -310,6 +311,7 @@ class JobsDb:
                     job_info["job_status_message"] = msg
                     job_info["job_time_start"] = time_start
                     job_info["job_time_complete"] = time_complete
+                    job_info["job_time_submitted"] = time_submitted
                     job_info["data"] = {} if data is None else json.loads(data)
                     job_info["query"] = query
                     job_info["query_files"] = files
@@ -334,8 +336,8 @@ class JobsDb:
             email = ''
         newJobSql = (
             "INSERT INTO `job` "
-            "(user, type, name, uuid, status, apitoken, user_agent, email, msg) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            "(user, type, name, uuid, status, apitoken, user_agent, email, msg, time_submitted) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
         )
         newJobInfo = (
             conf["configjob"]["metadata"]["username"],
@@ -346,7 +348,8 @@ class JobsDb:
             conf["configjob"]["metadata"]["apiToken"],
             conf["user_agent"],
             email,
-            ''
+            '',
+            datetime.datetime.utcnow(),
         )
         self.cur.execute(newJobSql, newJobInfo)
         if self.cur.lastrowid:

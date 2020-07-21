@@ -771,7 +771,7 @@ class HelpFormHandler(BaseHandler):
             issue = {
                 'project' : {'key': 'DESLABS'},
                 'issuetype': {'name': 'Task'},
-                'summary': 'DESaccess (alpha release) help request',
+                'summary': 'DESaccess alpha release help request ({})'.format(data['username']),
                 'description' : body,
                 #'reporter' : {'name': 'desdm-wufoo'},
             }
@@ -779,8 +779,10 @@ class HelpFormHandler(BaseHandler):
             data['jira_issue_number'] = '{}'.format(new_jira_issue)
             response['msg'] = 'Jira issue created: {}'.format(data['jira_issue_number'])
             try:
-                # Send notification email to admins
-                recipients, error_msg = JOBSDB.get_admin_emails()
+                # Send notification email to user and to admins via list
+                # recipients, error_msg = JOBSDB.get_admin_emails()
+                error_msg = ''
+                recipients = ['desaccess-admins@lists.ncsa.illinois.edu', email]
                 if error_msg == '':
                     email_utils.help_request_notification(data['username'], recipients, data['jira_issue_number'], body)
                 else:
