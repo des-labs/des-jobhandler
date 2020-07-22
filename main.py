@@ -97,6 +97,16 @@ class ProfileHandler(BaseHandler):
         response["email"] = decoded["email"]
         response["db"] = decoded["db"]
         response["roles"] = decoded["roles"]
+        try: 
+            prefs, error_msg = JOBSDB.get_user_preference('all', decoded["username"])
+            if error_msg != '':
+                logger.error(error_msg)
+                prefs = {}
+        except Exception as e:
+            error_msg = str(e).strip()
+            logger.error(error_msg)
+            prefs = {}
+        response["preferences"] = prefs
         response["ttl"] = ttl
         response["new_token"] = self._token_encoded
         self.flush()
@@ -190,6 +200,16 @@ class LoginHandler(BaseHandler):
         response["db"] = db
         response["roles"] = roles
         response["token"] = encoded.decode(encoding='UTF-8')
+        try: 
+            prefs, error_msg = JOBSDB.get_user_preference('all', username)
+            if error_msg != '':
+                logger.error(error_msg)
+                prefs = {}
+        except Exception as e:
+            error_msg = str(e).strip()
+            logger.error(error_msg)
+            prefs = {}
+        response["preferences"] = prefs
 
 
         # Store encrypted password in database for subsequent job requests
@@ -727,6 +747,27 @@ class NotificationsMarkHandler(BaseHandler):
 
 
 @authenticated
+class UserPreferencesHandler(BaseHandler):
+    def put(self):
+        data = json.loads(self.request.body.decode('utf-8'))
+        response = {
+            "status": STATUS_OK,
+            "msg": ""
+        }
+        username = self._token_decoded["username"]
+        try:
+            error_msg = JOBSDB.set_user_preference(data['pref'], data['value'], username)
+            if error_msg != '':
+                response['status'] = STATUS_ERROR
+                response['msg'] = error_msg
+        except:
+            logger.info('Error decoding JSON data')
+            response['status'] = STATUS_ERROR
+            response['msg'] = "Invalid JSON in HTTP request body."
+        self.write(response)
+
+
+@authenticated
 class HelpFormHandler(BaseHandler):
     def post(self):
         data = json.loads(self.request.body.decode('utf-8'))
@@ -934,6 +975,7 @@ def make_app(basePath=''):
             (r"{}/user/role/reset?".format(basePath), ResetUserRoleHandler),
             (r"{}/user/role/list?".format(basePath), ListUserRolesHandler),
             (r"{}/user/list?".format(basePath), ListUsersHandler),
+            (r"{}/user/preference?".format(basePath), UserPreferencesHandler),
             (r"{}/logout/?".format(basePath), LogoutHandler),
             (r"{}/page/cutout/csv/validate/?".format(basePath), ValidateCsvHandler),
             (r"{}/page/db-access/check/?".format(basePath), CheckQuerySyntaxHandler),

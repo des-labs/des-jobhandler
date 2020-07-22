@@ -1149,6 +1149,92 @@ class JobsDb:
         self.close_db_connection()
         return error_msg
 
+    def get_user_preference(self, preference, username):
+        # preference is either 'all' to get all preferences as an object, or it is the name
+        # of a specific preference key, to get the individual preference value
+        error_msg = ''
+        value = {}
+        self.open_db_connection()
+        try:
+            self.cur.execute(
+                (
+                    "SELECT id, preferences FROM `user_preferences` WHERE username = %s LIMIT 1"
+                ),
+                (
+                    username,
+                )
+            )
+            rowId = None
+            for (id, preferences,) in self.cur:
+                rowId = id
+                preferences = {} if preferences is None else json.loads(preferences)
+            # No user preferences have been set yet
+            if rowId != None:
+                # User preferences exist
+                if preference == 'all':
+                    value = preferences
+                else:
+                    value = preferences[preference]
+        except Exception as e:
+            error_msg = str(e).strip()
+            logger.error(error_msg)
+        self.close_db_connection()
+        return value, error_msg
+
+    def set_user_preference(self, preference, value, username):
+        error_msg = ''
+        self.open_db_connection()
+        try:
+            self.cur.execute(
+                (
+                    "SELECT id, preferences FROM `user_preferences` WHERE username = %s LIMIT 1"
+                ),
+                (
+                    username,
+                )
+            )
+            rowId = None
+            for (id, preferences,) in self.cur:
+                rowId = id
+                preferences = {} if preferences is None else json.loads(preferences)
+            # No user preferences have been set yet
+            if rowId == None:
+                preferences = {}
+                preferences[preference] = value
+                self.cur.execute(
+                    (
+                        "INSERT INTO `user_preferences` "
+                        "(username, preferences) "
+                        "VALUES (%s, %s)"
+                    ),
+                    (
+                        username,
+                        json.dumps(preferences),
+                    )
+                )
+                if not self.cur.lastrowid:
+                    error_msg = 'Error setting user preference'
+            # User preferences exist, so they must be updated.
+            else:
+                preferences[preference] = value
+                self.cur.execute(
+                    (
+                        "UPDATE `user_preferences` SET preferences = %s "
+                        "WHERE username = %s "
+                    ),
+                    (
+                        json.dumps(preferences),
+                        username,
+                    )
+                )
+                if not self.cur.lastrowid:
+                    error_msg = 'Error setting user preference'
+        except Exception as e:
+            error_msg = str(e).strip()
+            logger.error(error_msg)
+        self.close_db_connection()
+        return error_msg
+
 # Get global instance of the job handler database interface
 JOBSDB = JobsDb(
     mysql_host=envvars.MYSQL_HOST,
