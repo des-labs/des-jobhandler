@@ -21,6 +21,7 @@ import jira.client
 import base64
 from jinja2 import Template
 import email_utils
+import jlab
 
 STATUS_OK = 'ok'
 STATUS_ERROR = 'error'
@@ -689,6 +690,47 @@ class NotificationsDeleteHandler(BaseHandler):
 
 
 @authenticated
+class JupyterLabCreateHandler(BaseHandler):
+    def post(self):
+        response = {
+            "status": STATUS_OK,
+            "msg": ""
+        }
+        try:
+            username = self._token_decoded["username"]
+            error_msg = jlab.create(username)
+            if error_msg != '':
+                response['status'] = STATUS_ERROR
+                response['msg'] = error_msg
+        except Exception as e:
+            response['msg'] = str(e).strip()
+            logger.error(response['msg'])
+            response['status'] = STATUS_ERROR
+        self.write(response)
+
+
+
+@authenticated
+class JupyterLabDeleteHandler(BaseHandler):
+    def post(self):
+        response = {
+            "status": STATUS_OK,
+            "msg": ""
+        }
+        try:
+            username = self._token_decoded["username"]
+            error_msg = jlab.delete(username)
+            if error_msg != '':
+                response['status'] = STATUS_ERROR
+                response['msg'] = error_msg
+        except Exception as e:
+            response['msg'] = str(e).strip()
+            logger.error(response['msg'])
+            response['status'] = STATUS_ERROR
+        self.write(response)
+
+
+@authenticated
 class NotificationsFetchHandler(BaseHandler):
     def post(self):
         # The datetime type is not JSON serializable, so convert to string
@@ -984,6 +1026,8 @@ def make_app(basePath=''):
             (r"{}/notifications/fetch/?".format(basePath), NotificationsFetchHandler),
             (r"{}/notifications/mark/?".format(basePath), NotificationsMarkHandler),
             (r"{}/notifications/delete/?".format(basePath), NotificationsDeleteHandler),
+            (r"{}/jlab/create/?".format(basePath), JupyterLabCreateHandler),
+            (r"{}/jlab/delete/?".format(basePath), JupyterLabDeleteHandler),
             ## Test Endpoints
             (r"{}/dev/debug/trigger?".format(basePath), DebugTrigger),
             (r"{}/dev/db/wipe?".format(basePath), DbWipe),
