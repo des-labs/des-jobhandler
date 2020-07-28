@@ -194,7 +194,7 @@ def delete_config_map(api_instance, username):
         error_msg = str(e).strip()
         logger.error(error_msg)
 
-def create_config_map(api_v1, username):
+def create_config_map(api_v1, username, base_path, token):
     name = 'jlab-{}'.format(username)
     try:
         meta = client.V1ObjectMeta(
@@ -206,9 +206,9 @@ def create_config_map(api_v1, username):
             kind="ConfigMap",
             metadata=meta,
             data={
-                name: '''c.NotebookApp.token = u'thewholekitandkaboodle'
-c.NotebookApp.base_url = '/jlab/{}/'
-'''.format(username)},
+                name: '''c.NotebookApp.token = u'{}'
+c.NotebookApp.base_url = '{}'
+'''.format(token, base_path)},
         )
 
         api_response = api_v1.create_namespaced_config_map(
@@ -233,10 +233,10 @@ def delete(username):
         logger.error(error_msg)
     return error_msg
     
-def deploy(username):
+def deploy(username, base_path, token):
     error_msg = ''
     try:
-        create_config_map(api_v1, username)
+        create_config_map(api_v1, username, base_path, token)
         create_deployment(apps_v1_api, username)
         create_service(api_v1, username)
         create_ingress(networking_v1_beta1_api, username)
@@ -245,10 +245,32 @@ def deploy(username):
         logger.error(error_msg)
     return error_msg
 
-def create(username):
+def create(username, base_path, token):
     logger.info('Deleting existing Kubernetes resources...')
     error_msg = delete(username)
     if error_msg == '':
         logger.info('Deploying new Kubernetes resources...')
-        error_msg = deploy(username)
+        error_msg = deploy(username, base_path, token)
     return error_msg
+
+def status(username):
+    error_msg = ''
+    ready_replicas = -1
+    replicas = 0
+    config_map = {}
+    token = ''
+    name = 'jlab-{}'.format(username)
+    try:
+        api_response = apps_v1_api.read_namespaced_deployment_status(namespace=namespace,name=name)
+        logger.info('Deployment status: {}'.format(api_response))
+        ready_replicas = api_response.status.ready_replicas
+        replicas = api_response.status.replicas
+
+        api_response = api_v1.read_namespaced_config_map(namespace=namespace,name=name)
+        logger.info('Config map: {}'.format(api_response))
+        config_map = api_response.data
+        token = config_map[name].split("'")[1]
+    except ApiException as e:
+        error_msg = str(e).strip()
+        logger.error(error_msg)
+    return ready_replicas, token, error_msg

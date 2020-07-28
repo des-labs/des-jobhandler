@@ -22,6 +22,7 @@ import base64
 from jinja2 import Template
 import email_utils
 import jlab
+import uuid
 
 STATUS_OK = 'ok'
 STATUS_ERROR = 'error'
@@ -694,14 +695,24 @@ class JupyterLabCreateHandler(BaseHandler):
     def post(self):
         response = {
             "status": STATUS_OK,
-            "msg": ""
+            "msg": "",
+            'token': '',
+            'url': ''
         }
+        roles = self._token_decoded["roles"]
         try:
-            username = self._token_decoded["username"]
-            error_msg = jlab.create(username)
-            if error_msg != '':
+            if any(role in roles for role in ('jupyter', 'admin')):
+                username = self._token_decoded["username"]
+                response['token'] = str(uuid.uuid4()).replace("-", "")
+                base_path = '/jlab/{}'.format(username)
+                response['url'] = '{}{}?token={}'.format(envvars.FRONTEND_BASE_URL, base_path, response['token'])
+                error_msg = jlab.create(username, base_path, response['token'])
+                if error_msg != '':
+                    response['status'] = STATUS_ERROR
+                    response['msg'] = error_msg
+            else:
                 response['status'] = STATUS_ERROR
-                response['msg'] = error_msg
+                response['msg'] = "Permission denied."
         except Exception as e:
             response['msg'] = str(e).strip()
             logger.error(response['msg'])
@@ -717,12 +728,49 @@ class JupyterLabDeleteHandler(BaseHandler):
             "status": STATUS_OK,
             "msg": ""
         }
+        roles = self._token_decoded["roles"]
         try:
-            username = self._token_decoded["username"]
-            error_msg = jlab.delete(username)
-            if error_msg != '':
+            if any(role in roles for role in ('jupyter', 'admin')):
+                username = self._token_decoded["username"]
+                error_msg = jlab.delete(username)
+                if error_msg != '':
+                    response['status'] = STATUS_ERROR
+                    response['msg'] = error_msg
+            else:
                 response['status'] = STATUS_ERROR
-                response['msg'] = error_msg
+                response['msg'] = "Permission denied."
+        except Exception as e:
+            response['msg'] = str(e).strip()
+            logger.error(response['msg'])
+            response['status'] = STATUS_ERROR
+        self.write(response)
+
+
+@authenticated
+class JupyterLabStatusHandler(BaseHandler):
+    def post(self):
+        response = {
+            "status": STATUS_OK,
+            "msg": "",
+            'data': {
+                'ready_replicas': 0,
+                'token': ''
+            }
+        }
+        roles = self._token_decoded["roles"]
+        try:
+            if any(role in roles for role in ('jupyter', 'admin')):
+                username = self._token_decoded["username"]
+                ready_replicas, token, error_msg = jlab.status(username)
+                if error_msg != '':
+                    response['status'] = STATUS_ERROR
+                    response['msg'] = error_msg
+                else:
+                    response['data']['ready_replicas'] = ready_replicas
+                    response['data']['token'] = token
+            else:
+                response['status'] = STATUS_ERROR
+                response['msg'] = "Permission denied."
         except Exception as e:
             response['msg'] = str(e).strip()
             logger.error(response['msg'])
@@ -1028,6 +1076,7 @@ def make_app(basePath=''):
             (r"{}/notifications/delete/?".format(basePath), NotificationsDeleteHandler),
             (r"{}/jlab/create/?".format(basePath), JupyterLabCreateHandler),
             (r"{}/jlab/delete/?".format(basePath), JupyterLabDeleteHandler),
+            (r"{}/jlab/status/?".format(basePath), JupyterLabStatusHandler),
             ## Test Endpoints
             (r"{}/dev/debug/trigger?".format(basePath), DebugTrigger),
             (r"{}/dev/db/wipe?".format(basePath), DbWipe),

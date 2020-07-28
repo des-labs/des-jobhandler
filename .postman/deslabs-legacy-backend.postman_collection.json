@@ -344,12 +344,13 @@
 					}
 				},
 				"url": {
-					"raw": "{{api_base_url}}/notifications",
+					"raw": "{{api_base_url}}/notifications/create",
 					"host": [
 						"{{api_base_url}}"
 					],
 					"path": [
-						"notifications"
+						"notifications",
+						"create"
 					]
 				}
 			},
@@ -550,6 +551,123 @@
 					"path": [
 						"user",
 						"list"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "jlab/create",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "c5a2e804-2bdb-4f4e-9121-8712e9c982df",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"username\": \"all\"\n}",
+					"options": {
+						"raw": {
+							"language": "javascript"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{api_base_url}}/jlab/create",
+					"host": [
+						"{{api_base_url}}"
+					],
+					"path": [
+						"jlab",
+						"create"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "jlab/delete",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "5b00c283-89a2-43c6-a469-ac65a093454b",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"username\": \"all\"\n}",
+					"options": {
+						"raw": {
+							"language": "javascript"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{api_base_url}}/jlab/delete",
+					"host": [
+						"{{api_base_url}}"
+					],
+					"path": [
+						"jlab",
+						"delete"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "jlab/status",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "d6caa219-9b23-40f1-84fd-e5f90d28c97b",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"username\": \"all\"\n}",
+					"options": {
+						"raw": {
+							"language": "javascript"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{api_base_url}}/jlab/status",
+					"host": [
+						"{{api_base_url}}"
+					],
+					"path": [
+						"jlab",
+						"status"
 					]
 				}
 			},
