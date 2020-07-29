@@ -6,6 +6,7 @@ import jobutils
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 import envvars
+import pytz
 
 STATUS_OK = 'ok'
 STATUS_ERROR = 'error'
@@ -65,9 +66,10 @@ def create_deployment(apps_v1_api, username):
             metadata=client.V1ObjectMeta(name=name),
             spec=spec)
         # Creation of the Deployment in specified namespace
-        apps_v1_api.create_namespaced_deployment(
+        api_response = apps_v1_api.create_namespaced_deployment(
             namespace=namespace, body=deployment
         )
+        logger.info('Deployment created:\n{}'.format(api_response))
     except ApiException as e:
         error_msg = str(e).strip()
         logger.error(error_msg)
@@ -255,22 +257,43 @@ def create(username, base_path, token):
 
 def status(username):
     error_msg = ''
-    ready_replicas = -1
-    replicas = 0
-    config_map = {}
-    token = ''
+    response = {
+        'ready_replicas': -1,
+        'token': '',
+        'creation_timestamp': ''
+    }
     name = 'jlab-{}'.format(username)
     try:
         api_response = apps_v1_api.read_namespaced_deployment_status(namespace=namespace,name=name)
         logger.info('Deployment status: {}'.format(api_response))
-        ready_replicas = api_response.status.ready_replicas
-        replicas = api_response.status.replicas
+        response['ready_replicas'] = api_response.status.ready_replicas
+        # logger.info('Creation timestamp: {}'.format(api_response.metadata.creation_timestamp))
+        response['creation_timestamp'] = api_response.metadata.creation_timestamp
 
         api_response = api_v1.read_namespaced_config_map(namespace=namespace,name=name)
-        logger.info('Config map: {}'.format(api_response))
+        # Parse the ConfigMap based on its well-defined construction
+        # logger.info('Config map: {}'.format(api_response))
         config_map = api_response.data
-        token = config_map[name].split("'")[1]
+        response['token'] = config_map[name].split("'")[1]
     except ApiException as e:
         error_msg = str(e).strip()
         logger.error(error_msg)
-    return ready_replicas, token, error_msg
+    return response, error_msg
+
+def prune(users, current_time):
+    error_msg = ''
+    pruned = []
+    for username in users:
+        name = 'jlab-{}'.format(username)
+        try:
+            api_response = apps_v1_api.read_namespaced_deployment_status(namespace=namespace,name=name)
+            creation_timestamp = api_response.metadata.creation_timestamp
+            current_time = pytz.utc.localize(current_time)
+            # Delete the deployment if it has been online over 24 hours
+            if (current_time - creation_timestamp).seconds > 24*60*60:
+                error_msg = delete(username)
+                pruned.append(username)
+        except ApiException as e:
+            error_msg = str(e).strip()
+            logger.error(error_msg)
+    return pruned, error_msg

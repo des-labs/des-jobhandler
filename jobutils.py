@@ -70,7 +70,7 @@ class JobsDb:
         self.database = mysql_database
         self.cur = None
         self.cnx = None
-        self.db_schema_version = 10
+        self.db_schema_version = 11
         self.table_names = [
             'job',
             'query',
@@ -83,6 +83,7 @@ class JobsDb:
             'message_read',
             'message_role',
             'user_preferences',
+            'cron',
         ]
 
     def open_db_connection(self):
@@ -623,6 +624,26 @@ class JobsDb:
             status = "error"
         self.close_db_connection()
         return status
+
+    def get_role_user_list(self, role_name):
+        self.open_db_connection()
+        users = []
+        try:
+            self.cur.execute(
+                (
+                    "SELECT username from `role` WHERE role_name=%s"
+                ),
+                (
+                    role_name,
+                )
+            )
+            for (username,) in self.cur:
+                if username not in users:
+                    users.append(username)
+        except Exception as e:
+            logger.error(str(e).strip())
+        self.close_db_connection()
+        return users
 
     def get_user_roles(self, username):
         self.open_db_connection()
@@ -1234,6 +1255,44 @@ class JobsDb:
             logger.error(error_msg)
         self.close_db_connection()
         return error_msg
+
+    def cron_get_all(self):
+        error_msg = ''
+        cronjobs = []
+        self.open_db_connection()
+        try:
+            self.cur.execute("SELECT name, period, last_run FROM `cron` WHERE enabled = 1")
+            for (name, period, last_run) in self.cur:
+                cronjobs.append({
+                    'name': name,
+                    'period': period,
+                    'last_run': last_run
+                })
+        except Exception as e:
+            error_msg = str(e).strip()
+            logger.error(error_msg)
+        self.close_db_connection()
+        return cronjobs, error_msg
+
+    def cron_update_run_time(self, name, datetime):
+        error_msg = ''
+        self.open_db_connection()
+        try:
+            self.cur.execute(
+                ("UPDATE `cron` SET `last_run` = %s WHERE name = %s" ),
+                (
+                    datetime,
+                    name
+                )
+            )
+            if self.cur.rowcount != 1:
+                error_msg = 'Error updating cron record "{}".'.format(name)
+        except Exception as e:
+            error_msg = str(e).strip()
+            logger.error(error_msg)
+        self.close_db_connection()
+        return error_msg
+
 
 # Get global instance of the job handler database interface
 JOBSDB = JobsDb(

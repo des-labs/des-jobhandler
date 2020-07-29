@@ -61,6 +61,50 @@ JIRA_API = jira.client.JIRA(
     )
 )
 
+# The datetime type is not JSON serializable, so convert to string
+def json_converter(o):
+    if isinstance(o, datetime.datetime):
+        return o.__str__()
+
+
+def webcron(cls_handler):
+    def wrap_execute(handler_execute):
+        def run_cron(handler, kwargs):
+            # logger.info('Running webcron...')
+            cronjobs, error_msg = JOBSDB.cron_get_all()
+            if error_msg != '':
+                cronjobs = []
+                logger.error(error_msg)
+            try:
+                current_time = datetime.datetime.utcnow()
+                for cronjob in cronjobs:
+                    # Period is an integer in units of minutes
+                    if not cronjob['last_run'] or (current_time - cronjob['last_run']).seconds/60 >= cronjob['period']:
+                        # Time to run the cron job again
+                        logger.info('Running cron job "{}" at "{}".'.format(cronjob['name'], current_time))
+                        if cronjob['name'] == 'jupyter_prune':
+                            # Get list of users in Jupyter role
+                            jupyter_users = JOBSDB.get_role_user_list('jupyter')
+                            pruned, error_msg = jlab.prune(jupyter_users, current_time)
+                            logger.info('Pruned Jupyter servers for users: {}'.format(pruned))
+                        # elif cronjob['name'] == 'another_task':
+                            # et cetera ...
+                        # Update the last_run time with the current time
+                        JOBSDB.cron_update_run_time(cronjob['name'], current_time)
+            except Exception as e:
+                error_msg = str(e).strip()
+                logger.error(error_msg)
+            return
+
+        def _execute(self, transforms, *args, **kwargs):
+            run_cron(self, kwargs)
+            return handler_execute(self, transforms, *args, **kwargs)
+        return _execute
+    cls_handler._execute = wrap_execute(cls_handler._execute)
+    return cls_handler
+
+
+@webcron
 class BaseHandler(tornado.web.RequestHandler):
     def set_default_headers(self):
         self.set_header("Access-Control-Allow-Origin", "*")
@@ -81,7 +125,6 @@ class BaseHandler(tornado.web.RequestHandler):
         except:
             pass
         return temp
-
 
 @authenticated
 class ProfileHandler(BaseHandler):
@@ -372,10 +415,6 @@ class JobHandler(BaseHandler):
 
     # API endpoint: /job/status
     def post(self):
-        # The datetime type is not JSON serializable, so convert to string
-        def myconverter(o):
-            if isinstance(o, datetime.datetime):
-                return o.__str__()
         # TODO: Use role-based access control to allow a username parameter different
         #       from the authenticated user. For example, a user with role "admin" could
         #       obtain job status for any user.
@@ -388,7 +427,7 @@ class JobHandler(BaseHandler):
             'jobs': job_info_list,
             'new_token': self._token_encoded
         }
-        self.write(json.dumps(out, indent=4, default = myconverter))
+        self.write(json.dumps(out, indent=4, default = json_converter))
 
 
 class JobStart(BaseHandler):
@@ -752,22 +791,22 @@ class JupyterLabStatusHandler(BaseHandler):
         response = {
             "status": STATUS_OK,
             "msg": "",
-            'data': {
-                'ready_replicas': 0,
-                'token': ''
-            }
+            'ready_replicas': 0,
+            'token': '',
+            'creation_timestamp': ''
         }
         roles = self._token_decoded["roles"]
         try:
             if any(role in roles for role in ('jupyter', 'admin')):
                 username = self._token_decoded["username"]
-                ready_replicas, token, error_msg = jlab.status(username)
+                stat, error_msg = jlab.status(username)
                 if error_msg != '':
                     response['status'] = STATUS_ERROR
                     response['msg'] = error_msg
                 else:
-                    response['data']['ready_replicas'] = ready_replicas
-                    response['data']['token'] = token
+                    response['ready_replicas'] = stat['ready_replicas']
+                    response['token'] = stat['token']
+                    response['creation_timestamp'] = stat['creation_timestamp']
             else:
                 response['status'] = STATUS_ERROR
                 response['msg'] = "Permission denied."
@@ -775,17 +814,12 @@ class JupyterLabStatusHandler(BaseHandler):
             response['msg'] = str(e).strip()
             logger.error(response['msg'])
             response['status'] = STATUS_ERROR
-        self.write(response)
+        self.write(json.dumps(response, indent=4, default = json_converter))
 
 
 @authenticated
 class NotificationsFetchHandler(BaseHandler):
     def post(self):
-        # The datetime type is not JSON serializable, so convert to string
-        def myconverter(o):
-            if isinstance(o, datetime.datetime):
-                return o.__str__()
-
         data = json.loads(self.request.body.decode('utf-8'))
         response = {
             "status": STATUS_OK,
@@ -811,7 +845,7 @@ class NotificationsFetchHandler(BaseHandler):
             logger.info('Error decoding JSON data')
             response['status'] = STATUS_ERROR
             response['msg'] = "Invalid JSON in HTTP request body."
-        self.write(json.dumps(response, indent=4, default = myconverter))
+        self.write(json.dumps(response, indent=4, default = json_converter))
 
 
 @authenticated
