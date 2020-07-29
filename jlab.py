@@ -102,36 +102,69 @@ def create_service(core_v1_api, username):
 def create_ingress(networking_v1_beta1_api, username):
     name = 'jlab-{}'.format(username)
     try:
-        body = client.NetworkingV1beta1Ingress(
-            api_version="networking.k8s.io/v1beta1",
-            kind="Ingress",
-            metadata=client.V1ObjectMeta(name=name, annotations={
-                'kubernetes.io/ingress.class': 'trans'
-            }),
-            spec=client.NetworkingV1beta1IngressSpec(
-                tls=[
-                    client.ExtensionsV1beta1IngressTLS(
-                        hosts=[
-                            envvars.BASE_DOMAIN
-                        ],
-                        secret_name=envvars.TLS_SECRET
-                    )
-                ],
-                rules=[client.NetworkingV1beta1IngressRule(
-                    host=envvars.BASE_DOMAIN,
-                    http=client.NetworkingV1beta1HTTPIngressRuleValue(
-                        paths=[client.NetworkingV1beta1HTTPIngressPath(
-                            path="/jlab/{}".format(username),
-                            backend=client.NetworkingV1beta1IngressBackend(
-                                service_port=8888,
-                                service_name=name)
+        # TODO: Improve this parameterization so that no cluster-specific details are hard-coded
+        if envvars.BASE_DOMAIN.lower() == 'deslabs.ncsa.illinois.edu':
+            body = client.NetworkingV1beta1Ingress(
+                api_version="networking.k8s.io/v1beta1",
+                kind="Ingress",
+                metadata=client.V1ObjectMeta(name=name, annotations={
+                    'kubernetes.io/ingress.class': 'deslabs'
+                }),
+                spec=client.NetworkingV1beta1IngressSpec(
+                    # tls=[
+                    #     client.ExtensionsV1beta1IngressTLS(
+                    #         hosts=[
+                    #             envvars.BASE_DOMAIN
+                    #         ],
+                    #         secret_name=envvars.TLS_SECRET
+                    #     )
+                    # ],
+                    rules=[client.NetworkingV1beta1IngressRule(
+                        # host=envvars.BASE_DOMAIN,
+                        http=client.NetworkingV1beta1HTTPIngressRuleValue(
+                            paths=[client.NetworkingV1beta1HTTPIngressPath(
+                                path="/jlab/{}".format(username),
+                                backend=client.NetworkingV1beta1IngressBackend(
+                                    service_port=8888,
+                                    service_name=name)
 
-                        )]
+                            )]
+                        )
                     )
+                    ]
                 )
-                ]
             )
-        )
+        else:
+            body = client.NetworkingV1beta1Ingress(
+                api_version="networking.k8s.io/v1beta1",
+                kind="Ingress",
+                metadata=client.V1ObjectMeta(name=name, annotations={
+                    'kubernetes.io/ingress.class': 'trans'
+                }),
+                spec=client.NetworkingV1beta1IngressSpec(
+                    tls=[
+                        client.ExtensionsV1beta1IngressTLS(
+                            hosts=[
+                                envvars.BASE_DOMAIN
+                            ],
+                            secret_name=envvars.TLS_SECRET
+                        )
+                    ],
+                    rules=[client.NetworkingV1beta1IngressRule(
+                        host=envvars.BASE_DOMAIN,
+                        http=client.NetworkingV1beta1HTTPIngressRuleValue(
+                            paths=[client.NetworkingV1beta1HTTPIngressPath(
+                                path="/jlab/{}".format(username),
+                                backend=client.NetworkingV1beta1IngressBackend(
+                                    service_port=8888,
+                                    service_name=name)
+
+                            )]
+                        )
+                    )
+                    ]
+                )
+            )
         # Creation of the Ingress in specified namespace
         networking_v1_beta1_api.create_namespaced_ingress(
             namespace=namespace,
