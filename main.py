@@ -23,6 +23,7 @@ from jinja2 import Template
 import email_utils
 import jlab
 import uuid
+import shutil
 
 STATUS_OK = 'ok'
 STATUS_ERROR = 'error'
@@ -791,9 +792,11 @@ class JupyterLabStatusHandler(BaseHandler):
         response = {
             "status": STATUS_OK,
             "msg": "",
-            'ready_replicas': 0,
+            'ready_replicas': -1,
+            'unavailable_replicas': -1,
             'token': '',
-            'creation_timestamp': ''
+            'creation_timestamp': '',
+            'latest_condition_type': 'Unknown',
         }
         roles = self._token_decoded["roles"]
         try:
@@ -803,10 +806,73 @@ class JupyterLabStatusHandler(BaseHandler):
                 if error_msg != '':
                     response['status'] = STATUS_ERROR
                     response['msg'] = error_msg
-                else:
-                    response['ready_replicas'] = stat['ready_replicas']
-                    response['token'] = stat['token']
-                    response['creation_timestamp'] = stat['creation_timestamp']
+                response['ready_replicas'] = stat['ready_replicas']
+                response['unavailable_replicas'] = stat['unavailable_replicas']
+                response['latest_condition_type'] = stat['latest_condition_type']
+                response['token'] = stat['token']
+                response['creation_timestamp'] = stat['creation_timestamp']
+            else:
+                response['status'] = STATUS_ERROR
+                response['msg'] = "Permission denied."
+        except Exception as e:
+            response['msg'] = str(e).strip()
+            logger.error(response['msg'])
+            response['status'] = STATUS_ERROR
+        self.write(json.dumps(response, indent=4, default = json_converter))
+
+
+@authenticated
+class JupyterLabFileListHandler(BaseHandler):
+    def post(self):
+        response = {
+            "status": STATUS_OK,
+            "msg": "",
+            'folders': []
+        }
+        roles = self._token_decoded["roles"]
+        try:
+            if any(role in roles for role in ('jupyter', 'admin')):
+                username = self._token_decoded["username"]
+                jupyter_dir = os.path.join('/jobfiles', username, 'jupyter')
+                logger.info(jupyter_dir)
+                jupyter_dirs = []
+                with os.scandir(jupyter_dir) as it:
+                    for entry in it:
+                        if not entry.name.startswith('.') and entry.is_dir():
+                            mod_timestamp = datetime.datetime.fromtimestamp(entry.stat().st_mtime)
+                            logger.info('{}: {}'.format(entry.name, mod_timestamp))
+                            jupyter_dirs.append({
+                                'directory': entry.name,
+                                'time': mod_timestamp
+                            })
+                response['folders'] = jupyter_dirs
+            else:
+                response['status'] = STATUS_ERROR
+                response['msg'] = "Permission denied."
+        except Exception as e:
+            response['msg'] = str(e).strip()
+            logger.error(response['msg'])
+            response['status'] = STATUS_ERROR
+        self.write(json.dumps(response, indent=4, default = json_converter))
+
+
+@authenticated
+class JupyterLabFileDeleteHandler(BaseHandler):
+    def post(self):
+        response = {
+            "status": STATUS_OK,
+            "msg": ""
+        }
+        data = json.loads(self.request.body.decode('utf-8'))
+        roles = self._token_decoded["roles"]
+        try:
+            if any(role in roles for role in ('jupyter', 'admin')):
+                username = self._token_decoded["username"]
+                jupyter_dir = os.path.join('/jobfiles', username, 'jupyter', data['token'])
+
+                logger.info(jupyter_dir)
+                if os.path.isdir(jupyter_dir):
+                    shutil.rmtree(jupyter_dir)
             else:
                 response['status'] = STATUS_ERROR
                 response['msg'] = "Permission denied."
@@ -1111,6 +1177,8 @@ def make_app(basePath=''):
             (r"{}/jlab/create/?".format(basePath), JupyterLabCreateHandler),
             (r"{}/jlab/delete/?".format(basePath), JupyterLabDeleteHandler),
             (r"{}/jlab/status/?".format(basePath), JupyterLabStatusHandler),
+            (r"{}/jlab/files/list?".format(basePath), JupyterLabFileListHandler),
+            (r"{}/jlab/files/delete?".format(basePath), JupyterLabFileDeleteHandler),
             ## Test Endpoints
             (r"{}/dev/debug/trigger?".format(basePath), DebugTrigger),
             (r"{}/dev/db/wipe?".format(basePath), DbWipe),

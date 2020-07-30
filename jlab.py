@@ -20,20 +20,62 @@ apps_v1_api = client.AppsV1Api()
 networking_v1_beta1_api = client.NetworkingV1beta1Api()
 namespace = jobutils.get_namespace()
 
-def create_deployment(apps_v1_api, username):
+def create_deployment(apps_v1_api, username, token):
     name = 'jlab-{}'.format(username)
     try:
+        init_container = client.V1Container(
+            name='{}-init'.format(name),
+            image="ubuntu:18.04",
+            image_pull_policy="IfNotPresent",
+            command=["/bin/sh"],
+            args=["-c", "chown -R 1001:1001 /persistent_volume"],
+            volume_mounts=[
+                client.V1VolumeMount(
+                    name='persistent-volume',
+                    mount_path="/persistent_volume",
+                    sub_path='{}/jupyter'.format(username)
+                )
+            ]
+        )
         container = client.V1Container(
             name=name,
             image="jupyter/scipy-notebook:latest",
             image_pull_policy="Always",
             ports=[client.V1ContainerPort(container_port=8888)],
-            volume_mounts=[client.V1VolumeMount(
-                name='jupyter-config',
-                mount_path="/home/jovyan/.jupyter/"
-            )]
+            volume_mounts=[
+                client.V1VolumeMount(
+                    name='jupyter-config',
+                    mount_path="/home/jovyan/.jupyter/"
+                ),
+                client.V1VolumeMount(
+                    name='workdir',
+                    mount_path="/home/jovyan/work/"
+                )
+            ]
         )
-        volume = client.V1Volume(
+        sidecar = client.V1Container(
+            name='{}-sidecar'.format(name),
+            image="ubuntu:18.04",
+            image_pull_policy="IfNotPresent",
+            security_context=client.V1SecurityContext(
+                run_as_user=1001,
+                run_as_group=1001
+            ),
+            command=["/bin/sh"],
+            args=["-c", "while true; do cp --recursive --preserve=timestamps --update --no-target-directory /workdir /persistent_volume/{} && sleep 30; done".format(token)],
+            volume_mounts=[
+                client.V1VolumeMount(
+                    name='workdir',
+                    mount_path="/workdir"
+                ),
+                client.V1VolumeMount(
+                    name='persistent-volume',
+                    mount_path="/persistent_volume",
+                    sub_path='{}/jupyter'.format(username)
+                )
+            ]
+        )
+        volume_config = client.V1Volume(
             name='jupyter-config',
             config_map=client.V1ConfigMapVolumeSource(
                 name=name,
@@ -43,12 +85,32 @@ def create_deployment(apps_v1_api, username):
                 )]
             )
         )
+        volume_persistent = client.V1Volume(
+            name='persistent-volume',
+            persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
+                claim_name=envvars.PVC_NAME_BASE
+            )
+        )
+        volume_work = client.V1Volume(
+            name='workdir',
+            empty_dir=client.V1EmptyDirVolumeSource()
+        )
         # Template
         template = client.V1PodTemplateSpec(
             metadata=client.V1ObjectMeta(labels={"app": name}),
                 spec=client.V1PodSpec(
-                    containers=[container],
-                    volumes=[volume]
+                    init_containers=[
+                        init_container
+                    ],
+                    containers=[
+                        container,
+                        sidecar
+                    ],
+                    volumes=[
+                        volume_config,
+                        volume_work,
+                        volume_persistent
+                    ]
                 )
             )
         # Spec
@@ -259,6 +321,7 @@ c.NotebookApp.base_url = '{}'
 def delete(username):
     error_msg = ''
     try:
+        # sync_to_user_folder(username)
         delete_config_map(api_v1, username)
         delete_deployment(apps_v1_api, username)
         delete_service(api_v1, username)
@@ -272,7 +335,7 @@ def deploy(username, base_path, token):
     error_msg = ''
     try:
         create_config_map(api_v1, username, base_path, token)
-        create_deployment(apps_v1_api, username)
+        create_deployment(apps_v1_api, username, token)
         create_service(api_v1, username)
         create_ingress(networking_v1_beta1_api, username)
     except Exception as e:
@@ -291,16 +354,19 @@ def create(username, base_path, token):
 def status(username):
     error_msg = ''
     response = {
+        'unavailable_replicas': -1,
         'ready_replicas': -1,
         'token': '',
-        'creation_timestamp': ''
+        'creation_timestamp': '',
+        'latest_condition_type': 'Unknown',
     }
     name = 'jlab-{}'.format(username)
     try:
         api_response = apps_v1_api.read_namespaced_deployment_status(namespace=namespace,name=name)
-        logger.info('Deployment status: {}'.format(api_response))
         response['ready_replicas'] = api_response.status.ready_replicas
-        # logger.info('Creation timestamp: {}'.format(api_response.metadata.creation_timestamp))
+        response['unavailable_replicas'] = api_response.status.unavailable_replicas
+        response['latest_condition_type'] = api_response.status.conditions[0].type
+        logger.info('Latest condition type: '.format(response['latest_condition_type']))
         response['creation_timestamp'] = api_response.metadata.creation_timestamp
 
         api_response = api_v1.read_namespaced_config_map(namespace=namespace,name=name)
@@ -309,6 +375,7 @@ def status(username):
         config_map = api_response.data
         response['token'] = config_map[name].split("'")[1]
     except ApiException as e:
+        response['latest_condition_type'] = ''
         error_msg = str(e).strip()
         logger.error(error_msg)
     return response, error_msg
