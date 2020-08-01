@@ -365,8 +365,12 @@ def status(username):
         api_response = apps_v1_api.read_namespaced_deployment_status(namespace=namespace,name=name)
         response['ready_replicas'] = api_response.status.ready_replicas
         response['unavailable_replicas'] = api_response.status.unavailable_replicas
+        last_transition_time = None
+        for condition in api_response.status.conditions:
+            if last_transition_time == None or condition.last_transition_time > last_transition_time:
+                last_transition_time = condition.last_transition_time
+                response['latest_condition_type'] = condition.type
         response['latest_condition_type'] = api_response.status.conditions[0].type
-        logger.info('Latest condition type: '.format(response['latest_condition_type']))
         response['creation_timestamp'] = api_response.metadata.creation_timestamp
 
         api_response = api_v1.read_namespaced_config_map(namespace=namespace,name=name)
