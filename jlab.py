@@ -39,7 +39,7 @@ def create_deployment(apps_v1_api, username, token):
         )
         container = client.V1Container(
             name=name,
-            image="jupyter/scipy-notebook:latest",
+            image=envvars.DOCKER_IMAGE_JLAB_SERVER,
             image_pull_policy="Always",
             ports=[client.V1ContainerPort(container_port=8888)],
             volume_mounts=[
@@ -55,14 +55,15 @@ def create_deployment(apps_v1_api, username, token):
         )
         sidecar = client.V1Container(
             name='{}-sidecar'.format(name),
-            image="ubuntu:18.04",
+            image=envvars.DOCKER_IMAGE_JLAB_SYNC,
             image_pull_policy="IfNotPresent",
             security_context=client.V1SecurityContext(
                 run_as_user=1001,
                 run_as_group=1001
             ),
             command=["/bin/sh"],
-            args=["-c", "while true; do cp --recursive --preserve=timestamps --update --no-target-directory /workdir /persistent_volume/{} && sleep 30; done".format(token)],
+            args=["-c", "while true; do rsync -a --delete /workdir/ /persistent_volume/{}/ && sleep 30; done".format(token)],
+            # args=["-c", "while true; do cp --recursive --preserve=timestamps --update --no-target-directory /workdir /persistent_volume/{} && sleep 30; done".format(token)],
             volume_mounts=[
                 client.V1VolumeMount(
                     name='workdir',
@@ -99,6 +100,11 @@ def create_deployment(apps_v1_api, username, token):
         template = client.V1PodTemplateSpec(
             metadata=client.V1ObjectMeta(labels={"app": name}),
                 spec=client.V1PodSpec(
+                    image_pull_secrets=[
+                        client.V1LocalObjectReference(
+                            name='registry-auth'
+                        )
+                    ],
                     init_containers=[
                         init_container
                     ],
