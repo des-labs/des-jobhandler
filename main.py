@@ -744,7 +744,7 @@ class JupyterLabCreateHandler(BaseHandler):
             if any(role in roles for role in ('jupyter', 'admin')):
                 username = self._token_decoded["username"]
                 response['token'] = str(uuid.uuid4()).replace("-", "")
-                base_path = '/jlab/{}'.format(username)
+                base_path = '/jlab/{}/lab'.format(username)
                 response['url'] = '{}{}?token={}'.format(envvars.FRONTEND_BASE_URL, base_path, response['token'])
                 error_msg = jlab.create(username, base_path, response['token'])
                 if error_msg != '':
