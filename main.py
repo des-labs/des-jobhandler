@@ -731,6 +731,35 @@ class NotificationsDeleteHandler(BaseHandler):
 
 
 @authenticated
+class JupyterLabPruneHandler(BaseHandler):
+    def post(self):
+        error_msg = ''
+        data = json.loads(self.request.body.decode('utf-8'))
+        response = {
+            "status": STATUS_OK,
+            "msg": ""
+        }
+        roles = self._token_decoded["roles"]
+        try:
+            if 'admin' in roles:
+                current_time = datetime.datetime.utcnow()
+                jupyter_users = JOBSDB.get_role_user_list('jupyter')
+                pruned, error_msg = jlab.prune(jupyter_users, current_time, data['token'])
+                logger.info('Pruned Jupyter servers for users: {}'.format(pruned))
+                if error_msg != '':
+                    response['status'] = STATUS_ERROR
+                    response['msg'] = error_msg
+            else:
+                response['status'] = STATUS_ERROR
+                response['msg'] = "Permission denied: You must be an admin."
+        except:
+            logger.info('Error decoding JSON data')
+            response['status'] = STATUS_ERROR
+            response['msg'] = "Invalid JSON in HTTP request body."
+        self.write(response)
+
+
+@authenticated
 class JupyterLabCreateHandler(BaseHandler):
     def post(self):
         response = {
@@ -744,7 +773,7 @@ class JupyterLabCreateHandler(BaseHandler):
             if any(role in roles for role in ('jupyter', 'admin')):
                 username = self._token_decoded["username"]
                 response['token'] = str(uuid.uuid4()).replace("-", "")
-                base_path = '/jlab/{}/lab'.format(username)
+                base_path = '/jlab/{}'.format(username)
                 response['url'] = '{}{}?token={}'.format(envvars.FRONTEND_BASE_URL, base_path, response['token'])
                 error_msg = jlab.create(username, base_path, response['token'])
                 if error_msg != '':
@@ -758,7 +787,6 @@ class JupyterLabCreateHandler(BaseHandler):
             logger.error(response['msg'])
             response['status'] = STATUS_ERROR
         self.write(response)
-
 
 
 @authenticated
@@ -1177,6 +1205,7 @@ def make_app(basePath=''):
             (r"{}/jlab/create/?".format(basePath), JupyterLabCreateHandler),
             (r"{}/jlab/delete/?".format(basePath), JupyterLabDeleteHandler),
             (r"{}/jlab/status/?".format(basePath), JupyterLabStatusHandler),
+            (r"{}/jlab/prune/?".format(basePath), JupyterLabPruneHandler),
             (r"{}/jlab/files/list?".format(basePath), JupyterLabFileListHandler),
             (r"{}/jlab/files/delete?".format(basePath), JupyterLabFileDeleteHandler),
             ## Test Endpoints

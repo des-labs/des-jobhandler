@@ -7,6 +7,8 @@ from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 import envvars
 import pytz
+import datetime
+import requests
 
 STATUS_OK = 'ok'
 STATUS_ERROR = 'error'
@@ -390,20 +392,53 @@ def status(username):
         logger.error(error_msg)
     return response, error_msg
 
-def prune(users, current_time):
+def prune(users, current_time, token):
     error_msg = ''
     pruned = []
     for username in users:
         name = 'jlab-{}'.format(username)
         try:
-            api_response = apps_v1_api.read_namespaced_deployment_status(namespace=namespace,name=name)
-            creation_timestamp = api_response.metadata.creation_timestamp
-            current_time = pytz.utc.localize(current_time)
-            # Delete the deployment if it has been online over 24 hours
-            if (current_time - creation_timestamp).seconds > 24*60*60:
-                error_msg = delete(username)
-                pruned.append(username)
-        except ApiException as e:
+            # Get the list of running JupyterLab kernels using the JupyterLab API
+            r = requests.get(
+                'https://{}/jlab/{}/api/kernels'.format(envvars.BASE_DOMAIN, username),
+                params={
+                    'token': token
+                }
+            )
+            kernels = r.json()
+            # Iterate through the list of kernels and find the most recently active
+            last_activity = None
+            for k in kernels:
+                try:
+                    last_activity_k = datetime.datetime.strptime(k['last_activity'], '%Y-%m-%dT%H:%M:%S.%fZ')
+                    if not last_activity or last_activity_k > last_activity:
+                        last_activity = last_activity_k
+                except Exception as e:
+                    error_msg = str(e).strip()
+                    logger.error(error_msg) 
+                    pass
+            # If an active kernel was discovered, delete the JupyterLab server if it has been idle over 24 hours
+            if last_activity:
+                # Delete the deployment if it has been idle over 24 hours
+                last_activity_tz = pytz.utc.localize(last_activity)
+                # logger.info('Seconds idle: {}'.format((current_time - last_activity_tz).seconds))
+                if (current_time - last_activity_tz).seconds > 24*60*60:
+                    error_msg = delete(username)
+                    pruned.append(username)
+            # If no active kernel was found, delete the JupyterLab deployment if it was created over 24 hours ago
+            else:
+                try:
+                    api_response = apps_v1_api.read_namespaced_deployment_status(namespace=namespace,name=name)
+                    creation_timestamp = api_response.metadata.creation_timestamp
+                    current_time = pytz.utc.localize(current_time)
+                    # Delete the deployment if it has been online over 24 hours
+                    if (current_time - creation_timestamp).seconds > 24*60*60:
+                        error_msg = delete(username)
+                        pruned.append(username)
+                except ApiException as e:
+                    error_msg = str(e).strip()
+                    logger.error(error_msg)
+        except Exception as e:
             error_msg = str(e).strip()
             logger.error(error_msg)
     return pruned, error_msg
