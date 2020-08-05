@@ -44,6 +44,12 @@ def create_deployment(apps_v1_api, username, token):
             image=envvars.DOCKER_IMAGE_JLAB_SERVER,
             image_pull_policy="Always",
             ports=[client.V1ContainerPort(container_port=8888)],
+            env=[
+                client.V1EnvVar(
+                    name='DES_USER',
+                    value=username
+                )
+            ],
             volume_mounts=[
                 client.V1VolumeMount(
                     name='jupyter-config',
