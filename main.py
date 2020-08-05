@@ -731,7 +731,7 @@ class NotificationsDeleteHandler(BaseHandler):
 
 
 @authenticated
-class JupyterLabPruneHandler(BaseHandler):
+class NotificationsEditHandler(BaseHandler):
     def post(self):
         error_msg = ''
         data = json.loads(self.request.body.decode('utf-8'))
@@ -742,10 +742,8 @@ class JupyterLabPruneHandler(BaseHandler):
         roles = self._token_decoded["roles"]
         try:
             if 'admin' in roles:
-                current_time = datetime.datetime.utcnow()
-                jupyter_users = JOBSDB.get_role_user_list('jupyter')
-                pruned, error_msg = jlab.prune(jupyter_users, current_time, data['token'])
-                logger.info('Pruned Jupyter servers for users: {}'.format(pruned))
+                # Delete message from database table
+                error_msg = JOBSDB.edit_notification(data['id'], data['title'], data['body'], data['roles'])
                 if error_msg != '':
                     response['status'] = STATUS_ERROR
                     response['msg'] = error_msg
@@ -754,6 +752,34 @@ class JupyterLabPruneHandler(BaseHandler):
                 response['msg'] = "Permission denied: You must be an admin."
         except:
             logger.info('Error decoding JSON data')
+            response['status'] = STATUS_ERROR
+            response['msg'] = "Invalid JSON in HTTP request body."
+        self.write(response)
+
+
+@authenticated
+class JupyterLabPruneHandler(BaseHandler):
+    def post(self):
+        error_msg = ''
+        response = {
+            "status": STATUS_OK,
+            "msg": ""
+        }
+        roles = self._token_decoded["roles"]
+        try:
+            if 'admin' in roles:
+                current_time = datetime.datetime.utcnow()
+                jupyter_users = JOBSDB.get_role_user_list('jupyter')
+                pruned, error_msg = jlab.prune(jupyter_users, current_time)
+                logger.info('Pruned Jupyter servers for users: {}'.format(pruned))
+                if error_msg != '':
+                    response['status'] = STATUS_ERROR
+                    response['msg'] = error_msg
+            else:
+                response['status'] = STATUS_ERROR
+                response['msg'] = "Permission denied: You must be an admin."
+        except:
+            logger.info('Error pruning JupyterLab servers.')
             response['status'] = STATUS_ERROR
             response['msg'] = "Invalid JSON in HTTP request body."
         self.write(response)
@@ -861,7 +887,7 @@ class JupyterLabFileListHandler(BaseHandler):
         try:
             if any(role in roles for role in ('jupyter', 'admin')):
                 username = self._token_decoded["username"]
-                jupyter_dir = os.path.join('/jobfiles', username, 'jupyter')
+                jupyter_dir = os.path.join('/jobfiles', username, 'jupyter/public')
                 logger.info(jupyter_dir)
                 jupyter_dirs = []
                 with os.scandir(jupyter_dir) as it:
@@ -896,7 +922,7 @@ class JupyterLabFileDeleteHandler(BaseHandler):
         try:
             if any(role in roles for role in ('jupyter', 'admin')):
                 username = self._token_decoded["username"]
-                jupyter_dir = os.path.join('/jobfiles', username, 'jupyter', data['token'])
+                jupyter_dir = os.path.join('/jobfiles', username, 'jupyter/public', data['token'])
 
                 logger.info(jupyter_dir)
                 if os.path.isdir(jupyter_dir):
@@ -1202,6 +1228,7 @@ def make_app(basePath=''):
             (r"{}/notifications/fetch/?".format(basePath), NotificationsFetchHandler),
             (r"{}/notifications/mark/?".format(basePath), NotificationsMarkHandler),
             (r"{}/notifications/delete/?".format(basePath), NotificationsDeleteHandler),
+            (r"{}/notifications/edit/?".format(basePath), NotificationsEditHandler),
             (r"{}/jlab/create/?".format(basePath), JupyterLabCreateHandler),
             (r"{}/jlab/delete/?".format(basePath), JupyterLabDeleteHandler),
             (r"{}/jlab/status/?".format(basePath), JupyterLabStatusHandler),

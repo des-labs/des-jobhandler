@@ -50,30 +50,18 @@ def create_deployment(apps_v1_api, username, token):
                     mount_path="/home/jovyan/.jupyter/"
                 ),
                 client.V1VolumeMount(
-                    name='workdir',
-                    mount_path="/home/jovyan/work/"
-                )
-            ]
-        )
-        sidecar = client.V1Container(
-            name='{}-sidecar'.format(name),
-            image=envvars.DOCKER_IMAGE_JLAB_SYNC,
-            image_pull_policy="IfNotPresent",
-            security_context=client.V1SecurityContext(
-                run_as_user=1001,
-                run_as_group=1001
-            ),
-            command=["/bin/sh"],
-            args=["-c", "while true; do rsync -a --delete /workdir/ /persistent_volume/{}/ && sleep 30; done".format(token)],
-            # args=["-c", "while true; do cp --recursive --preserve=timestamps --update --no-target-directory /workdir /persistent_volume/{} && sleep 30; done".format(token)],
-            volume_mounts=[
-                client.V1VolumeMount(
-                    name='workdir',
-                    mount_path="/workdir"
+                    name='persistent-volume',
+                    mount_path="/home/jovyan/jobs/cutout",
+                    sub_path='{}/cutout'.format(username)
                 ),
                 client.V1VolumeMount(
                     name='persistent-volume',
-                    mount_path="/persistent_volume",
+                    mount_path="/home/jovyan/jobs/query",
+                    sub_path='{}/query'.format(username)
+                ),
+                client.V1VolumeMount(
+                    name='persistent-volume',
+                    mount_path="/home/jovyan/jupyter",
                     sub_path='{}/jupyter'.format(username)
                 )
             ]
@@ -94,10 +82,6 @@ def create_deployment(apps_v1_api, username, token):
                 claim_name=envvars.PVC_NAME_BASE
             )
         )
-        volume_work = client.V1Volume(
-            name='workdir',
-            empty_dir=client.V1EmptyDirVolumeSource()
-        )
         # Template
         template = client.V1PodTemplateSpec(
             metadata=client.V1ObjectMeta(labels={"app": name}),
@@ -111,12 +95,10 @@ def create_deployment(apps_v1_api, username, token):
                         init_container
                     ],
                     containers=[
-                        container,
-                        sidecar
+                        container
                     ],
                     volumes=[
                         volume_config,
-                        volume_work,
                         volume_persistent
                     ]
                 )
@@ -392,12 +374,16 @@ def status(username):
         logger.error(error_msg)
     return response, error_msg
 
-def prune(users, current_time, token):
+def prune(users, current_time):
     error_msg = ''
     pruned = []
     for username in users:
         name = 'jlab-{}'.format(username)
         try:
+            api_response = api_v1.read_namespaced_config_map(namespace=namespace,name=name)
+            # Parse the ConfigMap based on its well-defined construction
+            config_map = api_response.data
+            token = config_map[name].split("'")[1]
             # Get the list of running JupyterLab kernels using the JupyterLab API
             r = requests.get(
                 'https://{}/jlab/{}/api/kernels'.format(envvars.BASE_DOMAIN, username),

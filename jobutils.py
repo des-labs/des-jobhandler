@@ -1041,6 +1041,58 @@ class JobsDb:
         self.close_db_connection()
         return error_msg
 
+    def edit_notification(self, message_id, title, body, roles):
+        error_msg = ''
+        self.open_db_connection()
+        try:
+            # Deduplicate input roles list and ensure default is included
+            roles_dedup = []
+            for role_name in roles:
+                if role_name not in roles_dedup:
+                    roles_dedup.append(role_name)
+            roles = roles_dedup
+            if roles == []:
+                roles = ['default']
+            self.cur.execute(
+                (
+                    "UPDATE `message` SET title = %s, body = %s WHERE id = %s "
+                ),
+                (
+                    title,
+                    body,
+                    message_id
+                )
+            )
+            # Delete the existing roles for the message
+            self.cur.execute(
+                (
+                    "DELETE FROM `message_role` WHERE message_id = %s "
+                ),
+                (
+                    message_id,
+                )
+            )
+            # Insert the new roles for the message
+            for role_name in roles:
+                self.cur.execute(
+                    (
+                        "INSERT INTO `message_role` "
+                        "(message_id, role_name) "
+                        "VALUES (%s, %s)"
+                    ),
+                    (
+                        message_id,
+                        role_name
+                    )
+                )
+                if not self.cur.lastrowid:
+                    error_msg = 'Error adding message to message_role database table'
+        except Exception as e:
+            error_msg = str(e).strip()
+            logger.error(error_msg)
+        self.close_db_connection()
+        return error_msg
+
     def get_notifications(self, message, username, roles):
         error_msg = ''
         messages = []
