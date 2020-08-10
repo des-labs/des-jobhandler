@@ -70,7 +70,7 @@ class JobsDb:
         self.database = mysql_database
         self.cur = None
         self.cnx = None
-        self.db_schema_version = 11
+        self.db_schema_version = 12
         self.table_names = [
             'job',
             'query',
@@ -258,7 +258,7 @@ class JobsDb:
             if job_id == "all":
                 self.cur.execute(
                     (
-                        "SELECT j.type, j.name, j.uuid, j.status, j.msg, j.time_start, j.time_complete, j.time_submitted, q.data, q.query, q.files, c.file_list "
+                        "SELECT j.type, j.name, j.uuid, j.status, j.msg, j.time_start, j.time_complete, j.time_submitted, q.data, q.query, q.files, c.file_list, c.positions "
                         "FROM `job` j "
                         "LEFT JOIN `query` q "
                         "ON j.id = q.job_id "
@@ -271,7 +271,7 @@ class JobsDb:
                     )
                 )
                 job_info = None
-                for (type, name, uuid, status, msg, time_start, time_complete, time_submitted, data, query, files, file_list) in self.cur:
+                for (type, name, uuid, status, msg, time_start, time_complete, time_submitted, data, query, files, file_list, positions) in self.cur:
                     job_info = {}
                     job_info["job_type"] = type
                     job_info["job_name"] = name
@@ -285,11 +285,12 @@ class JobsDb:
                     job_info["query"] = query
                     job_info["query_files"] = files
                     job_info["cutout_files"] = file_list
+                    job_info["cutout_positions"] = positions
                     job_info_list.append(job_info)
             else:
                 self.cur.execute(
                     (
-                        "SELECT j.type, j.name, j.uuid, j.status, j.msg, j.time_start, j.time_complete, j.time_submitted, q.data, q.query, q.files, c.file_list "
+                        "SELECT j.type, j.name, j.uuid, j.status, j.msg, j.time_start, j.time_complete, j.time_submitted, q.data, q.query, q.files, c.file_list, c.positions "
                         "FROM `job` j "
                         "LEFT JOIN `query` q "
                         "ON j.id = q.job_id "
@@ -303,7 +304,7 @@ class JobsDb:
                     )
                 )
                 job_info = None
-                for (type, name, uuid, status, msg, time_start, time_complete, time_submitted, data, query, files, file_list) in self.cur:
+                for (type, name, uuid, status, msg, time_start, time_complete, time_submitted, data, query, files, file_list, positions) in self.cur:
                     job_info = {}
                     job_info["job_type"] = type
                     job_info["job_name"] = name
@@ -317,6 +318,7 @@ class JobsDb:
                     job_info["query"] = query
                     job_info["query_files"] = files
                     job_info["cutout_files"] = file_list
+                    job_info["cutout_positions"] = positions
                     job_info_list.append(job_info)
                 if job_info == None:
                     request_status = 'error'
@@ -373,7 +375,7 @@ class JobsDb:
                 logger.info('Created new job of type "test"')
             elif conf["configjob"]["kind"] == 'cutout':
                 opt_vals = {}
-                for key in ['ra', 'dec', 'coadd', 'xsize', 'ysize', 'rgb_minimum', 'rgb_stretch', 'rgb_asinh']:
+                for key in ['ra', 'dec', 'coadd', 'positions', 'xsize', 'ysize', 'rgb_minimum', 'rgb_stretch', 'rgb_asinh']:
                     if key in conf["configjob"]["spec"]:
                         opt_vals[key] = conf["configjob"]["spec"][key]
                     else:
@@ -381,11 +383,11 @@ class JobsDb:
                 self.cur.execute(
                     (
                         "INSERT INTO `cutout` "
-                        "(`job_id`, `db`, `release`, `ra`, `dec`, `coadd`, `make_tiffs`, "
+                        "(`job_id`, `db`, `release`, `ra`, `dec`, `coadd`, `positions`, `make_tiffs`, "
                         "make_fits, make_pngs, make_rgb_lupton, make_rgb_stiff, "
                         "return_list, xsize, ysize, colors_rgb, colors_fits, "
                         "rgb_minimum, rgb_stretch, rgb_asinh) "
-                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
                     ),
                     (
                         self.cur.lastrowid,
@@ -394,6 +396,7 @@ class JobsDb:
                         opt_vals['ra'],
                         opt_vals['dec'],
                         opt_vals['coadd'],
+                        opt_vals['positions'],
                         conf["configjob"]["spec"]["make_tiffs"],
                         conf["configjob"]["spec"]["make_fits"],
                         conf["configjob"]["spec"]["make_pngs"],

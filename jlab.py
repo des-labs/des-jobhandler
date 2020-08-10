@@ -67,7 +67,7 @@ def create_deployment(apps_v1_api, username, token):
                 ),
                 client.V1VolumeMount(
                     name='persistent-volume',
-                    mount_path="/home/jovyan/jupyter",
+                    mount_path="/home/jovyan/work",
                     sub_path='{}/jupyter'.format(username)
                 )
             ]

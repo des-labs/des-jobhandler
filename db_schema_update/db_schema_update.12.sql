@@ -1,0 +1,1 @@
+ALTER TABLE `cutout` ADD `positions` MEDIUMTEXT
