@@ -175,7 +175,11 @@ class ProfileUpdateHandler(BaseHandler):
         email = body['email']
         # TODO: Allow users with "admin" role to update any user profile
         if username == self._token_decoded["username"]:
-            status, msg = dbutils.update_info(username, first, last, email)
+            if envvars.DESACCESS_INTERFACE == 'public':
+                user_db_manager = dbutils.dbConfig(envvars.ORACLE_PUB)
+            else:
+                user_db_manager = dbutils.dbConfig(envvars.ORACLE_PRV)
+            status, msg = user_db_manager.update_info(username, first, last, email)
             response['status'] = status
             response['message'] = msg
         else:
@@ -199,7 +203,11 @@ class ProfileUpdatePasswordHandler(BaseHandler):
         database = body['db']
         # TODO: Allow users with "admin" role to update any user profile
         if username == self._token_decoded["username"]:
-            status, message = dbutils.change_credentials(username, oldpwd, newpwd, database)
+            if envvars.DESACCESS_INTERFACE == 'public':
+                user_db_manager = dbutils.dbConfig(envvars.ORACLE_PUB)
+            else:
+                user_db_manager = dbutils.dbConfig(envvars.ORACLE_PRV)
+            status, message = user_db_manager.change_credentials(username, oldpwd, newpwd, database)
             response['status'] = status
             response['message'] = message
         else:
@@ -219,7 +227,11 @@ class LoginHandler(BaseHandler):
         passwd = body["password"]
         db = body["database"]
         response = {"username": username}
-        auth, err, update = dbutils.check_credentials(username, passwd, db)
+        if envvars.DESACCESS_INTERFACE == 'public':
+            user_db_manager = dbutils.dbConfig(envvars.ORACLE_PUB)
+        else:
+            user_db_manager = dbutils.dbConfig(envvars.ORACLE_PRV)
+        auth, err, update = user_db_manager.check_credentials(username, passwd, db)
         if not auth:
             if update:
                 self.set_status(406)
@@ -233,7 +245,7 @@ class LoginHandler(BaseHandler):
             self.write(json.dumps(response))
             self.finish()
             return
-        name, last, email = dbutils.get_basic_info(username)
+        name, last, email = user_db_manager.get_basic_info(username)
         roles = JOBSDB.get_user_roles(username)
         encoded = encode_info(name, last, username, email, db, roles, envvars.JWT_TTL_SECONDS)
 
@@ -1180,10 +1192,14 @@ class ListUsersHandler(BaseHandler):
         try:
             if 'admin' in roles:
                 if 'username' in data:
-                    if data['username'] == 'all':
-                        response['users'] = dbutils.list_all_users()
+                    if envvars.DESACCESS_INTERFACE == 'public':
+                        user_db_manager = dbutils.dbConfig(envvars.ORACLE_PUB)
                     else:
-                        response['users'] = dbutils.get_basic_info(data['username'])
+                        user_db_manager = dbutils.dbConfig(envvars.ORACLE_PRV)
+                    if data['username'] == 'all':
+                        response['users'] = user_db_manager.list_all_users()
+                    else:
+                        response['users'] = user_db_manager.get_basic_info(data['username'])
                 else:
                     response['status'] = STATUS_ERROR
                     response['msg'] = "Parameter username must be specified. To list all users use value \"all\""

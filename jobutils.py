@@ -668,28 +668,6 @@ class JobsDb:
         self.close_db_connection()
         return roles
 
-    def get_admin_emails(self):
-        self.open_db_connection()
-        error_msg = ''
-        emails = []
-        try:
-            self.cur.execute(
-                (
-                    "SELECT username from `role` WHERE role_name = %s"
-                ),
-                (
-                    'admin',
-                )
-            )
-            for (username,) in self.cur:
-                name, last, email = dbutils.get_basic_info(username)
-                emails.append(email)
-        except Exception as e:
-            error_msg = str(e).strip()
-            logger.error(error_msg)
-        self.close_db_connection()
-        return emails, error_msg
-
     def get_all_user_roles_and_help_requests(self):
         self.open_db_connection()
         users = {}
