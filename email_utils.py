@@ -98,3 +98,28 @@ def help_request_notification(username, recipients, jira_issue_number, jira_issu
     header.s.sendmail(header.fromemail, header.recipients, header.msg.as_string())
     header.s.quit()
     return "Email Sent to {}".format(header.recipients)
+
+def send_activation(firstname, lastname, username, recipients, url):
+    if not isinstance(recipients, list):
+        recipients = [recipients]
+    # bcc = 'desaccess-admins@lists.ncsa.illinois.edu'
+    bcc = 'devnull@ncsa.illinois.edu'
+    activate_link = '{}/activate/{}'.format(envvars.FRONTEND_BASE_URL, url)
+    email_link = '{}/email/'.format(envvars.FRONTEND_BASE_URL)
+    context = {
+        "Subject": "DESaccess Account Activation Link",
+        "email_link": email_link,
+        "username": firstname,
+        "msg": """Welcome!<br>
+        You need to activate your account
+        before accessing DESaccess services. <br > The activation link is valid
+        for the next 12 hours""",
+        "action": "Click Here To Activate Your Account",
+        "link": activate_link,
+    }
+    header = SingleEmailHeader(username, recipients, context, char='c')
+    MP1 = MIMEText(header.html, 'html')
+    header.msg.attach(MP1)
+    header.s.sendmail(header.fromemail, [header.recipients, bcc], header.msg.as_string())
+    header.s.quit()
+    return "Email Sent to {}".format([header.recipients, bcc])

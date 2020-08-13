@@ -126,7 +126,7 @@ def allowed_roles(roles_allowed = []):
                 }
                 try:
                     roles = handler._token_decoded["roles"]
-                    logger.info('Authenticated user roles: {}'.format(roles))
+                    # logger.info('Authenticated user roles: {}'.format(roles))
                     if not any(role in roles for role in roles_allowed):
                         handler.set_status(200)
                         response["status"] = STATUS_ERROR
@@ -1033,9 +1033,47 @@ class UserPreferencesHandler(BaseHandler):
         self.write(response)
 
 
+@authenticated
+@allowed_roles(['admin'])
+class UserDeleteHandler(BaseHandler):
+    def delete(self):
+        response = {
+            "status": STATUS_OK,
+            "msg": ""
+        }
+        # Only enable user deletion on public interface
+        if envvars.DESACCESS_INTERFACE != 'public':
+            response['status'] = STATUS_ERROR
+            response['msg'] = "User deletion disabled."
+            self.write(response)
+            return
+        try:
+            data = json.loads(self.request.body.decode('utf-8'))
+            username = data['username'].lower()
+            if username == self._token_decoded["username"]:
+                response['status'] = STATUS_ERROR
+                response['msg'] = "User may not self-delete."
+                self.write(response)
+                return
+        except:
+            logger.info('Error decoding JSON data')
+            response['status'] = STATUS_ERROR
+            response['msg'] = "Error decoding JSON data. Required parameters: username"
+        try:
+            status, msg = USER_DB_MANAGER.delete_user(username)
+            if status != STATUS_OK:
+                response['status'] = STATUS_ERROR
+                response['msg'] = msg
+        except Exception as e:
+            response['status'] = STATUS_ERROR
+            response['msg'] = str(e).strip()
+            logger.error(response['msg'])
+        self.write(response)
+        return
+
+
 class UserRegisterHandler(BaseHandler):
     def post(self):
-        data = json.loads(self.request.body.decode('utf-8'))
         response = {
             "status": STATUS_OK,
             "msg": ""
@@ -1047,6 +1085,7 @@ class UserRegisterHandler(BaseHandler):
             self.write(response)
             return
         try:
+            data = json.loads(self.request.body.decode('utf-8'))
             username = data['username'].lower()
             password = data['password']
             firstname = data['firstname']
@@ -1071,9 +1110,9 @@ class UserRegisterHandler(BaseHandler):
                 self.write(response)
                 return
             # Limit valid password characters
-            if not re.fullmatch(r'[A-Za-z0-9!@#$%^&_+=-]{10,30}', password):
+            if not re.fullmatch(r'[A-Za-z0-9]{10,30}', password):
                 response['status'] = STATUS_ERROR
-                response['msg'] = 'Valid password characters are: A-Za-z0-9!@#$%^&_+=-'
+                response['msg'] = 'Valid password characters are: A-Za-z0-9'
                 self.write(response)
                 return
             # Limit other input parameter characters partially to mitigate SQL injection attacks
@@ -1092,6 +1131,8 @@ class UserRegisterHandler(BaseHandler):
                 response['msg'] = 'Valid family name characters are: A-Za-z0-9'
                 self.write(response)
                 return
+
+            # Check to see if username or email are already in use
             status, msg = USER_DB_MANAGER.check_username(username)
             if status != STATUS_OK:
                 response['status'] = STATUS_ERROR
@@ -1105,26 +1146,47 @@ class UserRegisterHandler(BaseHandler):
                 self.write(response)
                 return
 
-            ### DEBUGGING
-            self.write(response)
-            return
-            ### DEBUGGING
+            # Create the user by adding them to the user database
+            status, msg = USER_DB_MANAGER.create_user(
+                username=username, 
+                password=password, 
+                first=firstname, 
+                last=lastname, 
+                email=email, 
+                lock=True
+            )
+            if status != STATUS_OK:
+                response['status'] = STATUS_ERROR
+                response['msg'] = msg
+                try:
+                    # Clean up the incomplete registration by deleting the user from the user database
+                    status, msg = USER_DB_MANAGER.delete_user(username)
+                except:
+                    logger.error('Unable to delete user {}'.format(username))
+                self.write(response)
+                return
 
-            # check, msgerr = USER_DB_MANAGER.create_user(username, password, firstname, lastname, email, '', '')
-            # if not check:
-            #     if '911' or '922' in msgerr:
-            #         msg = 'Invalid character in password.'
-            #     else:
-            #         msg = msgerr
-            # else:
-            #     check, url, checkuser = v.create_reset_url(email)
-            #     email_utils.send_activation(firstname, username, email, url)
-            #     try:
-            #         email_utils.subscribe_email(email)
-            #     except:
-            #         pass
-            #     msg = 'Activation email sent!'
-            #     err = '0'
+            # Generate an activation code to enable the new account
+            url, firstname, lastname, status, msg = USER_DB_MANAGER.create_reset_url(email)
+            if status != STATUS_OK:
+                response['status'] = STATUS_ERROR
+                response['msg'] = msg
+                try:
+                    # Clean up the incomplete registration by deleting the user from the user database
+                    status, msg = USER_DB_MANAGER.delete_user(username)
+                except:
+                    logger.error('Unable to delete user {}'.format(username))
+                self.write(response)
+                return
+            
+            # Send the activation email
+            email_utils.send_activation(firstname, lastname, username, email, url)
+            valid, status, msg = USER_DB_MANAGER.valid_url(url)
+            if valid:
+                logger.info('URL {} is valid'.format(url))
+            else:
+                logger.info('URL {} is NOT valid'.format(url))
+
         except Exception as e:
             response['status'] = STATUS_ERROR
             response['msg'] = str(e).strip()
@@ -1326,6 +1388,7 @@ def make_app(basePath=''):
             (r"{}/user/list?".format(basePath), ListUsersHandler),
             (r"{}/user/preference?".format(basePath), UserPreferencesHandler),
             (r"{}/user/register?".format(basePath), UserRegisterHandler),
+            (r"{}/user/delete?".format(basePath), UserDeleteHandler),
             (r"{}/logout/?".format(basePath), LogoutHandler),
             (r"{}/page/cutout/csv/validate/?".format(basePath), ValidateCsvHandler),
             (r"{}/page/db-access/check/?".format(basePath), CheckQuerySyntaxHandler),
