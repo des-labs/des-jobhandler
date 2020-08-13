@@ -650,7 +650,8 @@ class JobsDb:
 
     def get_user_roles(self, username):
         self.open_db_connection()
-        roles = []
+        # Ensure that all users have the default role
+        roles = ['default']
         try:
             self.cur.execute(
                 (
@@ -661,7 +662,7 @@ class JobsDb:
                 )
             )
             for (role_name,) in self.cur:
-                if isinstance(role_name, str):
+                if isinstance(role_name, str) and not role_name in roles:
                     roles.append(role_name)
         except Exception as e:
             logger.error(str(e).strip())
@@ -683,13 +684,17 @@ class JobsDb:
                     'roles': [role_name],
                     'help_requests': []
                     }
+            # Ensure that all users have the default role
+            if not 'default' in users[username]['roles']:
+                users[username]['roles'].append('default')
             self.cur.execute("SELECT user, jira_issue from `help` WHERE resolved = 0 ")
             for (user, jira_issue,) in self.cur:
                 if user in users:
                     users[user]['help_requests'].append(jira_issue)
                 else:
                     users[user] = {
-                    'roles': [],
+                    # Ensure that all users have the default role
+                    'roles': ['default'],
                     'help_requests': [jira_issue]
                     }
             for username in users:

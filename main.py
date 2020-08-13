@@ -24,9 +24,12 @@ import email_utils
 import jlab
 import uuid
 import shutil
+import re
 
 STATUS_OK = 'ok'
 STATUS_ERROR = 'error'
+
+ALLOWED_ROLE_LIST = envvars.ALLOWED_ROLE_LIST.split(',')
 
 # Get global instance of the job handler database interface
 JOBSDB = jobutils.JobsDb(
@@ -61,6 +64,12 @@ JIRA_API = jira.client.JIRA(
         base64.b64decode(conf['pp']).decode().strip()
     )
 )
+
+# Initialize the Oracle database user manager
+if envvars.DESACCESS_INTERFACE == 'public':
+    USER_DB_MANAGER = dbutils.dbConfig(envvars.ORACLE_PUB)
+else:
+    USER_DB_MANAGER = dbutils.dbConfig(envvars.ORACLE_PRV)
 
 # The datetime type is not JSON serializable, so convert to string
 def json_converter(o):
@@ -104,6 +113,41 @@ def webcron(cls_handler):
     cls_handler._execute = wrap_execute(cls_handler._execute)
     return cls_handler
 
+def allowed_roles(roles_allowed = []):
+    # Always allow admin access
+    roles_allowed.append('admin')
+    # Actual decorator is check_roles
+    def check_roles(cls_handler):
+        def wrap_execute(handler_execute):
+            def wrapper(handler, kwargs):
+                response = {
+                    "status": STATUS_OK,
+                    "msg": ""
+                }
+                try:
+                    roles = handler._token_decoded["roles"]
+                    logger.info('Authenticated user roles: {}'.format(roles))
+                    if not any(role in roles for role in roles_allowed):
+                        handler.set_status(200)
+                        response["status"] = STATUS_ERROR
+                        response["message"] = "Access denied."
+                        handler.write(response)
+                        handler.finish()
+                        return
+                except:
+                    handler.set_status(200)
+                    response["status"] = STATUS_ERROR
+                    response["message"] = "Error authorizing access."
+                    logger.error(response["message"])
+                    return
+            def _execute(self, transforms, *args, **kwargs):
+                wrapper(self, kwargs)
+                return handler_execute(self, transforms, *args, **kwargs)
+            return _execute
+        cls_handler._execute = wrap_execute(cls_handler._execute)
+        return cls_handler
+    return check_roles
+
 
 @webcron
 class BaseHandler(tornado.web.RequestHandler):
@@ -128,6 +172,7 @@ class BaseHandler(tornado.web.RequestHandler):
         return temp
 
 @authenticated
+@allowed_roles(ALLOWED_ROLE_LIST)
 class ProfileHandler(BaseHandler):
     # API endpoint: /profile
     def post(self):
@@ -135,7 +180,7 @@ class ProfileHandler(BaseHandler):
         decoded = self._token_decoded
         exptime =  datetime.datetime.utcfromtimestamp(decoded['exp'])
         ttl = (exptime - datetime.datetime.utcnow()).seconds
-        response["status"] = "ok"
+        response["status"] = STATUS_OK
         response["message"] = "valid token"
         response["name"] = decoded["name"]
         response["lastname"] = decoded["lastname"]
@@ -162,6 +207,7 @@ class ProfileHandler(BaseHandler):
 
 
 @authenticated
+@allowed_roles(ALLOWED_ROLE_LIST)
 class ProfileUpdateHandler(BaseHandler):
     # API endpoint: /profile/update/info
     def post(self):
@@ -175,15 +221,11 @@ class ProfileUpdateHandler(BaseHandler):
         email = body['email']
         # TODO: Allow users with "admin" role to update any user profile
         if username == self._token_decoded["username"]:
-            if envvars.DESACCESS_INTERFACE == 'public':
-                user_db_manager = dbutils.dbConfig(envvars.ORACLE_PUB)
-            else:
-                user_db_manager = dbutils.dbConfig(envvars.ORACLE_PRV)
-            status, msg = user_db_manager.update_info(username, first, last, email)
+            status, msg = USER_DB_MANAGER.update_info(username, first, last, email)
             response['status'] = status
             response['message'] = msg
         else:
-            response['status'] = 'error'
+            response['status'] = STATUS_ERROR
             response['message'] = 'User info to update must belong to the authenticated user.'
         self.flush()
         self.write(response)
@@ -192,6 +234,7 @@ class ProfileUpdateHandler(BaseHandler):
 
 
 @authenticated
+@allowed_roles(ALLOWED_ROLE_LIST)
 class ProfileUpdatePasswordHandler(BaseHandler):
     # API endpoint: /profile/update/password
     def post(self):
@@ -203,15 +246,11 @@ class ProfileUpdatePasswordHandler(BaseHandler):
         database = body['db']
         # TODO: Allow users with "admin" role to update any user profile
         if username == self._token_decoded["username"]:
-            if envvars.DESACCESS_INTERFACE == 'public':
-                user_db_manager = dbutils.dbConfig(envvars.ORACLE_PUB)
-            else:
-                user_db_manager = dbutils.dbConfig(envvars.ORACLE_PRV)
-            status, message = user_db_manager.change_credentials(username, oldpwd, newpwd, database)
+            status, message = USER_DB_MANAGER.change_credentials(username, oldpwd, newpwd, database)
             response['status'] = status
             response['message'] = message
         else:
-            response['status'] = 'error'
+            response['status'] = STATUS_ERROR
             response['message'] = 'User info to update must belong to the authenticated user.'
         self.flush()
         self.write(response)
@@ -227,11 +266,7 @@ class LoginHandler(BaseHandler):
         passwd = body["password"]
         db = body["database"]
         response = {"username": username}
-        if envvars.DESACCESS_INTERFACE == 'public':
-            user_db_manager = dbutils.dbConfig(envvars.ORACLE_PUB)
-        else:
-            user_db_manager = dbutils.dbConfig(envvars.ORACLE_PRV)
-        auth, err, update = user_db_manager.check_credentials(username, passwd, db)
+        auth, err, update = USER_DB_MANAGER.check_credentials(username, passwd, db)
         if not auth:
             if update:
                 self.set_status(406)
@@ -239,18 +274,28 @@ class LoginHandler(BaseHandler):
             else:
                 self.set_status(401)
                 response["update"] = False
-            response["status"] = "error"
+            response["status"] = STATUS_ERROR
             response["message"] = err
             self.flush()
             self.write(json.dumps(response))
             self.finish()
             return
-        name, last, email = user_db_manager.get_basic_info(username)
+        try:
+            name, last, email = USER_DB_MANAGER.get_basic_info(username)
+        except Exception as e:
+            error_msg = str(e).strip()
+            logger.error(error_msg)
+            response["status"] = STATUS_ERROR
+            response["message"] = 'User not found.'
+            self.flush()
+            self.write(json.dumps(response))
+            self.finish()
+            return
         roles = JOBSDB.get_user_roles(username)
         encoded = encode_info(name, last, username, email, db, roles, envvars.JWT_TTL_SECONDS)
 
 
-        response["status"] = "ok"
+        response["status"] = STATUS_OK
         response["message"] = "login"
         response["name"] = name
         response["lastname"] = last
@@ -281,13 +326,14 @@ class LogoutHandler(BaseHandler):
     # API endpoint: /logout
     def post(self):
         response = {}
-        response["status"] = "ok"
+        response["status"] = STATUS_OK
         response["message"] = "logout {}".format(self._token_decoded["username"])
         response["status"] = JOBSDB.session_logout(self._token_decoded["username"])
         response["new_token"] = self._token_encoded
         self.write(json.dumps(response))
 
 @authenticated
+@allowed_roles(ALLOWED_ROLE_LIST)
 class JobHandler(BaseHandler):
     # API endpoint: /job/submit
     def put(self):
@@ -486,6 +532,7 @@ class JobComplete(BaseHandler):
 
 
 @authenticated
+@allowed_roles(ALLOWED_ROLE_LIST)
 class JobRename(BaseHandler):
     # API endpoint: /job/rename
     def post(self):
@@ -625,6 +672,7 @@ class ValidateCsvHandler(BaseHandler):
 
 
 @authenticated
+@allowed_roles(ALLOWED_ROLE_LIST)
 class CheckQuerySyntaxHandler(BaseHandler):
     def post(self):
         data = json.loads(self.request.body.decode('utf-8'))
@@ -660,24 +708,19 @@ class CheckQuerySyntaxHandler(BaseHandler):
 
 
 @authenticated
+@allowed_roles(['admin'])
 class ListUserRolesHandler(BaseHandler):
     def post(self):
-        # data = json.loads(self.request.body.decode('utf-8'))
         response = {
             "status": STATUS_OK,
             "msg": "",
             'users': {}
         }
-        roles = self._token_decoded["roles"]
         try:
-            if 'admin' in roles:
-                # Sync status of help request table records with their Jira issues
-                response['msg'] = JOBSDB.sync_help_requests_with_jira()
-                # Compile user list with role and help request data
-                response['users'] = JOBSDB.get_all_user_roles_and_help_requests()
-            else:
-                response['status'] = STATUS_ERROR
-                response['msg'] = "Permission denied: You must be an admin."
+            # Sync status of help request table records with their Jira issues
+            response['msg'] = JOBSDB.sync_help_requests_with_jira()
+            # Compile user list with role and help request data
+            response['users'] = JOBSDB.get_all_user_roles_and_help_requests()
         except:
             logger.info('Error decoding JSON data')
             response['status'] = STATUS_ERROR
@@ -686,6 +729,7 @@ class ListUserRolesHandler(BaseHandler):
 
 
 @authenticated
+@allowed_roles(['admin'])
 class NotificationsCreateHandler(BaseHandler):
     # Messages are created by admins using the PUT request type
     def put(self):
@@ -694,20 +738,15 @@ class NotificationsCreateHandler(BaseHandler):
             "status": STATUS_OK,
             "msg": ""
         }
-        roles = self._token_decoded["roles"]
         try:
-            if 'admin' in roles:
-                # If the roles array is empty or missing, include the default role
-                if 'roles' not in data or data['roles'] == []:
-                    data['roles'] = ['default']
-                # Insert message into database table
-                error_msg = JOBSDB.create_notification(data['title'], data['body'], data['roles'], datetime.datetime.utcnow())
-                if error_msg != '':
-                    response['status'] = STATUS_ERROR
-                    response['msg'] = error_msg
-            else:
+            # If the roles array is empty or missing, include the default role
+            if 'roles' not in data or data['roles'] == []:
+                data['roles'] = ['default']
+            # Insert message into database table
+            error_msg = JOBSDB.create_notification(data['title'], data['body'], data['roles'], datetime.datetime.utcnow())
+            if error_msg != '':
                 response['status'] = STATUS_ERROR
-                response['msg'] = "Permission denied: You must be an admin."
+                response['msg'] = error_msg
         except:
             logger.info('Error decoding JSON data')
             response['status'] = STATUS_ERROR
@@ -716,6 +755,7 @@ class NotificationsCreateHandler(BaseHandler):
 
 
 @authenticated
+@allowed_roles(['admin'])
 class NotificationsDeleteHandler(BaseHandler):
     def post(self):
         error_msg = ''
@@ -724,17 +764,12 @@ class NotificationsDeleteHandler(BaseHandler):
             "status": STATUS_OK,
             "msg": ""
         }
-        roles = self._token_decoded["roles"]
         try:
-            if 'admin' in roles:
-                # Delete message from database table
-                error_msg = JOBSDB.delete_notification(data['message-id'])
-                if error_msg != '':
-                    response['status'] = STATUS_ERROR
-                    response['msg'] = error_msg
-            else:
+            # Delete message from database table
+            error_msg = JOBSDB.delete_notification(data['message-id'])
+            if error_msg != '':
                 response['status'] = STATUS_ERROR
-                response['msg'] = "Permission denied: You must be an admin."
+                response['msg'] = error_msg
         except:
             logger.info('Error decoding JSON data')
             response['status'] = STATUS_ERROR
@@ -743,6 +778,7 @@ class NotificationsDeleteHandler(BaseHandler):
 
 
 @authenticated
+@allowed_roles(['admin'])
 class NotificationsEditHandler(BaseHandler):
     def post(self):
         error_msg = ''
@@ -751,17 +787,12 @@ class NotificationsEditHandler(BaseHandler):
             "status": STATUS_OK,
             "msg": ""
         }
-        roles = self._token_decoded["roles"]
         try:
-            if 'admin' in roles:
-                # Delete message from database table
-                error_msg = JOBSDB.edit_notification(data['id'], data['title'], data['body'], data['roles'])
-                if error_msg != '':
-                    response['status'] = STATUS_ERROR
-                    response['msg'] = error_msg
-            else:
+            # Delete message from database table
+            error_msg = JOBSDB.edit_notification(data['id'], data['title'], data['body'], data['roles'])
+            if error_msg != '':
                 response['status'] = STATUS_ERROR
-                response['msg'] = "Permission denied: You must be an admin."
+                response['msg'] = error_msg
         except:
             logger.info('Error decoding JSON data')
             response['status'] = STATUS_ERROR
@@ -770,6 +801,7 @@ class NotificationsEditHandler(BaseHandler):
 
 
 @authenticated
+@allowed_roles(['admin'])
 class JupyterLabPruneHandler(BaseHandler):
     def post(self):
         error_msg = ''
@@ -777,19 +809,14 @@ class JupyterLabPruneHandler(BaseHandler):
             "status": STATUS_OK,
             "msg": ""
         }
-        roles = self._token_decoded["roles"]
         try:
-            if 'admin' in roles:
-                current_time = datetime.datetime.utcnow()
-                jupyter_users = JOBSDB.get_role_user_list('jupyter')
-                pruned, error_msg = jlab.prune(jupyter_users, current_time)
-                logger.info('Pruned Jupyter servers for users: {}'.format(pruned))
-                if error_msg != '':
-                    response['status'] = STATUS_ERROR
-                    response['msg'] = error_msg
-            else:
+            current_time = datetime.datetime.utcnow()
+            jupyter_users = JOBSDB.get_role_user_list('jupyter')
+            pruned, error_msg = jlab.prune(jupyter_users, current_time)
+            logger.info('Pruned Jupyter servers for users: {}'.format(pruned))
+            if error_msg != '':
                 response['status'] = STATUS_ERROR
-                response['msg'] = "Permission denied: You must be an admin."
+                response['msg'] = error_msg
         except:
             logger.info('Error pruning JupyterLab servers.')
             response['status'] = STATUS_ERROR
@@ -798,6 +825,7 @@ class JupyterLabPruneHandler(BaseHandler):
 
 
 @authenticated
+@allowed_roles(['jupyter'])
 class JupyterLabCreateHandler(BaseHandler):
     def post(self):
         response = {
@@ -806,20 +834,15 @@ class JupyterLabCreateHandler(BaseHandler):
             'token': '',
             'url': ''
         }
-        roles = self._token_decoded["roles"]
         try:
-            if any(role in roles for role in ('jupyter', 'admin')):
-                username = self._token_decoded["username"]
-                response['token'] = str(uuid.uuid4()).replace("-", "")
-                base_path = '/jlab/{}'.format(username)
-                response['url'] = '{}{}?token={}'.format(envvars.FRONTEND_BASE_URL, base_path, response['token'])
-                error_msg = jlab.create(username, base_path, response['token'])
-                if error_msg != '':
-                    response['status'] = STATUS_ERROR
-                    response['msg'] = error_msg
-            else:
+            username = self._token_decoded["username"]
+            response['token'] = str(uuid.uuid4()).replace("-", "")
+            base_path = '/jlab/{}'.format(username)
+            response['url'] = '{}{}?token={}'.format(envvars.FRONTEND_BASE_URL, base_path, response['token'])
+            error_msg = jlab.create(username, base_path, response['token'])
+            if error_msg != '':
                 response['status'] = STATUS_ERROR
-                response['msg'] = "Permission denied."
+                response['msg'] = error_msg
         except Exception as e:
             response['msg'] = str(e).strip()
             logger.error(response['msg'])
@@ -828,23 +851,19 @@ class JupyterLabCreateHandler(BaseHandler):
 
 
 @authenticated
+@allowed_roles(['jupyter'])
 class JupyterLabDeleteHandler(BaseHandler):
     def post(self):
         response = {
             "status": STATUS_OK,
             "msg": ""
         }
-        roles = self._token_decoded["roles"]
         try:
-            if any(role in roles for role in ('jupyter', 'admin')):
-                username = self._token_decoded["username"]
-                error_msg = jlab.delete(username)
-                if error_msg != '':
-                    response['status'] = STATUS_ERROR
-                    response['msg'] = error_msg
-            else:
+            username = self._token_decoded["username"]
+            error_msg = jlab.delete(username)
+            if error_msg != '':
                 response['status'] = STATUS_ERROR
-                response['msg'] = "Permission denied."
+                response['msg'] = error_msg
         except Exception as e:
             response['msg'] = str(e).strip()
             logger.error(response['msg'])
@@ -853,6 +872,7 @@ class JupyterLabDeleteHandler(BaseHandler):
 
 
 @authenticated
+@allowed_roles(['jupyter'])
 class JupyterLabStatusHandler(BaseHandler):
     def post(self):
         response = {
@@ -864,22 +884,17 @@ class JupyterLabStatusHandler(BaseHandler):
             'creation_timestamp': '',
             'latest_condition_type': 'Unknown',
         }
-        roles = self._token_decoded["roles"]
         try:
-            if any(role in roles for role in ('jupyter', 'admin')):
-                username = self._token_decoded["username"]
-                stat, error_msg = jlab.status(username)
-                if error_msg != '':
-                    response['status'] = STATUS_ERROR
-                    response['msg'] = error_msg
-                response['ready_replicas'] = stat['ready_replicas']
-                response['unavailable_replicas'] = stat['unavailable_replicas']
-                response['latest_condition_type'] = stat['latest_condition_type']
-                response['token'] = stat['token']
-                response['creation_timestamp'] = stat['creation_timestamp']
-            else:
+            username = self._token_decoded["username"]
+            stat, error_msg = jlab.status(username)
+            if error_msg != '':
                 response['status'] = STATUS_ERROR
-                response['msg'] = "Permission denied."
+                response['msg'] = error_msg
+            response['ready_replicas'] = stat['ready_replicas']
+            response['unavailable_replicas'] = stat['unavailable_replicas']
+            response['latest_condition_type'] = stat['latest_condition_type']
+            response['token'] = stat['token']
+            response['creation_timestamp'] = stat['creation_timestamp']
         except Exception as e:
             response['msg'] = str(e).strip()
             logger.error(response['msg'])
@@ -888,6 +903,7 @@ class JupyterLabStatusHandler(BaseHandler):
 
 
 @authenticated
+@allowed_roles(['jupyter'])
 class JupyterLabFileListHandler(BaseHandler):
     def post(self):
         response = {
@@ -895,26 +911,21 @@ class JupyterLabFileListHandler(BaseHandler):
             "msg": "",
             'folders': []
         }
-        roles = self._token_decoded["roles"]
         try:
-            if any(role in roles for role in ('jupyter', 'admin')):
-                username = self._token_decoded["username"]
-                jupyter_dir = os.path.join('/jobfiles', username, 'jupyter/public')
-                logger.info(jupyter_dir)
-                jupyter_dirs = []
-                with os.scandir(jupyter_dir) as it:
-                    for entry in it:
-                        if not entry.name.startswith('.') and entry.is_dir():
-                            mod_timestamp = datetime.datetime.fromtimestamp(entry.stat().st_mtime)
-                            logger.info('{}: {}'.format(entry.name, mod_timestamp))
-                            jupyter_dirs.append({
-                                'directory': entry.name,
-                                'time': mod_timestamp
-                            })
-                response['folders'] = jupyter_dirs
-            else:
-                response['status'] = STATUS_ERROR
-                response['msg'] = "Permission denied."
+            username = self._token_decoded["username"]
+            jupyter_dir = os.path.join('/jobfiles', username, 'jupyter/public')
+            logger.info(jupyter_dir)
+            jupyter_dirs = []
+            with os.scandir(jupyter_dir) as it:
+                for entry in it:
+                    if not entry.name.startswith('.') and entry.is_dir():
+                        mod_timestamp = datetime.datetime.fromtimestamp(entry.stat().st_mtime)
+                        logger.info('{}: {}'.format(entry.name, mod_timestamp))
+                        jupyter_dirs.append({
+                            'directory': entry.name,
+                            'time': mod_timestamp
+                        })
+            response['folders'] = jupyter_dirs
         except Exception as e:
             response['msg'] = str(e).strip()
             logger.error(response['msg'])
@@ -923,6 +934,7 @@ class JupyterLabFileListHandler(BaseHandler):
 
 
 @authenticated
+@allowed_roles(['jupyter'])
 class JupyterLabFileDeleteHandler(BaseHandler):
     def post(self):
         response = {
@@ -930,18 +942,13 @@ class JupyterLabFileDeleteHandler(BaseHandler):
             "msg": ""
         }
         data = json.loads(self.request.body.decode('utf-8'))
-        roles = self._token_decoded["roles"]
         try:
-            if any(role in roles for role in ('jupyter', 'admin')):
-                username = self._token_decoded["username"]
-                jupyter_dir = os.path.join('/jobfiles', username, 'jupyter/public', data['token'])
+            username = self._token_decoded["username"]
+            jupyter_dir = os.path.join('/jobfiles', username, 'jupyter/public', data['token'])
 
-                logger.info(jupyter_dir)
-                if os.path.isdir(jupyter_dir):
-                    shutil.rmtree(jupyter_dir)
-            else:
-                response['status'] = STATUS_ERROR
-                response['msg'] = "Permission denied."
+            logger.info(jupyter_dir)
+            if os.path.isdir(jupyter_dir):
+                shutil.rmtree(jupyter_dir)
         except Exception as e:
             response['msg'] = str(e).strip()
             logger.error(response['msg'])
@@ -950,6 +957,7 @@ class JupyterLabFileDeleteHandler(BaseHandler):
 
 
 @authenticated
+@allowed_roles(ALLOWED_ROLE_LIST)
 class NotificationsFetchHandler(BaseHandler):
     def post(self):
         data = json.loads(self.request.body.decode('utf-8'))
@@ -981,6 +989,7 @@ class NotificationsFetchHandler(BaseHandler):
 
 
 @authenticated
+@allowed_roles(ALLOWED_ROLE_LIST)
 class NotificationsMarkHandler(BaseHandler):
     # Messages are marked read by users using the POST request type
     def post(self):
@@ -1003,6 +1012,7 @@ class NotificationsMarkHandler(BaseHandler):
 
 
 @authenticated
+@allowed_roles(ALLOWED_ROLE_LIST)
 class UserPreferencesHandler(BaseHandler):
     def put(self):
         data = json.loads(self.request.body.decode('utf-8'))
@@ -1023,7 +1033,106 @@ class UserPreferencesHandler(BaseHandler):
         self.write(response)
 
 
+class UserRegisterHandler(BaseHandler):
+    def post(self):
+        data = json.loads(self.request.body.decode('utf-8'))
+        response = {
+            "status": STATUS_OK,
+            "msg": ""
+        }
+        # Only enable self-registration on public interface
+        if envvars.DESACCESS_INTERFACE != 'public':
+            response['status'] = STATUS_ERROR
+            response['msg'] = "Self-registration disabled."
+            self.write(response)
+            return
+        try:
+            username = data['username'].lower()
+            password = data['password']
+            firstname = data['firstname']
+            lastname = data['lastname']
+            email = data['email'].lower() 
+        except:
+            logger.info('Error decoding JSON data')
+            response['status'] = STATUS_ERROR
+            response['msg'] = "Error decoding JSON data. Required parameters include username, password, firstname, lastname, email."
+            self.write(response)
+            return
+        try:
+            # Enforce password length
+            if len(password) < 10:
+                response['status'] = STATUS_ERROR
+                response['msg'] = "Minimum password length is 10 characters."
+                self.write(response)
+                return
+            if len(password) > 30:
+                response['status'] = STATUS_ERROR
+                response['msg'] = "Maximum password length is 30 characters."
+                self.write(response)
+                return
+            # Limit valid password characters
+            if not re.fullmatch(r'[A-Za-z0-9!@#$%^&_+=-]{10,30}', password):
+                response['status'] = STATUS_ERROR
+                response['msg'] = 'Valid password characters are: A-Za-z0-9!@#$%^&_+=-'
+                self.write(response)
+                return
+            # Limit other input parameter characters partially to mitigate SQL injection attacks
+            if not re.fullmatch(r'[a-z0-9]{1,}', username):
+                response['status'] = STATUS_ERROR
+                response['msg'] = 'Valid username characters are: a-z0-9'
+                self.write(response)
+                return
+            if not re.fullmatch(r'[A-Za-z0-9]{1,}', firstname):
+                response['status'] = STATUS_ERROR
+                response['msg'] = 'Valid given name characters are: A-Za-z0-9'
+                self.write(response)
+                return
+            if not re.fullmatch(r'[A-Za-z0-9]{1,}', lastname):
+                response['status'] = STATUS_ERROR
+                response['msg'] = 'Valid family name characters are: A-Za-z0-9'
+                self.write(response)
+                return
+            status, msg = USER_DB_MANAGER.check_username(username)
+            if status != STATUS_OK:
+                response['status'] = STATUS_ERROR
+                response['msg'] = msg
+                self.write(response)
+                return
+            status, msg = USER_DB_MANAGER.check_email(email)
+            if status != STATUS_OK:
+                response['status'] = STATUS_ERROR
+                response['msg'] = msg
+                self.write(response)
+                return
+
+            ### DEBUGGING
+            self.write(response)
+            return
+            ### DEBUGGING
+
+            # check, msgerr = USER_DB_MANAGER.create_user(username, password, firstname, lastname, email, '', '')
+            # if not check:
+            #     if '911' or '922' in msgerr:
+            #         msg = 'Invalid character in password.'
+            #     else:
+            #         msg = msgerr
+            # else:
+            #     check, url, checkuser = v.create_reset_url(email)
+            #     email_utils.send_activation(firstname, username, email, url)
+            #     try:
+            #         email_utils.subscribe_email(email)
+            #     except:
+            #         pass
+            #     msg = 'Activation email sent!'
+            #     err = '0'
+        except Exception as e:
+            response['status'] = STATUS_ERROR
+            response['msg'] = str(e).strip()
+        self.write(response)
+
+
 @authenticated
+@allowed_roles(ALLOWED_ROLE_LIST)
 class HelpFormHandler(BaseHandler):
     def post(self):
         data = json.loads(self.request.body.decode('utf-8'))
@@ -1108,6 +1217,7 @@ class HelpFormHandler(BaseHandler):
 
 
 @authenticated
+@allowed_roles(['admin'])
 class UpdateUserRolesHandler(BaseHandler):
     def post(self):
         data = json.loads(self.request.body.decode('utf-8'))
@@ -1115,15 +1225,10 @@ class UpdateUserRolesHandler(BaseHandler):
             "status": STATUS_OK,
             "msg": ""
         }
-        roles = self._token_decoded["roles"]
         try:
-            if 'admin' in roles:
-                response['msg'] = JOBSDB.update_user_roles(data['username'], data['new_roles'])
-                if response['msg'] != '':
-                    response['status'] = STATUS_ERROR
-            else:
+            response['msg'] = JOBSDB.update_user_roles(data['username'], data['new_roles'])
+            if response['msg'] != '':
                 response['status'] = STATUS_ERROR
-                response['msg'] = "Permission denied: You must be an admin."
         except:
             logger.info('Error decoding JSON data')
             response['status'] = STATUS_ERROR
@@ -1132,6 +1237,7 @@ class UpdateUserRolesHandler(BaseHandler):
 
 
 @authenticated
+@allowed_roles(['admin'])
 class SetUserRolesHandler(BaseHandler):
     def post(self):
         data = json.loads(self.request.body.decode('utf-8'))
@@ -1139,15 +1245,10 @@ class SetUserRolesHandler(BaseHandler):
             "status": STATUS_OK,
             "msg": ""
         }
-        roles = self._token_decoded["roles"]
         try:
-            if 'admin' in roles:
-                response['msg'] = JOBSDB.set_user_roles(data['username'], data['roles'])
-                if response['msg'] != '':
-                    response['status'] = STATUS_ERROR
-            else:
+            response['msg'] = JOBSDB.set_user_roles(data['username'], data['roles'])
+            if response['msg'] != '':
                 response['status'] = STATUS_ERROR
-                response['msg'] = "Permission denied: You must be an admin."
         except:
             logger.info('Error decoding JSON data')
             response['status'] = STATUS_ERROR
@@ -1156,6 +1257,7 @@ class SetUserRolesHandler(BaseHandler):
 
 
 @authenticated
+@allowed_roles(['admin'])
 class ResetUserRoleHandler(BaseHandler):
     def post(self):
         data = json.loads(self.request.body.decode('utf-8'))
@@ -1163,15 +1265,10 @@ class ResetUserRoleHandler(BaseHandler):
             "status": STATUS_OK,
             "msg": ""
         }
-        roles = self._token_decoded["roles"]
         try:
-            if 'admin' in roles:
-                response['msg'] = JOBSDB.reset_user_roles(data['username'])
-                if response['msg'] != '':
-                    response['status'] = STATUS_ERROR
-            else:
+            response['msg'] = JOBSDB.reset_user_roles(data['username'])
+            if response['msg'] != '':
                 response['status'] = STATUS_ERROR
-                response['msg'] = "Permission denied: You must be an admin."
         except:
             logger.info('Error decoding JSON data')
             response['status'] = STATUS_ERROR
@@ -1180,6 +1277,7 @@ class ResetUserRoleHandler(BaseHandler):
 
 
 @authenticated
+@allowed_roles(['admin'])
 class ListUsersHandler(BaseHandler):
     def post(self):
         data = json.loads(self.request.body.decode('utf-8'))
@@ -1188,24 +1286,15 @@ class ListUsersHandler(BaseHandler):
             "msg": "",
             "users": {}
         }
-        roles = self._token_decoded["roles"]
         try:
-            if 'admin' in roles:
-                if 'username' in data:
-                    if envvars.DESACCESS_INTERFACE == 'public':
-                        user_db_manager = dbutils.dbConfig(envvars.ORACLE_PUB)
-                    else:
-                        user_db_manager = dbutils.dbConfig(envvars.ORACLE_PRV)
-                    if data['username'] == 'all':
-                        response['users'] = user_db_manager.list_all_users()
-                    else:
-                        response['users'] = user_db_manager.get_basic_info(data['username'])
+            if 'username' in data:
+                if data['username'] == 'all':
+                    response['users'] = USER_DB_MANAGER.list_all_users()
                 else:
-                    response['status'] = STATUS_ERROR
-                    response['msg'] = "Parameter username must be specified. To list all users use value \"all\""
+                    response['users'] = USER_DB_MANAGER.get_basic_info(data['username'])
             else:
                 response['status'] = STATUS_ERROR
-                response['msg'] = "Permission denied: You must be an admin."
+                response['msg'] = "Parameter username must be specified. To list all users use value \"all\""
         except:
             logger.info('Error decoding JSON data')
             response['status'] = STATUS_ERROR
@@ -1236,6 +1325,7 @@ def make_app(basePath=''):
             (r"{}/user/role/list?".format(basePath), ListUserRolesHandler),
             (r"{}/user/list?".format(basePath), ListUsersHandler),
             (r"{}/user/preference?".format(basePath), UserPreferencesHandler),
+            (r"{}/user/register?".format(basePath), UserRegisterHandler),
             (r"{}/logout/?".format(basePath), LogoutHandler),
             (r"{}/page/cutout/csv/validate/?".format(basePath), ValidateCsvHandler),
             (r"{}/page/db-access/check/?".format(basePath), CheckQuerySyntaxHandler),
@@ -1269,10 +1359,6 @@ if __name__ == "__main__":
         basePath = ''
     else:
         basePath = envvars.BASE_PATH
-
-    # Reset the database using the API endpoint /dev/db/wipe
-    # if envvars.DROP_TABLES == True:
-    #     JOBSDB.reinitialize_tables()
 
     # Apply any database updates
     try:

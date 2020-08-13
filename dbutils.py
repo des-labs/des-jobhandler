@@ -6,6 +6,9 @@ import envvars
 import yaml
 import os
 
+STATUS_OK = 'ok'
+STATUS_ERROR = 'error'
+
 logger = logging.getLogger(__name__)
 
 class dbConfig(object):
@@ -118,3 +121,73 @@ class dbConfig(object):
                 return 'error', error
         else:
             return 'error', error
+    
+    def check_username(self, username):
+        status = STATUS_OK
+        msg = ''
+        results = None
+        kwargs = {'host': self.host, 'port': self.port, 'service_name': self.db_manager}
+        dsn = cx_Oracle.makedsn(**kwargs)
+        dbh = cx_Oracle.connect(self.user_manager, self.pwd_manager, dsn=dsn)
+        cursor = dbh.cursor()
+        sql = """
+            SELECT USERNAME FROM DES_ADMIN.DES_USERS WHERE USERNAME = '{user}'
+            """.format(user=username.lower())
+        try:
+            results = cursor.execute(sql).fetchone()
+            if results:
+                status = STATUS_ERROR
+                msg = 'Username {} is unavailable. Choose a different one.'.format(username)
+        except Exception as e:
+            msg = str(e).strip()
+            status = STATUS_ERROR
+        cursor.close()
+        dbh.close()
+        return status, msg
+
+    def check_email(self, email):
+        status = STATUS_OK
+        msg = ''
+        results = None
+        kwargs = {'host': self.host, 'port': self.port, 'service_name': self.db_manager}
+        dsn = cx_Oracle.makedsn(**kwargs)
+        dbh = cx_Oracle.connect(self.user_manager, self.pwd_manager, dsn=dsn)
+        cursor = dbh.cursor()
+        sql = """
+            SELECT EMAIL FROM DES_ADMIN.DES_USERS WHERE EMAIL = '{}'
+            """.format(email.lower())
+        try:
+            results = cursor.execute(sql).fetchone()
+            if results:
+                status = STATUS_ERROR
+                msg = 'Email address {} is already registered.'.format(email)
+        except Exception as e:
+            msg = str(e).strip()
+            status = STATUS_ERROR
+        cursor.close()
+        dbh.close()
+        return status, msg
+
+    def create_user(self, username, password, first, last, email, country, institution, lock=True):
+        status = STATUS_OK
+        msg = ''
+        kwargs = {'host': self.host, 'port': self.port, 'service_name': self.db_manager}
+        dsn = cx_Oracle.makedsn(**kwargs)
+        dbh = cx_Oracle.connect(self.user_manager, self.pwd_manager, dsn=dsn)
+        cursor = dbh.cursor()
+        sql = """
+            CREATE USER {user} IDENTIFIED BY {passwd} DEFAULT TABLESPACE USERS
+            """.format(user=username.lower(), passwd=password)
+        try:
+            results = cursor.execute(sql).fetchone()
+            if results:
+                status = STATUS_ERROR
+                msg = 'Email address {} is already registered.'.format(email)
+        except Exception as e:
+            msg = str(e).strip()
+            status = STATUS_ERROR
+            cursor.close()
+            dbh.close()
+            return status, msg
+
+
