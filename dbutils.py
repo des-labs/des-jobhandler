@@ -150,6 +150,41 @@ class dbConfig(object):
         dbh.close()
         return status, msg
 
+    def update_password(self, username, password):
+        status = STATUS_OK
+        msg = ''
+        kwargs = {'host': self.host, 'port': self.port, 'service_name': self.db_manager}
+        dsn = cx_Oracle.makedsn(**kwargs)
+        dbh = cx_Oracle.connect(self.admin_user_manager, self.admin_pwd_manager, dsn=dsn)
+        cursor = dbh.cursor()
+        try:
+            sql = """
+            ALTER USER {0} IDENTIFIED BY {1}
+            """.format(username.lower(), password)
+            #logger.info('sql: {}'.format(sql))
+            valid = False
+            try:
+                cursor.execute(sql)
+                dbh.commit()
+                valid = True
+            except Exception as e:
+                msg = str(e).strip()
+            if valid:
+                # Delete the reset token
+                sql = """
+                DELETE FROM DES_ADMIN.RESET_URL WHERE USERNAME = '{}'
+                """.format(username.lower())
+                #logger.info('sql: {}'.format(sql))
+                cursor.execute(sql)
+                dbh.commit()
+        except Exception as e:
+            status = STATUS_ERROR
+            msg = str(e).strip()
+            logger.error(msg)
+        cursor.close()
+        dbh.close()
+        return status, msg
+
     def unlock_account(self, username):
         status = STATUS_OK
         msg = ''
@@ -179,7 +214,7 @@ class dbConfig(object):
         dbh.close()
         return status, msg
 
-    def validate_activation_token(self, token, timeout=6000):
+    def validate_token(self, token, timeout=6000):
         valid = False
         status = STATUS_OK
         msg = ''
@@ -238,7 +273,7 @@ class dbConfig(object):
         dbh.close()
         return status, msg
 
-    def create_reset_url(self, email):
+    def create_reset_url(self, username):
         url = None
         firstname = None
         lastname = None
@@ -252,15 +287,15 @@ class dbConfig(object):
         try:
             # Get user profile
             sql = """
-            SELECT USERNAME, FIRSTNAME, LASTNAME from DES_ADMIN.DES_USERS where EMAIL = '{email}'
-            """.format(email=email)
+            SELECT EMAIL, FIRSTNAME, LASTNAME from DES_ADMIN.DES_USERS where USERNAME = '{}'
+            """.format(username.lower())
             #logger.info('sql: {}'.format(sql))
             results = cursor.execute(sql).fetchone()
             if not results:
                 status = STATUS_ERROR
-                msg = 'Email address {} not registered.'.format(email)
+                msg = 'user {} not registered.'.format(username)
             else:
-                username, firstname, lastname = results
+                email, firstname, lastname = results
                 #logger.info('{},{},{}'.format(username, firstname, lastname))
                 # Delete any existing reset codes
                 sql = """
@@ -285,7 +320,7 @@ class dbConfig(object):
             status = STATUS_ERROR
         cursor.close()
         dbh.close()
-        return url, firstname, lastname, status, msg
+        return url, firstname, lastname, email, status, msg
 
     def delete_user(self, username):
         status = STATUS_OK

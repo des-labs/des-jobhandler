@@ -1094,8 +1094,14 @@ class UserResetPasswordRequestHandler(BaseHandler):
             self.write(response)
             return
         try:
-            msg = 'Generating password reset email...'
-            response['msg'] = msg
+            # Generate a reset code
+            token, firstname, lastname, email, status, msg = USER_DB_MANAGER.create_reset_url(username)
+            if status != STATUS_OK:
+                response['status'] = STATUS_ERROR
+                response['msg'] = msg
+                self.write(response)
+                return
+            msg = email_utils.send_reset(username, [email], token)
             logger.info(msg)
         except Exception as e:
             response['status'] = STATUS_ERROR
@@ -1109,7 +1115,8 @@ class UserResetPasswordHandler(BaseHandler):
     def post(self):
         response = {
             "status": STATUS_OK,
-            "msg": ""
+            "msg": "",
+            'reset': False
         }
         # Only enable user deletion on public interface
         if envvars.DESACCESS_INTERFACE != 'public':
@@ -1129,25 +1136,25 @@ class UserResetPasswordHandler(BaseHandler):
             return
         try:
             # TODO: Check that the token is valid.
-            # valid, username, status, msg = USER_DB_MANAGER.validate_activation_token(token, 24*3600)
-            # if status != STATUS_OK:
-            #     response['status'] = STATUS_ERROR
-            #     response['msg'] = msg
-            # elif valid:
-            #     # Unlock the account
-            #     status, msg = USER_DB_MANAGER.unlock_account(username)
-            #     if status != STATUS_OK:
-            #         response['status'] = STATUS_ERROR
-            #         response['msg'] = msg
-            #     # Update the password
-            #     status, msg = USER_DB_MANAGER.update_password(username, password)
-            #     if status != STATUS_OK:
-            #         response['status'] = STATUS_ERROR
-            #         response['msg'] = msg
-            #     else:
-            #         response['activated'] = True
-            # else:
-            #     response['msg'] = msg
+            valid, username, status, msg = USER_DB_MANAGER.validate_token(token, 24*3600)
+            if status != STATUS_OK:
+                response['status'] = STATUS_ERROR
+                response['msg'] = msg
+            elif valid:
+                # Update the password
+                status, msg = USER_DB_MANAGER.update_password(username, password)
+                if status != STATUS_OK:
+                    response['status'] = STATUS_ERROR
+                    response['msg'] = msg
+                # Unlock the account
+                status, msg = USER_DB_MANAGER.unlock_account(username)
+                if status != STATUS_OK:
+                    response['status'] = STATUS_ERROR
+                    response['msg'] = msg
+                else:
+                    response['reset'] = True
+            else:
+                response['msg'] = msg
             msg = 'Resetting password...'
             response['msg'] = msg
             logger.info(msg)
@@ -1180,7 +1187,7 @@ class UserActivateHandler(BaseHandler):
             response['status'] = STATUS_ERROR
             response['msg'] = "Error decoding JSON data. Required parameters: token"
         try:
-            valid, username, status, msg = USER_DB_MANAGER.validate_activation_token(token, 24*3600)
+            valid, username, status, msg = USER_DB_MANAGER.validate_token(token, 24*3600)
             if status != STATUS_OK:
                 response['status'] = STATUS_ERROR
                 response['msg'] = msg
@@ -1296,7 +1303,7 @@ class UserRegisterHandler(BaseHandler):
                 return
 
             # Generate an activation code to enable the new account
-            url, firstname, lastname, status, msg = USER_DB_MANAGER.create_reset_url(email)
+            url, firstname, lastname, email, status, msg = USER_DB_MANAGER.create_reset_url(username)
             if status != STATUS_OK:
                 response['status'] = STATUS_ERROR
                 response['msg'] = msg

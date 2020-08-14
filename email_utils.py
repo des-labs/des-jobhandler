@@ -122,6 +122,29 @@ def send_activation(firstname, lastname, username, recipients, url):
     header.s.quit()
     return "Email Sent to {}".format(header.recipients)
 
+def send_reset(username, recipients, token):
+    if not isinstance(recipients, list):
+        recipients = [recipients]
+    link = '{}/reset/{}'.format(envvars.FRONTEND_BASE_URL, token)
+    context = {
+        "Subject": "DESaccess Account Password Reset Link",
+        "username": username,
+        "msg": """
+        <p>Someone (hopefully you) requested a password reset for your DESaccess account. Click the link below to reset your password.<p>
+        <p>If you did not request a password reset, you may ignore this message.</p>
+        <p>The activation link is valid for the next 24 hours</p>
+        """,
+        "action": "Reset your password",
+        "link": link,
+    }
+    header = SingleEmailHeader(username, recipients, context, char='c')
+    MP1 = MIMEText(header.html, 'html')
+    header.msg.attach(MP1)
+    # The TO and CC header fields are populated by the header construction, and any additional recipient addresses are effectively BCC
+    header.s.sendmail(header.fromemail, header.recipients, header.msg.as_string())
+    header.s.quit()
+    return "Email Sent to {}".format(header.recipients)
+
 def email_notify_admins_new_user(firstname, lastname, username, recipients, url):
     if not isinstance(recipients, list):
         recipients = [recipients]
