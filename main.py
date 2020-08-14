@@ -1072,6 +1072,48 @@ class UserDeleteHandler(BaseHandler):
         return
 
 
+class UserActivateHandler(BaseHandler):
+    def post(self):
+        response = {
+            "status": STATUS_OK,
+            "msg": "",
+            'activated': False
+        }
+        # Only enable user deletion on public interface
+        if envvars.DESACCESS_INTERFACE != 'public':
+            response['status'] = STATUS_ERROR
+            response['msg'] = "Only for public interface."
+            self.write(response)
+            return
+        try:
+            data = json.loads(self.request.body.decode('utf-8'))
+            token = data['token']
+        except:
+            logger.info('Error decoding JSON data')
+            response['status'] = STATUS_ERROR
+            response['msg'] = "Error decoding JSON data. Required parameters: token"
+        try:
+            valid, username, status, msg = USER_DB_MANAGER.validate_activation_token(token, 24*3600)
+            if status != STATUS_OK:
+                response['status'] = STATUS_ERROR
+                response['msg'] = msg
+            elif valid:
+                status, msg = USER_DB_MANAGER.unlock_account(username)
+                if status != STATUS_OK:
+                    response['status'] = STATUS_ERROR
+                    response['msg'] = msg
+                else:
+                    response['activated'] = True
+            else:
+                response['msg'] = msg
+        except Exception as e:
+            response['status'] = STATUS_ERROR
+            response['msg'] = str(e).strip()
+            logger.error(response['msg'])
+        self.write(response)
+        return
+
+
 class UserRegisterHandler(BaseHandler):
     def post(self):
         response = {
@@ -1181,11 +1223,15 @@ class UserRegisterHandler(BaseHandler):
             
             # Send the activation email
             email_utils.send_activation(firstname, lastname, username, email, url)
-            valid, status, msg = USER_DB_MANAGER.valid_url(url)
-            if valid:
-                logger.info('URL {} is valid'.format(url))
-            else:
-                logger.info('URL {} is NOT valid'.format(url))
+            # # TODO: Subscribe new user to the des-dr-announce listserv
+            # email_utils.subscribe_email(email)
+
+            # # Check that URL is valid
+            # valid, status, msg = USER_DB_MANAGER.valid_url(url)
+            # if valid:
+            #     logger.info('URL {} is valid'.format(url))
+            # else:
+            #     logger.info('URL {} is NOT valid'.format(url))
 
         except Exception as e:
             response['status'] = STATUS_ERROR
@@ -1389,6 +1435,7 @@ def make_app(basePath=''):
             (r"{}/user/preference?".format(basePath), UserPreferencesHandler),
             (r"{}/user/register?".format(basePath), UserRegisterHandler),
             (r"{}/user/delete?".format(basePath), UserDeleteHandler),
+            (r"{}/user/activate?".format(basePath), UserActivateHandler),
             (r"{}/logout/?".format(basePath), LogoutHandler),
             (r"{}/page/cutout/csv/validate/?".format(basePath), ValidateCsvHandler),
             (r"{}/page/db-access/check/?".format(basePath), CheckQuerySyntaxHandler),

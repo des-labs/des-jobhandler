@@ -150,8 +150,36 @@ class dbConfig(object):
         dbh.close()
         return status, msg
 
+    def unlock_account(self, username):
+        status = STATUS_OK
+        msg = ''
+        kwargs = {'host': self.host, 'port': self.port, 'service_name': self.db_manager}
+        dsn = cx_Oracle.makedsn(**kwargs)
+        dbh = cx_Oracle.connect(self.admin_user_manager, self.admin_pwd_manager, dsn=dsn)
+        cursor = dbh.cursor()
+        try:
+            sql = """
+            ALTER USER {} ACCOUNT UNLOCK
+            """.format(username.lower())
+            logger.info('sql: {}'.format(sql))
+            cursor.execute(sql)
+            dbh.commit()
+            # Delete the reset token
+            sql = """
+            DELETE FROM DES_ADMIN.RESET_URL WHERE USERNAME = '{}'
+            """.format(username.lower())
+            logger.info('sql: {}'.format(sql))
+            cursor.execute(sql)
+            dbh.commit()
+        except Exception as e:
+            status = STATUS_ERROR
+            msg = str(e).strip()
+            logger.error(msg)
+        cursor.close()
+        dbh.close()
+        return status, msg
 
-    def valid_url(self, url, timeout=6000):
+    def validate_activation_token(self, token, timeout=6000):
         valid = False
         status = STATUS_OK
         msg = ''
@@ -161,23 +189,23 @@ class dbConfig(object):
         dbh = cx_Oracle.connect(self.admin_user_manager, self.admin_pwd_manager, dsn=dsn)
         cursor = dbh.cursor()
         sql = """
-            SELECT USERNAME, URL, CREATED FROM DES_ADMIN.RESET_URL
-            """.format(url)
+            SELECT CREATED, USERNAME FROM DES_ADMIN.RESET_URL WHERE URL = '{0}'
+            """.format(token)
         logger.info('sql: {}'.format(sql))
         try:
-            results = cursor.execute(sql).fetchmany()
-            for row in results:
+            created, username = None, None
+            for row in cursor.execute(sql):
                 logger.info('{}'.format(row))
-            if not results:
-                msg = 'Activation code is invalid'
-                logger.info(msg)
-            else:
-                create, username = results
-                if (dt.datetime.now() - created).seconds > timeout:
-                    msg = 'Activation code has expired'
+                created, username = row
+                if not created:
+                    msg = 'Activation token is invalid'
                     logger.info(msg)
                 else:
-                    valid = True
+                    if (dt.datetime.now() - created).seconds > timeout:
+                        msg = 'Activation token has expired'
+                        logger.info(msg)
+                    else:
+                        valid = True
         except Exception as e:
             logger.error('Error selecting reset URL')
             valid = False
@@ -185,7 +213,7 @@ class dbConfig(object):
             status = STATUS_ERROR
         cursor.close()
         dbh.close()
-        return valid, status, msg
+        return valid, username, status, msg
 
     def check_email(self, email):
         status = STATUS_OK
@@ -239,15 +267,26 @@ class dbConfig(object):
                 DELETE FROM DES_ADMIN.RESET_URL WHERE USERNAME = '{user}'
                 """.format(user=username)
                 logger.info('sql: {}'.format(sql))
-                results = cursor.execute(sql)
-
+                cursor.execute(sql)
+                dbh.commit()
+                try:
+                    logger.info('cursor.lastrowid: {}'.format(cursor.lastrowid))
+                    logger.info('cursor.rowcount: {}'.format(cursor.rowcount))
+                except:
+                    pass
                 now = dt.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
                 url = uuid.uuid4().hex
                 sql = """
                 INSERT INTO DES_ADMIN.RESET_URL VALUES ('{0}', '{1}', to_date('{2}' , 'yyyy/mm/dd hh24:mi:ss'))
                 """.format(username, url, now)
                 logger.info('sql: {}'.format(sql))
-                results = cursor.execute(sql)
+                cursor.execute(sql)
+                dbh.commit()
+                try:
+                    logger.info('cursor.lastrowid: {}'.format(cursor.lastrowid))
+                    logger.info('cursor.rowcount: {}'.format(cursor.rowcount))
+                except:
+                    pass
         except Exception as e:
             url = None
             firstname = None
