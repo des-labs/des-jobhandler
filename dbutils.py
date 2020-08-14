@@ -161,14 +161,14 @@ class dbConfig(object):
             sql = """
             ALTER USER {} ACCOUNT UNLOCK
             """.format(username.lower())
-            logger.info('sql: {}'.format(sql))
+            #logger.info('sql: {}'.format(sql))
             cursor.execute(sql)
             dbh.commit()
             # Delete the reset token
             sql = """
             DELETE FROM DES_ADMIN.RESET_URL WHERE USERNAME = '{}'
             """.format(username.lower())
-            logger.info('sql: {}'.format(sql))
+            #logger.info('sql: {}'.format(sql))
             cursor.execute(sql)
             dbh.commit()
         except Exception as e:
@@ -191,11 +191,11 @@ class dbConfig(object):
         sql = """
             SELECT CREATED, USERNAME FROM DES_ADMIN.RESET_URL WHERE URL = '{0}'
             """.format(token)
-        logger.info('sql: {}'.format(sql))
+        #logger.info('sql: {}'.format(sql))
         try:
             created, username = None, None
             for row in cursor.execute(sql):
-                logger.info('{}'.format(row))
+                #logger.info('{}'.format(row))
                 created, username = row
                 if not created:
                     msg = 'Activation token is invalid'
@@ -254,39 +254,29 @@ class dbConfig(object):
             sql = """
             SELECT USERNAME, FIRSTNAME, LASTNAME from DES_ADMIN.DES_USERS where EMAIL = '{email}'
             """.format(email=email)
-            logger.info('sql: {}'.format(sql))
+            #logger.info('sql: {}'.format(sql))
             results = cursor.execute(sql).fetchone()
             if not results:
                 status = STATUS_ERROR
                 msg = 'Email address {} not registered.'.format(email)
             else:
                 username, firstname, lastname = results
-                logger.info('{},{},{}'.format(username, firstname, lastname))
+                #logger.info('{},{},{}'.format(username, firstname, lastname))
                 # Delete any existing reset codes
                 sql = """
                 DELETE FROM DES_ADMIN.RESET_URL WHERE USERNAME = '{user}'
                 """.format(user=username)
-                logger.info('sql: {}'.format(sql))
+                #logger.info('sql: {}'.format(sql))
                 cursor.execute(sql)
                 dbh.commit()
-                try:
-                    logger.info('cursor.lastrowid: {}'.format(cursor.lastrowid))
-                    logger.info('cursor.rowcount: {}'.format(cursor.rowcount))
-                except:
-                    pass
                 now = dt.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
                 url = uuid.uuid4().hex
                 sql = """
                 INSERT INTO DES_ADMIN.RESET_URL VALUES ('{0}', '{1}', to_date('{2}' , 'yyyy/mm/dd hh24:mi:ss'))
                 """.format(username, url, now)
-                logger.info('sql: {}'.format(sql))
+                #logger.info('sql: {}'.format(sql))
                 cursor.execute(sql)
                 dbh.commit()
-                try:
-                    logger.info('cursor.lastrowid: {}'.format(cursor.lastrowid))
-                    logger.info('cursor.rowcount: {}'.format(cursor.rowcount))
-                except:
-                    pass
         except Exception as e:
             url = None
             firstname = None
@@ -309,23 +299,23 @@ class dbConfig(object):
             sql = """
             DELETE FROM DES_ADMIN.RESET_URL WHERE USERNAME = '{user}'
             """.format(user=username.lower())
-            logger.info('sql: {}'.format(sql))
+            #logger.info('sql: {}'.format(sql))
             results = cursor.execute(sql)
-            logger.info('cursor.execute results: {}'.format(results))
+            #logger.info('cursor.execute results: {}'.format(results))
             
             sql = """
             DELETE FROM DES_ADMIN.DES_USERS where USERNAME = '{user}'
             """.format(user=username.lower())
-            logger.info('sql: {}'.format(sql))
+            #logger.info('sql: {}'.format(sql))
             results = cursor.execute(sql)
-            logger.info('cursor.execute results: {}'.format(results))
+            #logger.info('cursor.execute results: {}'.format(results))
             
             sql = """
             DROP USER {user} CASCADE
             """.format(user=username.lower())
-            logger.info('sql: {}'.format(sql))
+            #logger.info('sql: {}'.format(sql))
             results = cursor.execute(sql)
-            logger.info('cursor.execute results: {}'.format(results))
+            #logger.info('cursor.execute results: {}'.format(results))
             
         except Exception as e:
             msg = str(e).strip()
@@ -348,25 +338,25 @@ class dbConfig(object):
             """.format(user=username.lower(), passwd=password)
             if lock:
                 sql = '{} ACCOUNT LOCK'.format(sql)
-            logger.info('create user sql: {}'.format(sql))
+            #logger.info('create user sql: {}'.format(sql))
             results = cursor.execute(sql)
-            logger.info('cursor.execute results: {}'.format(results))
+            #logger.info('cursor.execute results: {}'.format(results))
             
             sql = """
             GRANT CREATE SESSION to {user}
             """.format(user=username.lower())
-            logger.info('grant session sql: {}'.format(sql))
+            #logger.info('grant session sql: {}'.format(sql))
             results = cursor.execute(sql)
-            logger.info('cursor.execute results: {}'.format(results))
+            #logger.info('cursor.execute results: {}'.format(results))
 
             tables = ['DES_ADMIN.CACHE_TABLES', 'DES_ADMIN.CACHE_COLUMNS']
             for itable in tables:
                 sql = """
                 GRANT SELECT on {table} to {user}
                 """.format(table=itable, user=username.lower())
-                logger.info('grant select on table sql: {}'.format(sql))
+                #logger.info('grant select on table sql: {}'.format(sql))
                 results = cursor.execute(sql)
-                logger.info('cursor.execute results: {}'.format(results))
+                #logger.info('cursor.execute results: {}'.format(results))
 
             sql = """
             INSERT INTO DES_ADMIN.DES_USERS VALUES (
@@ -380,16 +370,16 @@ class dbConfig(object):
                 country=country,
                 inst=institution
             )
-            logger.info('insert user into DES_USERS sql: {}'.format(sql))
+            #logger.info('insert user into DES_USERS sql: {}'.format(sql))
             results = cursor.execute(sql)
-            logger.info('cursor.execute results: {}'.format(results))
+            #logger.info('cursor.execute results: {}'.format(results))
             
             sql = """
             GRANT DES_READER to {user}
             """.format(user=username.lower())
-            logger.info('GRANT DES_READER sql: {}'.format(sql))
+            #logger.info('GRANT DES_READER sql: {}'.format(sql))
             results = cursor.execute(sql)
-            logger.info('cursor.execute results: {}'.format(results))
+            #logger.info('cursor.execute results: {}'.format(results))
 
         except Exception as e:
             msg = str(e).strip()

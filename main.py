@@ -1072,6 +1072,93 @@ class UserDeleteHandler(BaseHandler):
         return
 
 
+class UserResetPasswordRequestHandler(BaseHandler):
+    def post(self):
+        response = {
+            "status": STATUS_OK,
+            "msg": ""
+        }
+        # Only enable user deletion on public interface
+        if envvars.DESACCESS_INTERFACE != 'public':
+            response['status'] = STATUS_ERROR
+            response['msg'] = "Only for public interface."
+            self.write(response)
+            return
+        try:
+            data = json.loads(self.request.body.decode('utf-8'))
+            username = data['username']
+        except:
+            logger.info('Error decoding JSON data')
+            response['status'] = STATUS_ERROR
+            response['msg'] = "Error decoding JSON data. Required parameters: username"
+            self.write(response)
+            return
+        try:
+            msg = 'Generating password reset email...'
+            response['msg'] = msg
+            logger.info(msg)
+        except Exception as e:
+            response['status'] = STATUS_ERROR
+            response['msg'] = str(e).strip()
+            logger.error(response['msg'])
+        self.write(response)
+        return
+
+
+class UserResetPasswordHandler(BaseHandler):
+    def post(self):
+        response = {
+            "status": STATUS_OK,
+            "msg": ""
+        }
+        # Only enable user deletion on public interface
+        if envvars.DESACCESS_INTERFACE != 'public':
+            response['status'] = STATUS_ERROR
+            response['msg'] = "Only for public interface."
+            self.write(response)
+            return
+        try:
+            data = json.loads(self.request.body.decode('utf-8'))
+            token = data['token']
+            password = data['password']
+        except:
+            logger.info('Error decoding JSON data')
+            response['status'] = STATUS_ERROR
+            response['msg'] = "Error decoding JSON data. Required parameters: token, password"
+            self.write(response)
+            return
+        try:
+            # TODO: Check that the token is valid.
+            # valid, username, status, msg = USER_DB_MANAGER.validate_activation_token(token, 24*3600)
+            # if status != STATUS_OK:
+            #     response['status'] = STATUS_ERROR
+            #     response['msg'] = msg
+            # elif valid:
+            #     # Unlock the account
+            #     status, msg = USER_DB_MANAGER.unlock_account(username)
+            #     if status != STATUS_OK:
+            #         response['status'] = STATUS_ERROR
+            #         response['msg'] = msg
+            #     # Update the password
+            #     status, msg = USER_DB_MANAGER.update_password(username, password)
+            #     if status != STATUS_OK:
+            #         response['status'] = STATUS_ERROR
+            #         response['msg'] = msg
+            #     else:
+            #         response['activated'] = True
+            # else:
+            #     response['msg'] = msg
+            msg = 'Resetting password...'
+            response['msg'] = msg
+            logger.info(msg)
+        except Exception as e:
+            response['status'] = STATUS_ERROR
+            response['msg'] = str(e).strip()
+            logger.error(response['msg'])
+        self.write(response)
+        return
+
+
 class UserActivateHandler(BaseHandler):
     def post(self):
         response = {
@@ -1158,7 +1245,7 @@ class UserRegisterHandler(BaseHandler):
                 self.write(response)
                 return
             # Limit other input parameter characters partially to mitigate SQL injection attacks
-            if not re.fullmatch(r'[a-z0-9]{1,}', username):
+            if not re.fullmatch(r'[a-z0-9]{3,30}', username):
                 response['status'] = STATUS_ERROR
                 response['msg'] = 'Valid username characters are: a-z0-9'
                 self.write(response)
@@ -1222,7 +1309,23 @@ class UserRegisterHandler(BaseHandler):
                 return
             
             # Send the activation email
-            email_utils.send_activation(firstname, lastname, username, email, url)
+            try:
+                msg = email_utils.send_activation(firstname, lastname, username, email, url)
+                logger.info(msg)
+            except Exception as e:
+                response['status'] = STATUS_ERROR
+                response['msg'] = str(e).strip()
+                self.write(response)
+                return
+            # Notify DESaccess admins
+            try:
+                msg = email_utils.email_notify_admins_new_user(firstname, lastname, username, ['desaccess-admins@lists.ncsa.illinois.edu'], url)
+                logger.info(msg)
+            except Exception as e:
+                response['status'] = STATUS_ERROR
+                response['msg'] = str(e).strip()
+                self.write(response)
+                return
             # # TODO: Subscribe new user to the des-dr-announce listserv
             # email_utils.subscribe_email(email)
 
@@ -1436,6 +1539,8 @@ def make_app(basePath=''):
             (r"{}/user/register?".format(basePath), UserRegisterHandler),
             (r"{}/user/delete?".format(basePath), UserDeleteHandler),
             (r"{}/user/activate?".format(basePath), UserActivateHandler),
+            (r"{}/user/reset/request?".format(basePath), UserResetPasswordRequestHandler),
+            (r"{}/user/reset/password?".format(basePath), UserResetPasswordHandler),
             (r"{}/logout/?".format(basePath), LogoutHandler),
             (r"{}/page/cutout/csv/validate/?".format(basePath), ValidateCsvHandler),
             (r"{}/page/db-access/check/?".format(basePath), CheckQuerySyntaxHandler),

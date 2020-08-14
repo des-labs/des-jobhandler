@@ -95,6 +95,7 @@ def help_request_notification(username, recipients, jira_issue_number, jira_issu
     header = SingleEmailHeader(username, recipients, context, char='c')
     MP1 = MIMEText(header.html, 'html')
     header.msg.attach(MP1)
+    # The TO and CC header fields are populated by the header construction, and any additional recipient addresses are effectively BCC
     header.s.sendmail(header.fromemail, header.recipients, header.msg.as_string())
     header.s.quit()
     return "Email Sent to {}".format(header.recipients)
@@ -102,13 +103,9 @@ def help_request_notification(username, recipients, jira_issue_number, jira_issu
 def send_activation(firstname, lastname, username, recipients, url):
     if not isinstance(recipients, list):
         recipients = [recipients]
-    # bcc = 'desaccess-admins@lists.ncsa.illinois.edu'
-    bcc = 'devnull@ncsa.illinois.edu'
     activate_link = '{}/activate/{}'.format(envvars.FRONTEND_BASE_URL, url)
-    email_link = '{}/email/'.format(envvars.FRONTEND_BASE_URL)
     context = {
         "Subject": "DESaccess Account Activation Link",
-        "email_link": email_link,
         "username": firstname,
         "msg": """Welcome!<br>
         You need to activate your account
@@ -120,6 +117,33 @@ def send_activation(firstname, lastname, username, recipients, url):
     header = SingleEmailHeader(username, recipients, context, char='c')
     MP1 = MIMEText(header.html, 'html')
     header.msg.attach(MP1)
-    header.s.sendmail(header.fromemail, [header.recipients, bcc], header.msg.as_string())
+    # The TO and CC header fields are populated by the header construction, and any additional recipient addresses are effectively BCC
+    header.s.sendmail(header.fromemail, header.recipients, header.msg.as_string())
     header.s.quit()
-    return "Email Sent to {}".format([header.recipients, bcc])
+    return "Email Sent to {}".format(header.recipients)
+
+def email_notify_admins_new_user(firstname, lastname, username, recipients, url):
+    if not isinstance(recipients, list):
+        recipients = [recipients]
+    activate_link = '{}'.format(url)
+    context = {
+        "Subject": "New DESaccess user: {}".format(username),
+        "username": username,
+        "msg": """
+        <p>A new DESaccess user was successfully registered:</p>
+        <pre>
+        Username: {}
+        Given Name: {}
+        Family Name: {}
+        <pre>
+        """.format(username, firstname, lastname),
+        "action": "Activation Link",
+        "link": activate_link,
+    }
+    header = SingleEmailHeader(username, recipients, context, char='c')
+    MP1 = MIMEText(header.html, 'html')
+    header.msg.attach(MP1)
+    # The TO and CC header fields are populated by the header construction, and any additional recipient addresses are effectively BCC
+    header.s.sendmail(header.fromemail, header.recipients, header.msg.as_string())
+    header.s.quit()
+    return "Email Sent to {}".format(header.recipients)
