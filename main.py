@@ -1326,7 +1326,7 @@ class UserRegisterHandler(BaseHandler):
                 return
             # Notify DESaccess admins
             try:
-                msg = email_utils.email_notify_admins_new_user(firstname, lastname, username, ['desaccess-admins@lists.ncsa.illinois.edu'], url)
+                msg = email_utils.email_notify_admins_new_user(firstname, lastname, username, envvars.DESACCESS_ADMIN_EMAILS, url)
                 logger.info(msg)
             except Exception as e:
                 response['status'] = STATUS_ERROR
@@ -1392,10 +1392,14 @@ class HelpFormHandler(BaseHandler):
                 message=message,
                 othertopic=othertopic
             )
+            if envvars.DESACCESS_INTERFACE == 'public':
+                issuetype = 'DESaccess public alpha release help request ({})'.format(data['username'])
+            else:
+                issuetype = 'DESaccess private alpha release help request ({})'.format(data['username'])
             issue = {
                 'project' : {'key': 'DESLABS'},
                 'issuetype': {'name': 'Task'},
-                'summary': 'DESaccess alpha release help request ({})'.format(data['username']),
+                'summary': issuetype,
                 'description' : body,
                 #'reporter' : {'name': 'desdm-wufoo'},
             }
@@ -1406,7 +1410,7 @@ class HelpFormHandler(BaseHandler):
                 # Send notification email to user and to admins via list
                 # recipients, error_msg = JOBSDB.get_admin_emails()
                 error_msg = ''
-                recipients = ['desaccess-admins@lists.ncsa.illinois.edu', email]
+                recipients = envvars.DESACCESS_ADMIN_EMAILS + [email]
                 if error_msg == '':
                     email_utils.help_request_notification(data['username'], recipients, data['jira_issue_number'], body)
                 else:
