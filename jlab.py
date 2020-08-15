@@ -161,12 +161,16 @@ def create_ingress(networking_v1_beta1_api, username):
     name = 'jlab-{}'.format(username)
     try:
         # TODO: Improve this parameterization so that no cluster-specific details are hard-coded
-        if envvars.BASE_DOMAIN.lower() == 'deslabs.ncsa.illinois.edu':
+        if envvars.BASE_DOMAIN.lower() in ['deslabs.ncsa.illinois.edu', 'des.ncsa.illinois.edu']:
+            if envvars.BASE_DOMAIN.lower() == 'deslabs.ncsa.illinois.edu':
+                ingress_class = 'deslabs'
+            else:
+                ingress_class = 'nginx'
             body = client.NetworkingV1beta1Ingress(
                 api_version="networking.k8s.io/v1beta1",
                 kind="Ingress",
                 metadata=client.V1ObjectMeta(name=name, annotations={
-                    'kubernetes.io/ingress.class': 'deslabs'
+                    'kubernetes.io/ingress.class': ingress_class
                 }),
                 spec=client.NetworkingV1beta1IngressSpec(
                     # tls=[
