@@ -76,7 +76,45 @@ def json_converter(o):
     if isinstance(o, datetime.datetime):
         return o.__str__()
 
+# The @analytics decorator captures usage statistics
+def analytics(cls_handler):
+    def wrap_execute(handler_execute):
+        def wrapper(handler, kwargs):
+            current_time = datetime.datetime.utcnow()
+            try:
+                request_path = handler.request.path
+            except:
+                request_path = ''
+            try:
+                user_agent = handler.request.headers["User-Agent"]
+            except:
+                user_agent = ''
+            try:
+                remote_ip = handler.request.remote_ip
+            except:
+                remote_ip = ''
+            try:
+                status, msg = JOBSDB.analytics_record_api(request_path, current_time, user_agent, remote_ip)
+                if status != STATUS_OK:
+                    error_msg = msg
+            except Exception as e:
+                error_msg = str(e).strip()
+                logger.error(error_msg)
+            return
 
+        def _execute(self, transforms, *args, **kwargs):
+            wrapper(self, kwargs)
+            return handler_execute(self, transforms, *args, **kwargs)
+        return _execute
+    cls_handler._execute = wrap_execute(cls_handler._execute)
+    return cls_handler
+
+# The @webcron decorator executes cron jobs at intervals equal to or greater
+# than the cron job's frequency spec. Cron jobs are manually registered in the
+# JobHandler database like so
+#
+#   INSERT INTO `cron` (`name`, `period`, `enabled`) VALUES ('my_cron_job_name', frequency_in_minutes, enabled_0_or_1)
+#
 def webcron(cls_handler):
     def wrap_execute(handler_execute):
         def run_cron(handler, kwargs):
@@ -113,6 +151,8 @@ def webcron(cls_handler):
     cls_handler._execute = wrap_execute(cls_handler._execute)
     return cls_handler
 
+# The @allowed_roles decorator must be accompanied by a preceding @authenticated decorator, allowing
+# it to restrict access to the decorated function to authenticated users with specified roles.
 def allowed_roles(roles_allowed = []):
     # Always allow admin access
     roles_allowed.append('admin')
@@ -208,6 +248,7 @@ class ProfileHandler(BaseHandler):
 
 @authenticated
 @allowed_roles(ALLOWED_ROLE_LIST)
+@analytics
 class ProfileUpdateHandler(BaseHandler):
     # API endpoint: /profile/update/info
     def post(self):
@@ -235,6 +276,7 @@ class ProfileUpdateHandler(BaseHandler):
 
 @authenticated
 @allowed_roles(ALLOWED_ROLE_LIST)
+@analytics
 class ProfileUpdatePasswordHandler(BaseHandler):
     # API endpoint: /profile/update/password
     def post(self):
@@ -334,6 +376,7 @@ class LogoutHandler(BaseHandler):
 
 @authenticated
 @allowed_roles(ALLOWED_ROLE_LIST)
+@analytics
 class JobHandler(BaseHandler):
     # API endpoint: /job/submit
     def put(self):
@@ -472,6 +515,9 @@ class JobHandler(BaseHandler):
         }
         self.write(json.dumps(out, indent=4))
 
+@authenticated
+@allowed_roles(ALLOWED_ROLE_LIST)
+class JobStatusHandler(BaseHandler):
     # API endpoint: /job/status
     def post(self):
         # TODO: Use role-based access control to allow a username parameter different
@@ -533,6 +579,7 @@ class JobComplete(BaseHandler):
 
 @authenticated
 @allowed_roles(ALLOWED_ROLE_LIST)
+@analytics
 class JobRename(BaseHandler):
     # API endpoint: /job/rename
     def post(self):
@@ -673,6 +720,7 @@ class ValidateCsvHandler(BaseHandler):
 
 @authenticated
 @allowed_roles(ALLOWED_ROLE_LIST)
+@analytics
 class CheckQuerySyntaxHandler(BaseHandler):
     def post(self):
         data = json.loads(self.request.body.decode('utf-8'))
@@ -826,6 +874,7 @@ class JupyterLabPruneHandler(BaseHandler):
 
 @authenticated
 @allowed_roles(['jupyter'])
+@analytics
 class JupyterLabCreateHandler(BaseHandler):
     def post(self):
         response = {
@@ -852,6 +901,7 @@ class JupyterLabCreateHandler(BaseHandler):
 
 @authenticated
 @allowed_roles(['jupyter'])
+@analytics
 class JupyterLabDeleteHandler(BaseHandler):
     def post(self):
         response = {
@@ -935,6 +985,7 @@ class JupyterLabFileListHandler(BaseHandler):
 
 @authenticated
 @allowed_roles(['jupyter'])
+@analytics
 class JupyterLabFileDeleteHandler(BaseHandler):
     def post(self):
         response = {
@@ -990,6 +1041,7 @@ class NotificationsFetchHandler(BaseHandler):
 
 @authenticated
 @allowed_roles(ALLOWED_ROLE_LIST)
+@analytics
 class NotificationsMarkHandler(BaseHandler):
     # Messages are marked read by users using the POST request type
     def post(self):
@@ -1013,6 +1065,7 @@ class NotificationsMarkHandler(BaseHandler):
 
 @authenticated
 @allowed_roles(ALLOWED_ROLE_LIST)
+@analytics
 class UserPreferencesHandler(BaseHandler):
     def put(self):
         data = json.loads(self.request.body.decode('utf-8'))
@@ -1072,6 +1125,7 @@ class UserDeleteHandler(BaseHandler):
         return
 
 
+@analytics
 class UserResetPasswordRequestHandler(BaseHandler):
     def post(self):
         response = {
@@ -1111,6 +1165,7 @@ class UserResetPasswordRequestHandler(BaseHandler):
         return
 
 
+@analytics
 class UserResetPasswordHandler(BaseHandler):
     def post(self):
         response = {
@@ -1166,6 +1221,7 @@ class UserResetPasswordHandler(BaseHandler):
         return
 
 
+@analytics
 class UserActivateHandler(BaseHandler):
     def post(self):
         response = {
@@ -1208,6 +1264,7 @@ class UserActivateHandler(BaseHandler):
         return
 
 
+@analytics
 class UserRegisterHandler(BaseHandler):
     def post(self):
         response = {
@@ -1351,6 +1408,7 @@ class UserRegisterHandler(BaseHandler):
 
 @authenticated
 @allowed_roles(ALLOWED_ROLE_LIST)
+@analytics
 class HelpFormHandler(BaseHandler):
     def post(self):
         data = json.loads(self.request.body.decode('utf-8'))
@@ -1529,7 +1587,7 @@ def make_app(basePath=''):
     return tornado.web.Application(
         [
             ## JOBS Endpoints
-            (r"{}/job/status?".format(basePath), JobHandler),
+            (r"{}/job/status?".format(basePath), JobStatusHandler),
             (r"{}/job/delete?".format(basePath), JobHandler),
             (r"{}/job/submit?".format(basePath), JobHandler),
             (r"{}/job/complete?".format(basePath), JobComplete),

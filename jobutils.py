@@ -70,7 +70,7 @@ class JobsDb:
         self.database = mysql_database
         self.cur = None
         self.cnx = None
-        self.db_schema_version = 12
+        self.db_schema_version = 13
         self.table_names = [
             'job',
             'query',
@@ -84,6 +84,7 @@ class JobsDb:
             'message_role',
             'user_preferences',
             'cron',
+            'analytics',
         ]
 
     def open_db_connection(self):
@@ -1330,6 +1331,30 @@ class JobsDb:
             logger.error(error_msg)
         self.close_db_connection()
         return error_msg
+
+    def analytics_record_api(self, request_path, current_time, user_agent, remote_ip):
+        status = STATUS_OK
+        error_msg = ''
+        self.open_db_connection()
+        try:
+            self.cur.execute(
+                (
+                    "INSERT INTO `analytics` "
+                    "(request_path, call_time, user_agent, remote_ip) "
+                    "VALUES (%s, %s, %s, %s)"
+                ),
+                (
+                    request_path, 
+                    current_time, 
+                    user_agent,
+                    remote_ip,
+                )
+            )
+        except Exception as e:
+            error_msg = str(e).strip()
+            logger.error(error_msg)
+        self.close_db_connection()
+        return status, error_msg
 
 
 # Get global instance of the job handler database interface
