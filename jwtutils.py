@@ -2,6 +2,9 @@ import jwt
 import datetime
 import envvars
 
+STATUS_OK = 'ok'
+STATUS_ERROR = 'error'
+
 def encode_info(name, lastname, username, email, db, roles, ttl):
     encoded = jwt.encode({
             'name' : name,
@@ -16,6 +19,9 @@ def encode_info(name, lastname, username, email, db, roles, ttl):
         )
     return encoded
 
+# The @authenticated decorator wraps RequestHandler subclasses and checks 
+# their Authorization header to validate Bearer tokens. It ends the request
+# if there is not a valid token.
 def authenticated(cls_handler):
     def wrap_execute(handler_execute):
         def check_auth(handler, kwargs):
@@ -91,3 +97,24 @@ def authenticated(cls_handler):
         return _execute
     cls_handler._execute = wrap_execute(cls_handler._execute)
     return cls_handler
+
+def validate_token(token):
+    response = {
+        'status': STATUS_OK,
+        'message': ''
+    }
+    try:
+        decode = jwt.decode(token, envvars.JWT_HS256_SECRET, algorithms=["HS256"])
+    except jwt.InvalidSignatureError:
+        response["status"] = STATUS_ERROR
+        response["message"] = "Signature verification failed"
+    except jwt.ExpiredSignatureError:
+        response["status"] = STATUS_ERROR
+        response["message"] = "Signature has expired"
+    except jwt.DecodeError:
+        response["status"] = STATUS_ERROR
+        response["message"] = "Invalid header string"
+    except Exception as e:
+        response["status"] = STATUS_ERROR
+        response["message"] = str(e).strip()
+    return response

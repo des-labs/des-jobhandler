@@ -704,6 +704,19 @@ class JobsDb:
                     'roles': users[username]['roles'],
                     'help_requests': users[username]['help_requests']
                 })
+            # # Search for issues in DESHELP
+            # jql = '''summary ~ "Help with DESDM account" 
+            #     and project = "DESHELP" 
+            #     and (text ~ "Reset my passwords" | text ~ "Forgot DB credentials") 
+            #     and status = "Open"
+            # '''
+            # deshelpIssues = []
+            # try:
+            #     for issue in JIRA_API.search_issues(jql):
+            #         deshelpIssues.append(issue.key)
+            #     logger.info('password reset issues: \n{}'.format(deshelpIssues))
+            # except Exception as e:
+            #     logger.error(str(e).strip())
         except Exception as e:
             logger.error(str(e).strip())
         self.close_db_connection()

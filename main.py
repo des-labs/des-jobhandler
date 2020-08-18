@@ -10,6 +10,7 @@ import kubejob
 import dbutils
 from jwtutils import authenticated
 from jwtutils import encode_info
+from jwtutils import validate_token
 import envvars
 import jobutils
 import time
@@ -187,6 +188,27 @@ def allowed_roles(roles_allowed = []):
         cls_handler._execute = wrap_execute(cls_handler._execute)
         return cls_handler
     return check_roles
+
+
+class TileDataHandler(tornado.web.StaticFileHandler):
+    def initialize(self, **kwargs):
+        self.check_auth()
+        super(TileDataHandler, self).initialize(**kwargs)
+
+    def check_auth(self):
+        try:
+            params = {k: self.get_argument(k) for k in self.request.arguments}
+            response = validate_token(params['token'])
+            if response['status'] != STATUS_OK:
+                self._transforms = []
+                self.set_status(401)
+                self.finish()
+                return
+        except:
+            self._transforms = []
+            self.set_status(401)
+            self.finish()
+            return
 
 
 @webcron
@@ -1628,6 +1650,8 @@ def make_app(basePath=''):
             ## Test Endpoints
             (r"{}/dev/debug/trigger?".format(basePath), DebugTrigger),
             (r"{}/dev/db/wipe?".format(basePath), DbWipe),
+            (r"{}/data/coadd/(.*)?".format(basePath),      TileDataHandler, {'path': '/tiles/coadd'}),
+            (r"{}/data/desarchive/(.*)?".format(basePath), TileDataHandler, {'path': '/tiles/desarchive'}),
         ],
         **settings
     )
