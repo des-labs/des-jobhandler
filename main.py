@@ -326,11 +326,13 @@ class LoginHandler(BaseHandler):
     # API endpoint: /login
     def post(self):
         body = {k: self.get_argument(k) for k in self.request.arguments}
-        username = body["username"]
-        passwd = body["password"]
-        db = body["database"]
+        username = '' if 'username' not in body else body["username"]
+        email = '' if 'email' not in body else body["email"]
+        passwd = '' if 'password' not in body else body["password"]
+        db = '' if 'database' not in body else body["database"]
         response = {"username": username}
-        auth, err, update = USER_DB_MANAGER.check_credentials(username, passwd, db)
+        # Support login using either username or email
+        auth, username, err, update = USER_DB_MANAGER.check_credentials(username, passwd, db, email)
         if not auth:
             if update:
                 self.set_status(406)
@@ -1154,24 +1156,20 @@ class UserResetPasswordRequestHandler(BaseHandler):
             "status": STATUS_OK,
             "msg": ""
         }
-        # Only enable user deletion on public interface
-        if envvars.DESACCESS_INTERFACE != 'public':
-            response['status'] = STATUS_ERROR
-            response['msg'] = "Only for public interface."
-            self.write(response)
-            return
         try:
+            # Support reset when either username or email is provided
             data = json.loads(self.request.body.decode('utf-8'))
-            username = data['username']
+            username = '' if 'username' not in data else data['username']
+            email = '' if 'email' not in data else data['email']
         except:
             logger.info('Error decoding JSON data')
             response['status'] = STATUS_ERROR
-            response['msg'] = "Error decoding JSON data. Required parameters: username"
+            response['msg'] = "Error decoding JSON data. Required parameters: username or email"
             self.write(response)
             return
         try:
             # Generate a reset code
-            token, firstname, lastname, email, status, msg = USER_DB_MANAGER.create_reset_url(username)
+            token, firstname, lastname, email, username, status, msg = USER_DB_MANAGER.create_reset_url(username, email)
             if status != STATUS_OK:
                 response['status'] = STATUS_ERROR
                 response['msg'] = msg
@@ -1195,12 +1193,6 @@ class UserResetPasswordHandler(BaseHandler):
             "msg": "",
             'reset': False
         }
-        # Only enable user deletion on public interface
-        if envvars.DESACCESS_INTERFACE != 'public':
-            response['status'] = STATUS_ERROR
-            response['msg'] = "Only for public interface."
-            self.write(response)
-            return
         try:
             data = json.loads(self.request.body.decode('utf-8'))
             token = data['token']
@@ -1223,13 +1215,15 @@ class UserResetPasswordHandler(BaseHandler):
                 if status != STATUS_OK:
                     response['status'] = STATUS_ERROR
                     response['msg'] = msg
-                # Unlock the account
-                status, msg = USER_DB_MANAGER.unlock_account(username)
-                if status != STATUS_OK:
-                    response['status'] = STATUS_ERROR
-                    response['msg'] = msg
                 else:
                     response['reset'] = True
+                # # Unlock the account
+                # status, msg = USER_DB_MANAGER.unlock_account(username)
+                # if status != STATUS_OK:
+                #     response['status'] = STATUS_ERROR
+                #     response['msg'] = msg
+                # else:
+                #     response['reset'] = True
             else:
                 response['msg'] = msg
             msg = 'Resetting password...'
@@ -1251,7 +1245,7 @@ class UserActivateHandler(BaseHandler):
             "msg": "",
             'activated': False
         }
-        # Only enable user deletion on public interface
+        # Only enable user activation on public interface
         if envvars.DESACCESS_INTERFACE != 'public':
             response['status'] = STATUS_ERROR
             response['msg'] = "Only for public interface."
@@ -1382,7 +1376,7 @@ class UserRegisterHandler(BaseHandler):
                 return
 
             # Generate an activation code to enable the new account
-            url, firstname, lastname, email, status, msg = USER_DB_MANAGER.create_reset_url(username)
+            url, firstname, lastname, email, username, status, msg = USER_DB_MANAGER.create_reset_url(username)
             if status != STATUS_OK:
                 response['status'] = STATUS_ERROR
                 response['msg'] = msg

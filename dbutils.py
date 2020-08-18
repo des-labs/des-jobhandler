@@ -40,18 +40,46 @@ class dbConfig(object):
         except Exception as e:
             raise e
 
-    def check_credentials(self, username, password, db):
+    def get_username_from_email(self, email):
+        kwargs = {'host': self.host, 'port': self.port, 'service_name': self.db_manager}
+        dsn = cx_Oracle.makedsn(**kwargs)
+        dbh = cx_Oracle.connect(self.user_manager, self.pwd_manager, dsn=dsn)
+        cursor = dbh.cursor()
+        username = None
+        try:
+            sql = """
+            SELECT USERNAME, EMAIL from DES_ADMIN.DES_USERS where EMAIL = '{}'
+            """.format(email.lower())
+            for row in cursor.execute(sql):
+                username, email = row
+        except Exception as e:
+            logger.error(str(e).strip())
+        cursor.close()
+        dbh.close()
+        return username
+
+    def check_credentials(self, username, password, db, email=''):
         kwargs = {'host': self.host, 'port': self.port, 'service_name': db}
         dsn = cx_Oracle.makedsn(**kwargs)
         update = False
         try:
+            # Get username from account with registered email address if provided
+            if email != '':
+                username_from_email = self.get_username_from_email(email)
+                if not username_from_email:
+                    return False, username, 'email is not registered', update
+                else:
+                    username = username_from_email
+            # If email is not provided, require username parameter
+            if not username:
+                return False, username, 'Registered username or email is required', update
             auth, error, update = self.__login(username, password, dsn)
-            return auth, error, update
+            return auth, username, error, update
         except Exception as e:
             error = str(e).strip()
             if '28001' in error:
                 update = True
-            return False, error, update
+            return False, username, error, update
 
     def get_basic_info(self, user):
         kwargs = {'host': self.host, 'port': self.port, 'service_name': self.db_manager}
@@ -105,7 +133,7 @@ class dbConfig(object):
         return status, msg
 
     def change_credentials(self, username, oldpwd, newpwd, db):
-        auth, error, update = self.check_credentials(username, oldpwd, db)
+        auth, username, error, update = self.check_credentials(username, oldpwd, db)
         kwargs = {'host': self.host, 'port': self.port, 'service_name': db}
         dsn = cx_Oracle.makedsn(**kwargs)
         if auth:
@@ -161,7 +189,6 @@ class dbConfig(object):
             sql = """
             ALTER USER {0} IDENTIFIED BY {1}
             """.format(username.lower(), password)
-            #logger.info('sql: {}'.format(sql))
             valid = False
             try:
                 cursor.execute(sql)
@@ -174,7 +201,6 @@ class dbConfig(object):
                 sql = """
                 DELETE FROM DES_ADMIN.RESET_URL WHERE USERNAME = '{}'
                 """.format(username.lower())
-                #logger.info('sql: {}'.format(sql))
                 cursor.execute(sql)
                 dbh.commit()
         except Exception as e:
@@ -196,14 +222,12 @@ class dbConfig(object):
             sql = """
             ALTER USER {} ACCOUNT UNLOCK
             """.format(username.lower())
-            #logger.info('sql: {}'.format(sql))
             cursor.execute(sql)
             dbh.commit()
             # Delete the reset token
             sql = """
             DELETE FROM DES_ADMIN.RESET_URL WHERE USERNAME = '{}'
             """.format(username.lower())
-            #logger.info('sql: {}'.format(sql))
             cursor.execute(sql)
             dbh.commit()
         except Exception as e:
@@ -226,11 +250,9 @@ class dbConfig(object):
         sql = """
             SELECT CREATED, USERNAME FROM DES_ADMIN.RESET_URL WHERE URL = '{0}'
             """.format(token)
-        #logger.info('sql: {}'.format(sql))
         try:
             created, username = None, None
             for row in cursor.execute(sql):
-                #logger.info('{}'.format(row))
                 created, username = row
                 if not created:
                     msg = 'Activation token is invalid'
@@ -273,7 +295,7 @@ class dbConfig(object):
         dbh.close()
         return status, msg
 
-    def create_reset_url(self, username):
+    def create_reset_url(self, username, email=''):
         url = None
         firstname = None
         lastname = None
@@ -285,23 +307,26 @@ class dbConfig(object):
         dbh = cx_Oracle.connect(self.admin_user_manager, self.admin_pwd_manager, dsn=dsn)
         cursor = dbh.cursor()
         try:
+            if email:
+                username_or_email = 'EMAIL'
+                identifier = email
+            else:
+                username_or_email = 'USERNAME'
+                identifier = username.lower()
             # Get user profile
             sql = """
-            SELECT EMAIL, FIRSTNAME, LASTNAME from DES_ADMIN.DES_USERS where USERNAME = '{}'
-            """.format(username.lower())
-            #logger.info('sql: {}'.format(sql))
+            SELECT USERNAME, EMAIL, FIRSTNAME, LASTNAME from DES_ADMIN.DES_USERS where {} = '{}'
+            """.format(username_or_email, identifier)
             results = cursor.execute(sql).fetchone()
             if not results:
                 status = STATUS_ERROR
-                msg = 'user {} not registered.'.format(username)
+                msg = 'user or email not registered.'
             else:
-                email, firstname, lastname = results
-                #logger.info('{},{},{}'.format(username, firstname, lastname))
+                username, email, firstname, lastname = results
                 # Delete any existing reset codes
                 sql = """
                 DELETE FROM DES_ADMIN.RESET_URL WHERE USERNAME = '{user}'
                 """.format(user=username)
-                #logger.info('sql: {}'.format(sql))
                 cursor.execute(sql)
                 dbh.commit()
                 now = dt.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
@@ -309,7 +334,6 @@ class dbConfig(object):
                 sql = """
                 INSERT INTO DES_ADMIN.RESET_URL VALUES ('{0}', '{1}', to_date('{2}' , 'yyyy/mm/dd hh24:mi:ss'))
                 """.format(username, url, now)
-                #logger.info('sql: {}'.format(sql))
                 cursor.execute(sql)
                 dbh.commit()
         except Exception as e:
@@ -320,7 +344,7 @@ class dbConfig(object):
             status = STATUS_ERROR
         cursor.close()
         dbh.close()
-        return url, firstname, lastname, email, status, msg
+        return url, firstname, lastname, email, username, status, msg
 
     def delete_user(self, username):
         status = STATUS_OK
@@ -334,23 +358,17 @@ class dbConfig(object):
             sql = """
             DELETE FROM DES_ADMIN.RESET_URL WHERE USERNAME = '{user}'
             """.format(user=username.lower())
-            #logger.info('sql: {}'.format(sql))
             results = cursor.execute(sql)
-            #logger.info('cursor.execute results: {}'.format(results))
             
             sql = """
             DELETE FROM DES_ADMIN.DES_USERS where USERNAME = '{user}'
             """.format(user=username.lower())
-            #logger.info('sql: {}'.format(sql))
             results = cursor.execute(sql)
-            #logger.info('cursor.execute results: {}'.format(results))
             
             sql = """
             DROP USER {user} CASCADE
             """.format(user=username.lower())
-            #logger.info('sql: {}'.format(sql))
             results = cursor.execute(sql)
-            #logger.info('cursor.execute results: {}'.format(results))
             
         except Exception as e:
             msg = str(e).strip()
@@ -373,25 +391,19 @@ class dbConfig(object):
             """.format(user=username.lower(), passwd=password)
             if lock:
                 sql = '{} ACCOUNT LOCK'.format(sql)
-            #logger.info('create user sql: {}'.format(sql))
             results = cursor.execute(sql)
-            #logger.info('cursor.execute results: {}'.format(results))
             
             sql = """
             GRANT CREATE SESSION to {user}
             """.format(user=username.lower())
-            #logger.info('grant session sql: {}'.format(sql))
             results = cursor.execute(sql)
-            #logger.info('cursor.execute results: {}'.format(results))
 
             tables = ['DES_ADMIN.CACHE_TABLES', 'DES_ADMIN.CACHE_COLUMNS']
             for itable in tables:
                 sql = """
                 GRANT SELECT on {table} to {user}
                 """.format(table=itable, user=username.lower())
-                #logger.info('grant select on table sql: {}'.format(sql))
                 results = cursor.execute(sql)
-                #logger.info('cursor.execute results: {}'.format(results))
 
             sql = """
             INSERT INTO DES_ADMIN.DES_USERS VALUES (
@@ -405,16 +417,12 @@ class dbConfig(object):
                 country=country,
                 inst=institution
             )
-            #logger.info('insert user into DES_USERS sql: {}'.format(sql))
             results = cursor.execute(sql)
-            #logger.info('cursor.execute results: {}'.format(results))
             
             sql = """
             GRANT DES_READER to {user}
             """.format(user=username.lower())
-            #logger.info('GRANT DES_READER sql: {}'.format(sql))
             results = cursor.execute(sql)
-            #logger.info('cursor.execute results: {}'.format(results))
 
         except Exception as e:
             msg = str(e).strip()
