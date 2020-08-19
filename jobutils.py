@@ -559,7 +559,7 @@ class JobsDb:
 
     def session_login(self, username, token, ciphertext):
         self.open_db_connection()
-        status = "ok"
+        status = STATUS_OK
         try:
             self.cur.execute(
                 (
@@ -600,14 +600,14 @@ class JobsDb:
                 )
         except Exception as e:
             logger.error(str(e).strip())
-            status = "error"
+            status = STATUS_ERROR
         self.close_db_connection()
         return status
 
     def session_logout(self, username):
         # This function assumes the logout action is already authorized
         self.open_db_connection()
-        status = "ok"
+        status = STATUS_OK
         try:
             self.cur.execute(
                 (
@@ -625,7 +625,7 @@ class JobsDb:
                 logger.warning('No record in session table found for user {}'.format(username))
         except Exception as e:
             logger.error(str(e).strip())
-            status = "error"
+            status = STATUS_ERROR
         self.close_db_connection()
         return status
 
@@ -1486,15 +1486,16 @@ def submit_job(params):
     template = get_job_template(job_type)
     base_template = get_job_template_base()
 
-    if job_type == 'utility':
-        try:
-            logFilePath = "./output/{}_{}_{}.log".format(job_type, params['action'], params['job-id'])
-        except:
-            status = STATUS_ERROR
-            msg = 'Invalid options for utility job type'
-            return status,msg,''
-    else:
-        logFilePath = "./output/{}/{}.log".format(conf["job"], job_id)
+    # if job_type == 'utility':
+    #     try:
+    #         logFilePath = "./output/{}_{}_{}.log".format(job_type, params['action'], params['job-id'])
+    #     except:
+    #         status = STATUS_ERROR
+    #         msg = 'Invalid options for utility job type'
+    #         return status,msg,''
+    # else:
+    #     logFilePath = "./output/{}/{}.log".format(conf["job"], job_id)
+    logFilePath = "./output/{}/{}.log".format(conf["job"], job_id)
 
     # Render the base YAML template for the job configuration data structure
     conf["configjob"] = yaml.safe_load(base_template.render(
@@ -1529,36 +1530,37 @@ def submit_job(params):
             taskDuration=int(params["time"])
         ))
 
-    ############################################################################
-    # task type: utility
-    ############################################################################
-    elif job_type == 'utility':
-        conf["image"] = envvars.DOCKER_IMAGE_TASK_UTILITY
-        try:
-            action = params['action']
-            delete_path = ''
-            conf["command"] = ["python", "task.py"]
-            if action == 'delete_job_files':
-                # Get the type of job in order to construct the path to be deleted
-                job_info_list, request_status, status_msg = JOBSDB.job_status(username, params['job-id'])
-                if request_status == STATUS_ERROR:
-                    status = STATUS_ERROR
-                    msg = status_msg
-                else:
-                    delete_path = os.path.join('/home/worker/output', job_info_list[0]['job_type'], params['job-id'])
-                    conf["configjob"]["spec"] = yaml.safe_load(template.render(
-                        action=action,
-                        delete_paths=[delete_path]
-                    ))
-            else:
-                status = STATUS_ERROR
-                msg = 'Supported actions include "delete_job_files"'
-                return status,msg,job_id
+    # ############################################################################
+    # # task type: utility
+    # ############################################################################
+    # elif job_type == 'utility':
+    #     conf["image"] = envvars.DOCKER_IMAGE_TASK_UTILITY
+    #     try:
+    #         action = params['action']
+    #         delete_path = ''
+    #         conf["command"] = ["python", "task.py"]
+    #         if action == 'delete_job_files':
+    #             # Get the type of job in order to construct the path to be deleted
+    #             job_info_list, request_status, status_msg = JOBSDB.job_status(username, params['job-id'])
+    #             if request_status == STATUS_ERROR:
+    #                 status = STATUS_ERROR
+    #                 msg = status_msg
+    #             else:
+    #                 delete_path = os.path.join('/home/worker/output', job_info_list[0]['job_type'], params['job-id'])
+    #                 conf["configjob"]["spec"] = yaml.safe_load(template.render(
+    #                     action=action,
+    #                     delete_paths=[delete_path]
+    #                 ))
+    #         else:
+    #             status = STATUS_ERROR
+    #             msg = 'Supported actions include "delete_job_files"'
+    #             return status,msg,job_id
 
-        except:
-            status = STATUS_ERROR
-            msg = 'Invalid options for utility job type'
-            return status,msg,job_id
+    #     except:
+    #         status = STATUS_ERROR
+    #         msg = 'Invalid options for utility job type'
+    #         return status,msg,job_id
+
     ############################################################################
     # task type: query
     ############################################################################

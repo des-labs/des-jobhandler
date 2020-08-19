@@ -222,16 +222,55 @@ class BaseHandler(tornado.web.RequestHandler):
     def options(self):
         self.set_status(204)
         self.finish()
-
-    def getarg(self, arg, default=""):
-        temp = self.get_argument(arg, default)
+    
+    def get_username_parameter(self):
+        username = None
         try:
-            data_json = tornado.escape.json_decode(self.request.body)
-            temp = default
-            temp = data_json[arg]
+            # If username is not specified, assume it is the authenticated user
+            username = self._token_decoded["username"]
+            input_username = self.getarg('username', '')
+            # Allow admins to specify any username
+            if 'admin' in self._token_decoded['roles'] and input_username != '':
+                username = input_username
         except:
             pass
-        return temp
+        return username
+
+    def getarg(self, arg, default=None):
+        response = {
+            'status': STATUS_OK,
+            'message': ''
+        }
+        value = default
+        try:
+            # If the request encodes arguments in JSON, parse the body accordingly
+            if self.request.headers['Content-Type'] == 'application/json':
+                data = tornado.escape.json_decode(self.request.body)
+                if default == None:
+                    # The argument is required and thus this will raise an exception if absent
+                    value = data[arg]
+                else:
+                    # Set the value to the default
+                    value = default if arg not in data else data[arg]
+            # Otherwise assume the arguments are in the default content type
+            else:
+                # The argument is required and thus this will raise an exception if absent
+                if default == None:
+                    value = self.get_argument(arg)
+                else:
+                    value = self.get_argument(arg, default)
+        except Exception as e:
+            response['status'] = STATUS_ERROR
+            response['message'] = str(e).strip()
+            logger.error(response['message'])
+            # 400 Bad Request: The server could not understand the request due to invalid syntax.
+            # The assumption is that if a function uses `getarg()` to get a required parameter,
+            # then the request must be a bad request if this exception occurs.
+            self.set_status(400)
+            self.write(json.dumps(response))
+            self.finish()
+            raise e
+        return value
 
 @authenticated
 @allowed_roles(ALLOWED_ROLE_LIST)
@@ -325,12 +364,32 @@ class ProfileUpdatePasswordHandler(BaseHandler):
 class LoginHandler(BaseHandler):
     # API endpoint: /login
     def post(self):
-        body = {k: self.get_argument(k) for k in self.request.arguments}
-        username = '' if 'username' not in body else body["username"]
-        email = '' if 'email' not in body else body["email"]
-        passwd = '' if 'password' not in body else body["password"]
-        db = '' if 'database' not in body else body["database"]
-        response = {"username": username}
+        # body = {k: self.get_argument(k) for k in self.request.arguments}
+        # username = '' if 'username' not in body else body["username"]
+        # email = '' if 'email' not in body else body["email"]
+        # passwd = '' if 'password' not in body else body["password"]
+        # db = '' if 'database' not in body else body["database"]
+
+        response = {
+            'status': STATUS_OK,
+            'message': ''
+        }
+        # Required parameters
+        passwd = self.getarg('password')
+        db = self.getarg('database')
+        # Optional parameters
+        username = self.getarg('username', '')
+        email = self.getarg('email', '')
+        # At least one identifier must be provided
+        if username == '' and email == '':
+            response["status"] = STATUS_ERROR
+            response["message"] = 'Either username or email must be provided.'
+            self.set_status(400)
+            self.flush()
+            self.write(json.dumps(response))
+            self.finish()
+            return
+
         # Support login using either username or email
         auth, username, err, update = USER_DB_MANAGER.check_credentials(username, passwd, db, email)
         if not auth:
@@ -360,9 +419,9 @@ class LoginHandler(BaseHandler):
         roles = JOBSDB.get_user_roles(username)
         encoded = encode_info(name, last, username, email, db, roles, envvars.JWT_TTL_SECONDS)
 
-
-        response["status"] = STATUS_OK
+        # Return user profile information, user preferences and auth token
         response["message"] = "login"
+        response["username"] = username
         response["name"] = name
         response["lastname"] = last
         response["email"] = email
@@ -380,7 +439,6 @@ class LoginHandler(BaseHandler):
             prefs = {}
         response["preferences"] = prefs
 
-
         # Store encrypted password in database for subsequent job requests
         ciphertext = jobutils.password_encrypt(passwd)
         response["status"] = JOBSDB.session_login(username, response["token"], ciphertext)
@@ -391,11 +449,12 @@ class LoginHandler(BaseHandler):
 class LogoutHandler(BaseHandler):
     # API endpoint: /logout
     def post(self):
-        response = {}
-        response["status"] = STATUS_OK
+        response = {
+            'status': STATUS_OK,
+            'message': ''
+        }
         response["message"] = "logout {}".format(self._token_decoded["username"])
         response["status"] = JOBSDB.session_logout(self._token_decoded["username"])
-        response["new_token"] = self._token_encoded
         self.write(json.dumps(response))
 
 @authenticated
@@ -404,32 +463,79 @@ class LogoutHandler(BaseHandler):
 class JobHandler(BaseHandler):
     # API endpoint: /job/submit
     def put(self):
-        try:
-            params = json.loads(self.request.body.decode('utf-8'))
-        except:
-            params = {k: self.get_argument(k) for k in self.request.arguments}
-        # If username is not specified, assume it is the authenticated user
-        try:
-            username = params["username"].lower()
-        except:
-            username = self._token_decoded["username"]
-        # If the database is not specified in the request, assume the database to
-        # use is the one encoded in the authentication token
-        if 'db' not in params or not isinstance(params['db'], str) or len(params['db']) < 1:
-            params["db"] = self._token_decoded["db"]
+        '''
+        Required parameters:
+        - job
+        Optional parameters:
+        - username
+        - user_agent
+        - db
+        - email
+        '''
+
+        def add_request_params_if_supplied(in_array, params):
+            dummy_default = '6adc0ba0ae3b46b3919693a02a7190f16adc0ba0ae3b46b3919693a02a7190f18ed22249332e4ffd9dec9b675e865f23'
+            for param in params:
+                if param not in in_array:
+                    val = self.getarg(param, dummy_default)
+                    if val != dummy_default:
+                        in_array[param] = val
+            return in_array
+            
+        params = {}
+
+        # Applicable to all jobs
+
         try:
             params["user_agent"] = self.request.headers["User-Agent"]
         except:
             params["user_agent"] = ''
-        jobid = ''
+        
+        params['username'] = self.get_username_parameter()
+
+        # If the database is not specified in the request, assume the database to
+        # use is the one encoded in the authentication token
+        params['db'] = self.getarg('db', self._token_decoded["db"])
+        if 'db' not in params or not isinstance(params['db'], str) or len(params['db']) < 1:
+            params["db"] = self._token_decoded["db"]
+        
+        # REQUIRED PARAMETER FOR ALL JOBS
+        params['job'] = self.getarg('job')
+
+        params = add_request_params_if_supplied(params, 
+            [ 
+                'email',
+                'job_name',
+                'query',
+                'quick',
+                'check',
+                'compression',
+                'filename',
+                'ra',
+                'dec',
+                'coadd',
+                'positions',
+                'release',
+                'xsize',
+                'ysize',
+                'colors_rgb',
+                'colors_fits',
+                'make_tiffs',
+                'make_fits',
+                'make_pngs',
+                'make_rgb_lupton',
+                'make_rgb_stiff',
+                'rgb_minimum',
+                'rgb_stretch',
+                'rgb_asinh',
+                'return_list',
+            ]
+        )
+        logger.info(json.dumps(params, indent=2))
+
+        job_id = ''
         try:
-            # TODO: Allow users with "admin" role to specify any username
-            if username == self._token_decoded["username"]:
-                status,message,jobid = jobutils.submit_job(params)
-            else:
-                status = STATUS_ERROR
-                message = 'Username specified must belong to the authenticated user.'
-                logger.error(message)
+            status, message, job_id = jobutils.submit_job(params)
         except Exception as e:
             status = STATUS_ERROR
             message = str(e).strip()
@@ -437,7 +543,7 @@ class JobHandler(BaseHandler):
         out = {
             'status': status,
             'message': message,
-            'jobid': jobid,
+            'jobid': job_id,
             'new_token': self._token_encoded
         }
         self.write(json.dumps(out, indent=4))
@@ -446,32 +552,17 @@ class JobHandler(BaseHandler):
     def delete(self):
         status = STATUS_OK
         message = ''
-        # If username is not specified, assume it is the authenticated user
-        try:
-            params = json.loads(self.request.body.decode('utf-8'))
-        except:
-            params = {k: self.get_argument(k) for k in self.request.arguments}
 
-        try:
-            if 'username' in params and isinstance(params['username'], str):
-                username = params['username'].lower()
-            else:
-                username = self._token_decoded["username"]
-        except:
-            status = STATUS_ERROR
-            message = 'Invalid username specified.'
-            out = {
-                'status': status,
-                'message': message,
-                'new_token': self._token_encoded
-            }
-            self.write(json.dumps(out, indent=4))
+        username = self.get_username_parameter()
 
         job_ids = []
-        if isinstance(params['job-id'], str):
-            job_ids.append(params['job-id'])
-        elif isinstance(params['job-id'], list):
-            job_ids = params['job-id']
+        # job-id is a required parameter. Use integer default value so that 
+        # the refreshed token will be returned in the case of error
+        job_id = self.getarg('job-id', 0)
+        if isinstance(job_id, str):
+            job_ids.append(job_id)
+        elif isinstance(job_id, list):
+            job_ids = job_id
         else:
             status = STATUS_ERROR
             message = 'job-id must be a single job ID value or an array of job IDs'
@@ -501,37 +592,25 @@ class JobHandler(BaseHandler):
                 }
                 self.write(json.dumps(out, indent=4))
 
-            # TODO: Allow users with "admin" role to specify any username
             if status == STATUS_OK:
                 # TODO: Allow specifying job-id "all" to delete all of user's jobs
-                if username == self._token_decoded["username"]:
-                    # Delete the k8s Job if it is still running
-                    conf = {}
-                    conf["job_type"] = job_type
-                    conf["namespace"] = jobutils.get_namespace()
-                    conf["job_name"] = jobutils.get_job_name(job_type, job_id, username)
-                    conf["job_id"] = job_id
-                    conf["cm_name"] = jobutils.get_job_configmap_name(job_type, job_id, username)
-                    kubejob.delete_job(conf)
-                    # Delete the job files on disk
-                    status, message = JOBSDB.delete_job_files(job_id, username)
-                    # Mark the job deleted in the JobHandler database
-                    if status == STATUS_OK:
-                        message = JOBSDB.mark_job_deleted(job_id)
-                        if message != '':
-                            status = STATUS_ERROR
-                            logger.error('utility job submit failed: "{}"'.format(message))
-                        else:
-                            message = 'Job "{}" deleted.'.format(job_id)
-                else:
-                    status = STATUS_ERROR
-                    message = 'Username specified must be the authenticated user.'
-                    out = {
-                        'status': status,
-                        'message': message,
-                        'new_token': self._token_encoded
-                    }
-                    self.write(json.dumps(out, indent=4))
+                conf = {}
+                conf["job_type"] = job_type
+                conf["namespace"] = jobutils.get_namespace()
+                conf["job_name"] = jobutils.get_job_name(job_type, job_id, username)
+                conf["job_id"] = job_id
+                conf["cm_name"] = jobutils.get_job_configmap_name(job_type, job_id, username)
+                # Delete the k8s Job if it is still running
+                kubejob.delete_job(conf)
+                # Delete the job files on disk
+                status, message = JOBSDB.delete_job_files(job_id, username)
+                # Mark the job deleted in the JobHandler database
+                if status == STATUS_OK:
+                    message = JOBSDB.mark_job_deleted(job_id)
+                    if message != '':
+                        status = STATUS_ERROR
+                    else:
+                        message = 'Job "{}" deleted.'.format(job_id)
         out = {
             'status': status,
             'message': message,
@@ -544,10 +623,7 @@ class JobHandler(BaseHandler):
 class JobStatusHandler(BaseHandler):
     # API endpoint: /job/status
     def post(self):
-        # TODO: Use role-based access control to allow a username parameter different
-        #       from the authenticated user. For example, a user with role "admin" could
-        #       obtain job status for any user.
-        username = self._token_decoded["username"]
+        username = self.get_username_parameter()
         job_id = self.getarg("job-id")
         job_info_list, status, message = JOBSDB.job_status(username, job_id)
         out = {
@@ -615,34 +691,27 @@ class JobRename(BaseHandler):
         except:
             params = {k: self.get_argument(k) for k in self.request.arguments}
         try:
-            if 'username' in params and isinstance(params['username'], str):
-                username = params['username'].lower()
-            else:
-                username = self._token_decoded["username"]
+            username = self.get_username_parameter()
             # Get job ID of job to delete
-            job_id = params['job-id']
+            job_id = self.getarg('job-id')
+            job_name = self.getarg('job-name')
             # Determine the type of the job to delete
             job_info_list, request_status, status_msg = JOBSDB.job_status(username, job_id)
             if request_status == STATUS_ERROR:
                 status = STATUS_ERROR
                 message = status_msg
             else:
-                job_name = job_info_list[0]['job_name']
+                old_job_name = job_info_list[0]['job_name']
         except:
             status = STATUS_ERROR
             message = 'Invalid username or job ID specified.'
 
-        # TODO: Allow users with "admin" role to specify any username
-        if status == STATUS_OK and job_name != params['job-name']:
-            if username == self._token_decoded["username"]:
-                message = JOBSDB.rename_job(job_id, params['job-name'])
-                if message != '':
-                    status = STATUS_ERROR
-                else:
-                    message = 'Job "{}" renamed to {}.'.format(job_id, params['job-name'])
-            else:
+        if status == STATUS_OK and old_job_name != job_name:
+            message = JOBSDB.rename_job(job_id, job_name)
+            if message != '':
                 status = STATUS_ERROR
-                message = 'Username specified must be the authenticated user.'
+            else:
+                message = 'Job "{}" renamed to {}.'.format(job_id, job_name)
         out = {
         'status': status,
         'message': message,
@@ -687,11 +756,11 @@ class DbWipe(BaseHandler):
 
 class ValidateCsvHandler(BaseHandler):
     def post(self):
-        data = json.loads(self.request.body.decode('utf-8'))
+        csvText = self.getarg('csvText')
         tempCsvFile = '.temp.csv'
         try:
 
-            parsedData = read_csv(StringIO(data['csvText']), dtype={
+            parsedData = read_csv(StringIO(csvText), dtype={
                 'RA': float,
                 'DEC': float,
                 'COADD_OBJECT_ID': int,
@@ -734,11 +803,11 @@ class ValidateCsvHandler(BaseHandler):
                 "csv": processedCsvText,
                 "type": type
             })
-        except:
-            logger.info('Error decoding JSON data')
+        except Exception as e:
+            logger.error(str(e).strip())
             self.write({
                 "status": STATUS_ERROR,
-                "msg": "Invalid JSON in HTTP request body."
+                "msg": str(e).strip()
             })
 
 
@@ -747,36 +816,71 @@ class ValidateCsvHandler(BaseHandler):
 @analytics
 class CheckQuerySyntaxHandler(BaseHandler):
     def post(self):
-        data = json.loads(self.request.body.decode('utf-8'))
         response = {
             "status": STATUS_OK,
             "msg": "",
-            "valid": True
+            "valid": False
         }
-        username = self._token_decoded["username"]
+        username = self.get_username_parameter()
         password = JOBSDB.get_password(username)
         db = self._token_decoded["db"]
+        query = self.getarg('query')
         try:
-            query = data['query']
-            try:
-                connection = ea.connect(db, user=username, passwd=password)
-                cursor = connection.cursor()
-            except Exception as e:
-                response['status'] = STATUS_ERROR
-                response['msg'] = str(e).strip()
-            try:
-                cursor.parse(query.encode())
-            except Exception as e:
-                # response['status'] = STATUS_ERROR
-                response['msg'] = str(e).strip()
-                response['valid'] = False
+            connection = ea.connect(db, user=username, passwd=password)
+            cursor = connection.cursor()
+        except Exception as e:
+            response['status'] = STATUS_ERROR
+            response['msg'] = str(e).strip()
             cursor.close()
             connection.close()
-        except:
-            logger.info('Error decoding JSON data')
-            response['status'] = STATUS_ERROR
-            response['msg'] = "Invalid JSON in HTTP request body."
+            self.write(response)
+            return
+        try:
+            cursor.parse(query.encode())
+        except Exception as e:
+            response['msg'] = str(e).strip()
+        else:
+            response['valid'] = True
+        cursor.close()
+        connection.close()
         self.write(response)
+
+
+# @authenticated
+# @allowed_roles(ALLOWED_ROLE_LIST)
+# @analytics
+# class GetTileLinks(BaseHandler):
+#     def post(self):
+#         data = json.loads(self.request.body.decode('utf-8'))
+#         response = {
+#             "status": STATUS_OK,
+#             "msg": "",
+#             "file_paths": []
+#         }
+#         username = self._token_decoded["username"]
+#         password = JOBSDB.get_password(username)
+#         db = self._token_decoded["db"]
+#         try:
+#             query = data['query']
+#             connection = ea.connect(db, user=username, passwd=password)
+#             cursor = connection.cursor()
+#             try:
+#                 df = connection.query_to_pandas(query)
+#                 df = df[0:1000]
+#                 data = df.to_json(orient='records')
+#                 # Process the data as necessary
+#                 # data --> file_paths
+#                 response['file_paths'] = file_paths
+#             except Exception as e:
+#                 response['status'] = STATUS_ERROR
+#                 response['msg'] = str(e).strip()
+#             cursor.close()
+#             connection.close()
+#         except:
+#             logger.info('Error decoding JSON data')
+#             response['status'] = STATUS_ERROR
+#             response['msg'] = "Invalid JSON in HTTP request body."
+#         self.write(response)
 
 
 @authenticated
@@ -793,10 +897,9 @@ class ListUserRolesHandler(BaseHandler):
             response['msg'] = JOBSDB.sync_help_requests_with_jira()
             # Compile user list with role and help request data
             response['users'] = JOBSDB.get_all_user_roles_and_help_requests()
-        except:
-            logger.info('Error decoding JSON data')
+        except Exception as e:
             response['status'] = STATUS_ERROR
-            response['msg'] = "Invalid JSON in HTTP request body."
+            response['msg'] = str(e).strip()
         self.write(response)
 
 
@@ -805,24 +908,25 @@ class ListUserRolesHandler(BaseHandler):
 class NotificationsCreateHandler(BaseHandler):
     # Messages are created by admins using the PUT request type
     def put(self):
-        data = json.loads(self.request.body.decode('utf-8'))
         response = {
             "status": STATUS_OK,
             "msg": ""
         }
+        title = self.getarg('title')
+        body = self.getarg('body')
+        # If the roles array is empty or missing, include the default role
+        roles = self.getarg('roles', [])
+        if not roles:
+            roles = ['default']
         try:
-            # If the roles array is empty or missing, include the default role
-            if 'roles' not in data or data['roles'] == []:
-                data['roles'] = ['default']
             # Insert message into database table
-            error_msg = JOBSDB.create_notification(data['title'], data['body'], data['roles'], datetime.datetime.utcnow())
+            error_msg = JOBSDB.create_notification(title, body, roles, datetime.datetime.utcnow())
             if error_msg != '':
                 response['status'] = STATUS_ERROR
                 response['msg'] = error_msg
-        except:
-            logger.info('Error decoding JSON data')
+        except Exception as e:
             response['status'] = STATUS_ERROR
-            response['msg'] = "Invalid JSON in HTTP request body."
+            response['msg'] = str(e).strip()
         self.write(response)
 
 
@@ -830,22 +934,20 @@ class NotificationsCreateHandler(BaseHandler):
 @allowed_roles(['admin'])
 class NotificationsDeleteHandler(BaseHandler):
     def post(self):
-        error_msg = ''
-        data = json.loads(self.request.body.decode('utf-8'))
         response = {
             "status": STATUS_OK,
             "msg": ""
         }
+        message_id = self.getarg('message-id')
         try:
             # Delete message from database table
-            error_msg = JOBSDB.delete_notification(data['message-id'])
+            error_msg = JOBSDB.delete_notification(message_id)
             if error_msg != '':
                 response['status'] = STATUS_ERROR
                 response['msg'] = error_msg
-        except:
-            logger.info('Error decoding JSON data')
+        except Exception as e:
             response['status'] = STATUS_ERROR
-            response['msg'] = "Invalid JSON in HTTP request body."
+            response['msg'] = str(e).strip()
         self.write(response)
 
 
@@ -853,22 +955,23 @@ class NotificationsDeleteHandler(BaseHandler):
 @allowed_roles(['admin'])
 class NotificationsEditHandler(BaseHandler):
     def post(self):
-        error_msg = ''
-        data = json.loads(self.request.body.decode('utf-8'))
         response = {
             "status": STATUS_OK,
             "msg": ""
         }
+        id = self.getarg('id')
+        title = self.getarg('title')
+        body = self.getarg('body')
+        roles = self.getarg('roles')
         try:
             # Delete message from database table
-            error_msg = JOBSDB.edit_notification(data['id'], data['title'], data['body'], data['roles'])
+            error_msg = JOBSDB.edit_notification(id, title, body, roles)
             if error_msg != '':
                 response['status'] = STATUS_ERROR
                 response['msg'] = error_msg
-        except:
-            logger.info('Error decoding JSON data')
+        except Exception as e:
             response['status'] = STATUS_ERROR
-            response['msg'] = "Invalid JSON in HTTP request body."
+            response['msg'] = str(e).strip()
         self.write(response)
 
 
@@ -908,7 +1011,7 @@ class JupyterLabCreateHandler(BaseHandler):
             'url': ''
         }
         try:
-            username = self._token_decoded["username"]
+            username = self.get_username_parameter()
             response['token'] = str(uuid.uuid4()).replace("-", "")
             base_path = '/jlab/{}'.format(username)
             response['url'] = '{}{}?token={}'.format(envvars.FRONTEND_BASE_URL, base_path, response['token'])
@@ -933,7 +1036,7 @@ class JupyterLabDeleteHandler(BaseHandler):
             "msg": ""
         }
         try:
-            username = self._token_decoded["username"]
+            username = self.get_username_parameter()
             error_msg = jlab.delete(username)
             if error_msg != '':
                 response['status'] = STATUS_ERROR
@@ -959,7 +1062,7 @@ class JupyterLabStatusHandler(BaseHandler):
             'latest_condition_type': 'Unknown',
         }
         try:
-            username = self._token_decoded["username"]
+            username = self.get_username_parameter()
             stat, error_msg = jlab.status(username)
             if error_msg != '':
                 response['status'] = STATUS_ERROR
@@ -986,15 +1089,13 @@ class JupyterLabFileListHandler(BaseHandler):
             'folders': []
         }
         try:
-            username = self._token_decoded["username"]
+            username = self.get_username_parameter()
             jupyter_dir = os.path.join('/jobfiles', username, 'jupyter/public')
-            logger.info(jupyter_dir)
             jupyter_dirs = []
             with os.scandir(jupyter_dir) as it:
                 for entry in it:
                     if not entry.name.startswith('.') and entry.is_dir():
                         mod_timestamp = datetime.datetime.fromtimestamp(entry.stat().st_mtime)
-                        logger.info('{}: {}'.format(entry.name, mod_timestamp))
                         jupyter_dirs.append({
                             'directory': entry.name,
                             'time': mod_timestamp
@@ -1016,12 +1117,10 @@ class JupyterLabFileDeleteHandler(BaseHandler):
             "status": STATUS_OK,
             "msg": ""
         }
-        data = json.loads(self.request.body.decode('utf-8'))
+        token = self.getarg('token')
         try:
-            username = self._token_decoded["username"]
-            jupyter_dir = os.path.join('/jobfiles', username, 'jupyter/public', data['token'])
-
-            logger.info(jupyter_dir)
+            username = self.get_username_parameter()
+            jupyter_dir = os.path.join('/jobfiles', username, 'jupyter/public', token)
             if os.path.isdir(jupyter_dir):
                 shutil.rmtree(jupyter_dir)
         except Exception as e:
@@ -1035,7 +1134,6 @@ class JupyterLabFileDeleteHandler(BaseHandler):
 @allowed_roles(ALLOWED_ROLE_LIST)
 class NotificationsFetchHandler(BaseHandler):
     def post(self):
-        data = json.loads(self.request.body.decode('utf-8'))
         response = {
             "status": STATUS_OK,
             "msg": "",
@@ -1044,9 +1142,9 @@ class NotificationsFetchHandler(BaseHandler):
         # Get roles from token and avoid a database query
         roles = self._token_decoded["roles"]
         username = self._token_decoded["username"]
+        message = self.getarg('message')
         try:
             # Validate the API request parameters
-            message = data['message']
             if not isinstance(message, str) or message not in ['all', 'new']:
                 response['status'] = STATUS_ERROR
                 response['msg'] = 'Parameter "message" must be a message ID or the word "all" or "new".'
@@ -1056,10 +1154,9 @@ class NotificationsFetchHandler(BaseHandler):
                 if error_msg != '':
                     response['status'] = STATUS_ERROR
                     response['msg'] = error_msg
-        except:
-            logger.info('Error decoding JSON data')
+        except Exception as e:
+            response['msg'] = str(e).strip()
             response['status'] = STATUS_ERROR
-            response['msg'] = "Invalid JSON in HTTP request body."
         self.write(json.dumps(response, indent=4, default = json_converter))
 
 
@@ -1067,23 +1164,21 @@ class NotificationsFetchHandler(BaseHandler):
 @allowed_roles(ALLOWED_ROLE_LIST)
 @analytics
 class NotificationsMarkHandler(BaseHandler):
-    # Messages are marked read by users using the POST request type
     def post(self):
-        data = json.loads(self.request.body.decode('utf-8'))
         response = {
             "status": STATUS_OK,
             "msg": ""
         }
-        username = self._token_decoded["username"]
+        username = self.get_username_parameter()
+        message_id = self.getarg('message-id')
         try:
-            error_msg = JOBSDB.mark_notification_read(data['message-id'], username)
+            error_msg = JOBSDB.mark_notification_read(message_id, username)
             if error_msg != '':
                 response['status'] = STATUS_ERROR
                 response['msg'] = error_msg
-        except:
-            logger.info('Error decoding JSON data')
+        except Exception as e:
+            response['msg'] = str(e).strip()
             response['status'] = STATUS_ERROR
-            response['msg'] = "Invalid JSON in HTTP request body."
         self.write(response)
 
 
@@ -1092,21 +1187,21 @@ class NotificationsMarkHandler(BaseHandler):
 @analytics
 class UserPreferencesHandler(BaseHandler):
     def put(self):
-        data = json.loads(self.request.body.decode('utf-8'))
         response = {
             "status": STATUS_OK,
             "msg": ""
         }
-        username = self._token_decoded["username"]
+        username = self.get_username_parameter()
+        pref = self.getarg('pref')
+        value = self.getarg('value')
         try:
-            error_msg = JOBSDB.set_user_preference(data['pref'], data['value'], username)
+            error_msg = JOBSDB.set_user_preference(pref, value, username)
             if error_msg != '':
                 response['status'] = STATUS_ERROR
                 response['msg'] = error_msg
-        except:
-            logger.info('Error decoding JSON data')
+        except Exception as e:
+            response['msg'] = str(e).strip()
             response['status'] = STATUS_ERROR
-            response['msg'] = "Invalid JSON in HTTP request body."
         self.write(response)
 
 
@@ -1125,28 +1220,27 @@ class UserDeleteHandler(BaseHandler):
             self.write(response)
             return
         try:
-            data = json.loads(self.request.body.decode('utf-8'))
-            username = data['username'].lower()
+            username = self.getarg('username')
+            username = username.lower()
             if username == self._token_decoded["username"]:
                 response['status'] = STATUS_ERROR
                 response['msg'] = "User may not self-delete."
                 self.write(response)
                 return
-        except:
-            logger.info('Error decoding JSON data')
-            response['status'] = STATUS_ERROR
-            response['msg'] = "Error decoding JSON data. Required parameters: username"
-        try:
-            status, msg = USER_DB_MANAGER.delete_user(username)
-            if status != STATUS_OK:
-                response['status'] = STATUS_ERROR
-                response['msg'] = msg
         except Exception as e:
-            response['status'] = STATUS_ERROR
             response['msg'] = str(e).strip()
-            logger.error(response['msg'])
+            response['status'] = STATUS_ERROR
+        else:
+            try:
+                status, msg = USER_DB_MANAGER.delete_user(username)
+                if status != STATUS_OK:
+                    response['status'] = STATUS_ERROR
+                    response['msg'] = msg
+            except Exception as e:
+                response['status'] = STATUS_ERROR
+                response['msg'] = str(e).strip()
+                logger.error(response['msg'])
         self.write(response)
-        return
 
 
 @analytics
@@ -1156,17 +1250,9 @@ class UserResetPasswordRequestHandler(BaseHandler):
             "status": STATUS_OK,
             "msg": ""
         }
-        try:
-            # Support reset when either username or email is provided
-            data = json.loads(self.request.body.decode('utf-8'))
-            username = '' if 'username' not in data else data['username']
-            email = '' if 'email' not in data else data['email']
-        except:
-            logger.info('Error decoding JSON data')
-            response['status'] = STATUS_ERROR
-            response['msg'] = "Error decoding JSON data. Required parameters: username or email"
-            self.write(response)
-            return
+        # Support reset when either username or email is provided
+        username = self.getarg('username', '')
+        email = self.getarg('email', '')
         try:
             # Generate a reset code
             token, firstname, lastname, email, username, status, msg = USER_DB_MANAGER.create_reset_url(username, email)
@@ -1182,7 +1268,6 @@ class UserResetPasswordRequestHandler(BaseHandler):
             response['msg'] = str(e).strip()
             logger.error(response['msg'])
         self.write(response)
-        return
 
 
 @analytics
@@ -1193,18 +1278,9 @@ class UserResetPasswordHandler(BaseHandler):
             "msg": "",
             'reset': False
         }
+        token = self.getarg('token')
+        password = self.getarg('password')
         try:
-            data = json.loads(self.request.body.decode('utf-8'))
-            token = data['token']
-            password = data['password']
-        except:
-            logger.info('Error decoding JSON data')
-            response['status'] = STATUS_ERROR
-            response['msg'] = "Error decoding JSON data. Required parameters: token, password"
-            self.write(response)
-            return
-        try:
-            # TODO: Check that the token is valid.
             valid, username, status, msg = USER_DB_MANAGER.validate_token(token, 24*3600)
             if status != STATUS_OK:
                 response['status'] = STATUS_ERROR
@@ -1234,7 +1310,6 @@ class UserResetPasswordHandler(BaseHandler):
             response['msg'] = str(e).strip()
             logger.error(response['msg'])
         self.write(response)
-        return
 
 
 @analytics
@@ -1251,13 +1326,7 @@ class UserActivateHandler(BaseHandler):
             response['msg'] = "Only for public interface."
             self.write(response)
             return
-        try:
-            data = json.loads(self.request.body.decode('utf-8'))
-            token = data['token']
-        except:
-            logger.info('Error decoding JSON data')
-            response['status'] = STATUS_ERROR
-            response['msg'] = "Error decoding JSON data. Required parameters: token"
+        token = self.getarg('token')
         try:
             valid, username, status, msg = USER_DB_MANAGER.validate_token(token, 24*3600)
             if status != STATUS_OK:
@@ -1277,7 +1346,6 @@ class UserActivateHandler(BaseHandler):
             response['msg'] = str(e).strip()
             logger.error(response['msg'])
         self.write(response)
-        return
 
 
 @analytics
@@ -1293,19 +1361,13 @@ class UserRegisterHandler(BaseHandler):
             response['msg'] = "Self-registration disabled."
             self.write(response)
             return
-        try:
-            data = json.loads(self.request.body.decode('utf-8'))
-            username = data['username'].lower()
-            password = data['password']
-            firstname = data['firstname']
-            lastname = data['lastname']
-            email = data['email'].lower() 
-        except:
-            logger.info('Error decoding JSON data')
-            response['status'] = STATUS_ERROR
-            response['msg'] = "Error decoding JSON data. Required parameters include username, password, firstname, lastname, email."
-            self.write(response)
-            return
+        username = self.getarg('username')
+        username = username.lower()
+        password = self.getarg('password')
+        firstname = self.getarg('firstname')
+        lastname = self.getarg('lastname')
+        email = self.getarg('email')
+        email = email.lower()
         try:
             # Enforce password length
             if len(password) < 10:
@@ -1338,6 +1400,11 @@ class UserRegisterHandler(BaseHandler):
             if not re.fullmatch(r'[A-Za-z0-9]{1,}', lastname):
                 response['status'] = STATUS_ERROR
                 response['msg'] = 'Valid family name characters are: A-Za-z0-9'
+                self.write(response)
+                return
+            if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+                response['status'] = STATUS_ERROR
+                response['msg'] = 'Invalid email address'
                 self.write(response)
                 return
 
@@ -1427,28 +1494,23 @@ class UserRegisterHandler(BaseHandler):
 @analytics
 class HelpFormHandler(BaseHandler):
     def post(self):
-        data = json.loads(self.request.body.decode('utf-8'))
         response = {
             "status": STATUS_OK,
             "msg": ""
         }
-        data['username'] = self._token_decoded["username"]
         # TODO: Consider reconciling any differences between the
         # user profile data in the auth token with the custom
         # name and email provided by the help form
-        try:
-            email = data['email']
-            firstname = data['firstname']
-            lastname = data['lastname']
-            topics = ', \n'.join(data['topics'])
-            message = data['message']
-            othertopic = data['othertopic']
-        except:
-            logger.info('Error decoding JSON data')
-            response['status'] = STATUS_ERROR
-            response['msg'] = "Invalid JSON in HTTP request body."
-            self.write(response)
-            return
+        username = self.get_username_parameter()
+        username = username.lower()
+        email = self.getarg('email')
+        email = email.lower()
+        firstname = self.getarg('firstname')
+        lastname = self.getarg('lastname')
+        message = self.getarg('message')
+        topics = self.getarg('topics')
+        topics = ', \n'.join(topics)
+        othertopic = self.getarg('othertopic')
         # Generate a new Jira ticket using the Jira API
         try:
             # Construct Jira issue body from template file
@@ -1467,9 +1529,9 @@ class HelpFormHandler(BaseHandler):
                 othertopic=othertopic
             )
             if envvars.DESACCESS_INTERFACE == 'public':
-                issuetype = 'DESaccess public alpha release help request ({})'.format(data['username'])
+                issuetype = 'DESaccess public alpha release help request ({})'.format(username)
             else:
-                issuetype = 'DESaccess private alpha release help request ({})'.format(data['username'])
+                issuetype = 'DESaccess private alpha release help request ({})'.format(username)
             issue = {
                 'project' : {'key': 'DESLABS'},
                 'issuetype': {'name': 'Task'},
@@ -1478,7 +1540,16 @@ class HelpFormHandler(BaseHandler):
                 #'reporter' : {'name': 'desdm-wufoo'},
             }
             new_jira_issue = JIRA_API.create_issue(fields=issue)
-            data['jira_issue_number'] = '{}'.format(new_jira_issue)
+            data = {
+                'username': username,
+                'firstname': firstname,
+                'lastname': lastname,
+                'email': email,
+                'message': message,
+                'topics': topics,
+                'othertopic': othertopic,
+                'jira_issue_number': '{}'.format(new_jira_issue),
+            }
             response['msg'] = 'Jira issue created: {}'.format(data['jira_issue_number'])
             try:
                 # Send notification email to user and to admins via list
@@ -1486,7 +1557,7 @@ class HelpFormHandler(BaseHandler):
                 error_msg = ''
                 recipients = envvars.DESACCESS_ADMIN_EMAILS + [email]
                 if error_msg == '':
-                    email_utils.help_request_notification(data['username'], recipients, data['jira_issue_number'], body)
+                    email_utils.help_request_notification(username, recipients, data['jira_issue_number'], body)
                 else:
                     logger.error('Error sending notification email to admins ({}):\n{}'.format(data['jira_issue_number'], error_msg))
             except:
@@ -1516,19 +1587,19 @@ class HelpFormHandler(BaseHandler):
 @allowed_roles(['admin'])
 class UpdateUserRolesHandler(BaseHandler):
     def post(self):
-        data = json.loads(self.request.body.decode('utf-8'))
         response = {
             "status": STATUS_OK,
             "msg": ""
         }
+        username = self.getarg('username')
+        new_roles = self.getarg('new_roles')
         try:
-            response['msg'] = JOBSDB.update_user_roles(data['username'], data['new_roles'])
+            response['msg'] = JOBSDB.update_user_roles(username, new_roles)
             if response['msg'] != '':
                 response['status'] = STATUS_ERROR
-        except:
-            logger.info('Error decoding JSON data')
+        except Exception as e:
             response['status'] = STATUS_ERROR
-            response['msg'] = "Invalid JSON in HTTP request body."
+            response['msg'] = str(e).strip()
         self.write(response)
 
 
@@ -1536,19 +1607,19 @@ class UpdateUserRolesHandler(BaseHandler):
 @allowed_roles(['admin'])
 class SetUserRolesHandler(BaseHandler):
     def post(self):
-        data = json.loads(self.request.body.decode('utf-8'))
         response = {
             "status": STATUS_OK,
             "msg": ""
         }
+        username = self.getarg('username')
+        roles = self.getarg('roles')
         try:
-            response['msg'] = JOBSDB.set_user_roles(data['username'], data['roles'])
+            response['msg'] = JOBSDB.set_user_roles(username, roles)
             if response['msg'] != '':
                 response['status'] = STATUS_ERROR
-        except:
-            logger.info('Error decoding JSON data')
+        except Exception as e:
             response['status'] = STATUS_ERROR
-            response['msg'] = "Invalid JSON in HTTP request body."
+            response['msg'] = str(e).strip()
         self.write(response)
 
 
@@ -1556,19 +1627,18 @@ class SetUserRolesHandler(BaseHandler):
 @allowed_roles(['admin'])
 class ResetUserRoleHandler(BaseHandler):
     def post(self):
-        data = json.loads(self.request.body.decode('utf-8'))
         response = {
             "status": STATUS_OK,
             "msg": ""
         }
+        username = self.getarg('username')
         try:
-            response['msg'] = JOBSDB.reset_user_roles(data['username'])
+            response['msg'] = JOBSDB.reset_user_roles(username)
             if response['msg'] != '':
                 response['status'] = STATUS_ERROR
-        except:
-            logger.info('Error decoding JSON data')
+        except Exception as e:
             response['status'] = STATUS_ERROR
-            response['msg'] = "Invalid JSON in HTTP request body."
+            response['msg'] = str(e).strip()
         self.write(response)
 
 
@@ -1576,25 +1646,20 @@ class ResetUserRoleHandler(BaseHandler):
 @allowed_roles(['admin'])
 class ListUsersHandler(BaseHandler):
     def post(self):
-        data = json.loads(self.request.body.decode('utf-8'))
         response = {
             "status": STATUS_OK,
             "msg": "",
             "users": {}
         }
+        username = self.getarg('username')
         try:
-            if 'username' in data:
-                if data['username'] == 'all':
-                    response['users'] = USER_DB_MANAGER.list_all_users()
-                else:
-                    response['users'] = USER_DB_MANAGER.get_basic_info(data['username'])
+            if username == 'all':
+                response['users'] = USER_DB_MANAGER.list_all_users()
             else:
-                response['status'] = STATUS_ERROR
-                response['msg'] = "Parameter username must be specified. To list all users use value \"all\""
-        except:
-            logger.info('Error decoding JSON data')
+                response['users'] = USER_DB_MANAGER.get_basic_info(username)
+        except Exception as e:
             response['status'] = STATUS_ERROR
-            response['msg'] = "Invalid JSON in HTTP request body."
+            response['msg'] = str(e).strip()
         self.write(response)
 
 
@@ -1602,19 +1667,17 @@ def make_app(basePath=''):
     settings = {"debug": True}
     return tornado.web.Application(
         [
-            ## JOBS Endpoints
             (r"{}/job/status?".format(basePath), JobStatusHandler),
             (r"{}/job/delete?".format(basePath), JobHandler),
             (r"{}/job/submit?".format(basePath), JobHandler),
             (r"{}/job/complete?".format(basePath), JobComplete),
             (r"{}/job/start?".format(basePath), JobStart),
             (r"{}/job/rename?".format(basePath), JobRename),
-            ## Profile Endpoints
             (r"{}/login/?".format(basePath), LoginHandler),
+            (r"{}/logout/?".format(basePath), LogoutHandler),
             (r"{}/profile/?".format(basePath), ProfileHandler),
             (r"{}/profile/update/info?".format(basePath), ProfileUpdateHandler),
             (r"{}/profile/update/password?".format(basePath), ProfileUpdatePasswordHandler),
-            # TODO: Consider replacing user add/delete/update handlers with single handler using request types PUT/DELETE/POST
             (r"{}/user/role/update?".format(basePath), UpdateUserRolesHandler),
             (r"{}/user/role/add?".format(basePath), SetUserRolesHandler),
             (r"{}/user/role/reset?".format(basePath), ResetUserRoleHandler),
@@ -1622,14 +1685,10 @@ def make_app(basePath=''):
             (r"{}/user/list?".format(basePath), ListUsersHandler),
             (r"{}/user/preference?".format(basePath), UserPreferencesHandler),
             (r"{}/user/register?".format(basePath), UserRegisterHandler),
-            (r"{}/user/delete?".format(basePath), UserDeleteHandler),
             (r"{}/user/activate?".format(basePath), UserActivateHandler),
+            (r"{}/user/delete?".format(basePath), UserDeleteHandler),
             (r"{}/user/reset/request?".format(basePath), UserResetPasswordRequestHandler),
             (r"{}/user/reset/password?".format(basePath), UserResetPasswordHandler),
-            (r"{}/logout/?".format(basePath), LogoutHandler),
-            (r"{}/page/cutout/csv/validate/?".format(basePath), ValidateCsvHandler),
-            (r"{}/page/db-access/check/?".format(basePath), CheckQuerySyntaxHandler),
-            (r"{}/page/help/form/?".format(basePath), HelpFormHandler),
             (r"{}/notifications/create/?".format(basePath), NotificationsCreateHandler),
             (r"{}/notifications/fetch/?".format(basePath), NotificationsFetchHandler),
             (r"{}/notifications/mark/?".format(basePath), NotificationsMarkHandler),
@@ -1641,11 +1700,13 @@ def make_app(basePath=''):
             (r"{}/jlab/prune/?".format(basePath), JupyterLabPruneHandler),
             (r"{}/jlab/files/list?".format(basePath), JupyterLabFileListHandler),
             (r"{}/jlab/files/delete?".format(basePath), JupyterLabFileDeleteHandler),
-            ## Test Endpoints
-            (r"{}/dev/debug/trigger?".format(basePath), DebugTrigger),
-            (r"{}/dev/db/wipe?".format(basePath), DbWipe),
+            (r"{}/page/cutout/csv/validate/?".format(basePath), ValidateCsvHandler),
+            (r"{}/page/db-access/check/?".format(basePath), CheckQuerySyntaxHandler),
+            (r"{}/page/help/form/?".format(basePath), HelpFormHandler),
             (r"{}/data/coadd/(.*)?".format(basePath),      TileDataHandler, {'path': '/tiles/coadd'}),
             (r"{}/data/desarchive/(.*)?".format(basePath), TileDataHandler, {'path': '/tiles/desarchive'}),
+            (r"{}/dev/debug/trigger?".format(basePath), DebugTrigger),
+            (r"{}/dev/db/wipe?".format(basePath), DbWipe),
         ],
         **settings
     )
