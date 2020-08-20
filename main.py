@@ -846,41 +846,98 @@ class CheckQuerySyntaxHandler(BaseHandler):
         self.write(response)
 
 
-# @authenticated
-# @allowed_roles(ALLOWED_ROLE_LIST)
-# @analytics
-# class GetTileLinks(BaseHandler):
-#     def post(self):
-#         data = json.loads(self.request.body.decode('utf-8'))
-#         response = {
-#             "status": STATUS_OK,
-#             "msg": "",
-#             "file_paths": []
-#         }
-#         username = self._token_decoded["username"]
-#         password = JOBSDB.get_password(username)
-#         db = self._token_decoded["db"]
-#         try:
-#             query = data['query']
-#             connection = ea.connect(db, user=username, passwd=password)
-#             cursor = connection.cursor()
-#             try:
-#                 df = connection.query_to_pandas(query)
-#                 df = df[0:1000]
-#                 data = df.to_json(orient='records')
-#                 # Process the data as necessary
-#                 # data --> file_paths
-#                 response['file_paths'] = file_paths
-#             except Exception as e:
-#                 response['status'] = STATUS_ERROR
-#                 response['msg'] = str(e).strip()
-#             cursor.close()
-#             connection.close()
-#         except:
-#             logger.info('Error decoding JSON data')
-#             response['status'] = STATUS_ERROR
-#             response['msg'] = "Invalid JSON in HTTP request body."
-#         self.write(response)
+@authenticated
+@allowed_roles(ALLOWED_ROLE_LIST)
+@analytics
+class GetTileLinks(BaseHandler):
+    def post(self):
+        response = {
+            "status": STATUS_OK,
+            "msg": "",
+            "results": [],
+            "releases": [],
+            'tilename': '',
+            'ra_cent': '',
+            'dec_cent': '',
+            'racmin': '',
+            'racmax': '',
+            'deccmin': '',
+            'deccmax': '',
+        }
+        username = self.get_username_parameter()
+        db = self._token_decoded["db"]
+        password = JOBSDB.get_password(username)
+
+        coords_or_name = self.request.path.split('/')[-1]
+        if coords_or_name == 'name':
+            name = self.getarg('name')
+            query = '''
+            select o.tilename,RACMIN,RACMAX,DECCMIN,DECCMAX,RA_CENT,DEC_CENT,'sva1' as release,fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y, count(o.tilename) as nobjects from sva1_coadd_objects o,mcarras2.sva1_tile_info m,y3a2_coaddtile_geom g where m.tilename=o.tilename and g.tilename=o.tilename and m.tilename='{tilename}' and m.tilename=g.tilename group by o.tilename,racmin,racmax,deccmin,deccmax,ra_cent,dec_cent,'sva1',fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y UNION ALL select o.tilename,RACMIN,RACMAX,DECCMIN,DECCMAX,RA_CENT,DEC_CENT,'y1a1' as release,fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y,count(o.tilename) as nobjects from y1a1_coadd_objects o, mcarras2.y1a1_tile_info m,y3a2_coaddtile_geom g where m.tilename=o.tilename and g.tilename=o.tilename and m.tilename='{tilename}' and m.tilename=g.tilename group by o.tilename,racmin,racmax,deccmin,deccmax,ra_cent,dec_cent,'y1a1',fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y UNION ALL select o.tilename,RACMIN,RACMAX,DECCMIN,DECCMAX,RA_CENT,DEC_CENT,'y3a2' as release,fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y,count(o.tilename) as nobjects from y3a2_coadd_object_summary o,mcarras2.y3a2_tile_info m,y3a2_coaddtile_geom g where m.tilename=o.tilename and g.tilename=o.tilename and m.tilename='{tilename}' and m.tilename=g.tilename group by o.tilename,racmin,racmax,deccmin,deccmax,ra_cent,dec_cent,'y3a2',fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y UNION ALL select o.tilename,RACMIN,RACMAX,DECCMIN,DECCMAX,RA_CENT,DEC_CENT,'y6a1' as release,fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y,count(o.tilename) as nobjects from y6a1_coadd_object_summary o,mcarras2.y6a1_tile_info m,y3a2_coaddtile_geom g where m.tilename=o.tilename and g.tilename=o.tilename and m.tilename='{tilename}' and m.tilename=g.tilename group by o.tilename,racmin,racmax,deccmin,deccmax,ra_cent,dec_cent,'y6a1',fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y
+            '''.format(tilename=name)
+        elif coords_or_name == 'coords':
+            coords = self.getarg('coords').split(',')
+            ra = float(coords[0])
+            dec = float(coords[1])
+            if ra > 180:
+                ra_adjusted = 360-ra
+            else:
+                ra_adjusted = ra
+            query = '''
+            select o.tilename,RACMIN,RACMAX,DECCMIN,DECCMAX,RA_CENT,DEC_CENT,'sva1' as release,fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y,count(o.tilename) as nobjects from sva1_coadd_objects o, mcarras2.sva1_tile_info m,y3a2_coaddtile_geom g where m.tilename=g.tilename and o.tilename=g.tilename and o.tilename=m.tilename and ({dec} between g.UDECMIN and g.UDECMAX) and ((g.CROSSRA0='N' and ({ra} between g.URAMIN and g.URAMAX)) or (g.CROSSRA0='Y' and ({ra_adjusted} between g.URAMIN-360 and g.URAMAX))) group by o.tilename,racmin,racmax,deccmin,deccmax,ra_cent,dec_cent,'sva1',fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y UNION ALL select o.tilename,RACMIN,RACMAX,DECCMIN,DECCMAX,RA_CENT,DEC_CENT,'y1a1' as release,fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y, count(o.tilename) as nobjects from y1a1_coadd_objects o, mcarras2.y1a1_tile_info m,y3a2_coaddtile_geom g where m.tilename=g.tilename and o.tilename=g.tilename and o.tilename=m.tilename and ({dec} between g.UDECMIN and g.UDECMAX) and ((g.CROSSRA0='N' and ({ra} between g.URAMIN and g.URAMAX)) or (g.CROSSRA0='Y' and ({ra_adjusted} between g.URAMIN-360 and g.URAMAX))) group by o.tilename,racmin,racmax,deccmin,deccmax,ra_cent,dec_cent,'y1a1',fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y UNION ALL select o.tilename,RACMIN,RACMAX,DECCMIN,DECCMAX,RA_CENT,DEC_CENT,'y3a2' as release,fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y,count(o.tilename) as nobjects from y3a2_coadd_object_summary o,mcarras2.y3a2_tile_info m,y3a2_coaddtile_geom g where  m.tilename=g.tilename and o.tilename=g.tilename and o.tilename=m.tilename and ({dec} between g.UDECMIN and g.UDECMAX) and ((g.CROSSRA0='N' and ({ra} between g.URAMIN and g.URAMAX)) or (g.CROSSRA0='Y' and ({ra_adjusted} between g.URAMIN-360 and g.URAMAX))) group by o.tilename,racmin,racmax,deccmin,deccmax,ra_cent,dec_cent,'y3a2',fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y UNION ALL select o.tilename,RACMIN,RACMAX,DECCMIN,DECCMAX,RA_CENT,DEC_CENT,'y6a1' as release,fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y,count(o.tilename) as nobjects from y6a1_coadd_object_summary o,mcarras2.y6a1_tile_info m,y3a2_coaddtile_geom g where m.tilename=g.tilename and o.tilename=g.tilename and o.tilename=m.tilename and ({dec} between g.UDECMIN and g.UDECMAX) and ((g.CROSSRA0='N' and ({ra} between g.URAMIN and g.URAMAX)) or (g.CROSSRA0='Y' and ({ra_adjusted} between g.URAMIN-360 and g.URAMAX))) group by o.tilename,racmin,racmax,deccmin,deccmax,ra_cent,dec_cent,'y6a1',fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y
+            '''.format(ra=ra, dec=dec, ra_adjusted=ra_adjusted)
+        else:
+            response['status'] = STATUS_ERROR
+            response['msg'] = 'Only coords or name supported. This error should never occur.'
+            self.write(response)
+            return
+        try:
+            connection = ea.connect(db, user=username, passwd=password)
+            cursor = connection.cursor()
+            df = connection.query_to_pandas(query)
+            # Limit results to 1000 rows. Should never be necessary.
+            df = df[0:1000]
+            results = df.to_json(orient='records')
+            tile_info = json.loads(results)
+            response['results'] = tile_info
+            if tile_info:
+                response['tilename'] = tile_info[0]['TILENAME']
+                response['ra_cent'] = tile_info[0]['RA_CENT']
+                response['dec_cent'] = tile_info[0]['DEC_CENT']
+                response['racmin'] = tile_info[0]['RACMIN']
+                response['racmax'] = tile_info[0]['RACMAX']
+                response['deccmin'] = tile_info[0]['DECCMIN']
+                response['deccmax'] = tile_info[0]['DECCMAX']
+            releases = []
+            for release in tile_info:
+                bands = {}
+                for band in ['G', 'R', 'I', 'Z', 'Y']:
+                    image_key = 'FITS_IMAGE_{}'.format(band)
+                    catalog_key = 'FITS_CATALOG_{}'.format(band)
+                    image_link = None
+                    catalog_link = None
+                    try:
+                        if image_key in release and len(release[image_key]) > 0:
+                            image_link = release[image_key].split('OPS/')[1]
+                        if catalog_key in release and len(release[catalog_key]) > 0:
+                            catalog_link = release[catalog_key].split('OPS/')[1]
+                    except:
+                        pass
+                    bands[band] = {
+                        'image': image_link,
+                        'catalog': catalog_link,
+                    }
+                releases.append({
+                    'release': release['RELEASE'],
+                    'bands': bands,
+                    'num_objects': release['NOBJECTS']
+                })
+            response['releases'] = releases
+        except Exception as e:
+            response['status'] = STATUS_ERROR
+            response['msg'] = str(e).strip()
+        cursor.close()
+        connection.close()
+        self.write(response)
 
 
 @authenticated
@@ -1707,6 +1764,8 @@ def make_app(basePath=''):
             (r"{}/data/desarchive/(.*)?".format(basePath), TileDataHandler, {'path': '/tiles/desarchive'}),
             (r"{}/dev/debug/trigger?".format(basePath), DebugTrigger),
             (r"{}/dev/db/wipe?".format(basePath), DbWipe),
+            (r"{}/tiles/info/coords?".format(basePath), GetTileLinks),
+            (r"{}/tiles/info/name?".format(basePath), GetTileLinks),
         ],
         **settings
     )
