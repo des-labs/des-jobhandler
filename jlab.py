@@ -48,6 +48,14 @@ def create_deployment(apps_v1_api, username, token):
                 client.V1EnvVar(
                     name='DES_USER',
                     value=username
+                ),
+                client.V1EnvVar(
+                    name='PIP_TARGET',
+                    value='/home/jovyan/work/.pip'
+                ),
+                client.V1EnvVar(
+                    name='PYTHONPATH',
+                    value='/home/jovyan/work/.pip'
                 )
             ],
             volume_mounts=[
