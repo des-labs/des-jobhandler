@@ -870,17 +870,19 @@ class GetTileLinks(BaseHandler):
 
         coords_or_name = self.request.path.split('/')[-1]
         if coords_or_name == 'name':
+            # Ignore accidental whitespace around input string
             name = self.getarg('name').strip()
 
             if envvars.DESACCESS_INTERFACE == 'public':
                 query = '''
-                select o.tilename,RACMIN,RACMAX,DECCMIN,DECCMAX,RA_CENT,DEC_CENT,'dr1' as release,fits_image_g,fits_image_r,fits_image_i,fits_image_z,fits_image_y, count(o.tilename) as nobjects from dr1_main o,dr1_tile_info m where m.tilename=o.tilename and m.tilename='{tilename}' group by o.tilename,racmin,racmax,deccmin,deccmax,ra_cent,dec_cent,'dr1',fits_image_g,fits_image_r,fits_image_i,fits_image_z,fits_image_y;
+                select o.tilename,RACMIN,RACMAX,DECCMIN,DECCMAX,RA_CENT,DEC_CENT,'dr1' as release,fits_image_g,fits_image_r,fits_image_i,fits_image_z,fits_image_y, fits_image_det,fits_dr1_main,fits_dr1_magnitude,fits_dr1_flux, count(o.tilename) as nobjects from dr1_main o,dr1_tile_info m where m.tilename=o.tilename and m.tilename='{tilename}' group by o.tilename,racmin,racmax,deccmin,deccmax,ra_cent,dec_cent,'dr1',fits_image_g,fits_image_r,fits_image_i,fits_image_z,fits_image_y, fits_image_det,fits_dr1_main,fits_dr1_magnitude,fits_dr1_flux;
                 '''.format(tilename=name)
             else:
                 query = '''
                 select o.tilename,RACMIN,RACMAX,DECCMIN,DECCMAX,RA_CENT,DEC_CENT,'sva1' as release,fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y, count(o.tilename) as nobjects from sva1_coadd_objects o,mcarras2.sva1_tile_info m,y3a2_coaddtile_geom g where m.tilename=o.tilename and g.tilename=o.tilename and m.tilename='{tilename}' and m.tilename=g.tilename group by o.tilename,racmin,racmax,deccmin,deccmax,ra_cent,dec_cent,'sva1',fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y UNION ALL select o.tilename,RACMIN,RACMAX,DECCMIN,DECCMAX,RA_CENT,DEC_CENT,'y1a1' as release,fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y,count(o.tilename) as nobjects from y1a1_coadd_objects o, mcarras2.y1a1_tile_info m,y3a2_coaddtile_geom g where m.tilename=o.tilename and g.tilename=o.tilename and m.tilename='{tilename}' and m.tilename=g.tilename group by o.tilename,racmin,racmax,deccmin,deccmax,ra_cent,dec_cent,'y1a1',fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y UNION ALL select o.tilename,RACMIN,RACMAX,DECCMIN,DECCMAX,RA_CENT,DEC_CENT,'y3a2' as release,fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y,count(o.tilename) as nobjects from y3a2_coadd_object_summary o,mcarras2.y3a2_tile_info m,y3a2_coaddtile_geom g where m.tilename=o.tilename and g.tilename=o.tilename and m.tilename='{tilename}' and m.tilename=g.tilename group by o.tilename,racmin,racmax,deccmin,deccmax,ra_cent,dec_cent,'y3a2',fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y UNION ALL select o.tilename,RACMIN,RACMAX,DECCMIN,DECCMAX,RA_CENT,DEC_CENT,'y6a1' as release,fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y,count(o.tilename) as nobjects from y6a1_coadd_object_summary o,mcarras2.y6a1_tile_info m,y3a2_coaddtile_geom g where m.tilename=o.tilename and g.tilename=o.tilename and m.tilename='{tilename}' and m.tilename=g.tilename group by o.tilename,racmin,racmax,deccmin,deccmax,ra_cent,dec_cent,'y6a1',fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y
                 '''.format(tilename=name)
         elif coords_or_name == 'coords':
+            # Ignore accidental whitespace around input string
             coords = self.getarg('coords').strip().split(',')
             ra = float(coords[0])
             dec = float(coords[1])
@@ -890,7 +892,7 @@ class GetTileLinks(BaseHandler):
                 ra_adjusted = ra
             if envvars.DESACCESS_INTERFACE == 'public':
                 query = '''
-                select o.tilename,RACMIN,RACMAX,DECCMIN,DECCMAX,RA_CENT,DEC_CENT,'dr1' as release,fits_image_g,fits_image_r,fits_image_i,fits_image_z,fits_image_y,count(o.tilename) as nobjects from dr1_main o, dr1_tile_info m where o.tilename=m.tilename and ({dec} between m.UDECMIN and m.UDECMAX) and ((m.CROSSRA0='N' and ({ra} between m.URAMIN and m.URAMAX)) or (m.CROSSRA0='Y' and ({ra_adjusted} between m.URAMIN-360 and m.URAMAX))) group by o.tilename,racmin,racmax,deccmin,deccmax,ra_cent,dec_cent,'dr1',fits_image_g,fits_image_r,fits_image_i,fits_image_z,fits_image_y;
+                select o.tilename,RACMIN,RACMAX,DECCMIN,DECCMAX,RA_CENT,DEC_CENT,'dr1' as release,fits_image_g,fits_image_r,fits_image_i,fits_image_z,fits_image_y,fits_image_det,fits_dr1_main,fits_dr1_magnitude,fits_dr1_flux,count(o.tilename) as nobjects from dr1_main o, dr1_tile_info m where o.tilename=m.tilename and ({dec} between m.UDECMIN and m.UDECMAX) and ((m.CROSSRA0='N' and ({ra} between m.URAMIN and m.URAMAX)) or (m.CROSSRA0='Y' and ({ra_adjusted} between m.URAMIN-360 and m.URAMAX))) group by o.tilename,racmin,racmax,deccmin,deccmax,ra_cent,dec_cent,'dr1',fits_image_g,fits_image_r,fits_image_i,fits_image_z,fits_image_y,fits_image_det,fits_dr1_main,fits_dr1_magnitude,fits_dr1_flux;
                 '''.format(ra=ra, dec=dec, ra_adjusted=ra_adjusted)
             else:
                 query = '''
@@ -920,6 +922,19 @@ class GetTileLinks(BaseHandler):
                 response['deccmax'] = tile_info[0]['DECCMAX']
             releases = []
             for release in tile_info:
+                # Get the webserver base path for the different releases
+                if release['RELEASE'] in ['sva1', 'y1a1']:
+                    base_path = 'data/'
+                elif release['RELEASE'] == 'dr1':
+                    base_path = 'data/dr1/'
+                else:
+                    base_path = 'data/desarchive/'
+                # Set the delimiter to split the URL returned by the database query to 
+                # discard the domain information and invalid base path
+                if release['RELEASE'] == 'dr1':
+                    delimiter = 'dr1_tiles/'
+                else:
+                    delimiter = 'OPS/'
                 bands = {}
                 for band in ['G', 'R', 'I', 'Z', 'Y']:
                     image_key = 'FITS_IMAGE_{}'.format(band)
@@ -928,30 +943,28 @@ class GetTileLinks(BaseHandler):
                     catalog_link = ''
                     try:
                         if image_key in release and len(release[image_key]) > 0:
-                            logger.info(release[image_key])
-                            if release['RELEASE'] == 'dr1':
-                                image_link = release[image_key].split('dr1_tiles/')[1]
-                            else:
-                                image_link = release[image_key].split('OPS/')[1]
+                            # logger.info(release[image_key])
+                            image_link = 'https://{}{}/{}{}'.format(envvars.BASE_DOMAIN, envvars.BASE_PATH, base_path, release[image_key].split(delimiter)[1])
                         if catalog_key in release and len(release[catalog_key]) > 0:
-                            logger.info(release[catalog_key])
-                            if release['RELEASE'] == 'dr1':
-                                catalog_link = release[catalog_key].split('dr1_tiles/')[1]
-                            else:
-                                catalog_link = release[catalog_key].split('OPS/')[1]
+                            # logger.info(release[catalog_key])
+                            catalog_link = 'https://{}{}/{}{}'.format(envvars.BASE_DOMAIN, envvars.BASE_PATH, base_path, release[catalog_key].split(delimiter)[1])
                     except:
                         pass
                     bands[band] = {
                         'image': image_link,
-                        'catalog': catalog_link,
+                        'catalog': catalog_link
                     }
                 releases.append({
                     'release': release['RELEASE'],
                     'bands': bands,
-                    'num_objects': release['NOBJECTS']
+                    'num_objects': release['NOBJECTS'],
+                    'detection': '' if 'FITS_IMAGE_DET' not in release or len(release['FITS_IMAGE_DET']) < 1 else 'https://{}{}/{}{}'.format(envvars.BASE_DOMAIN, envvars.BASE_PATH, base_path, release['FITS_IMAGE_DET'].split(delimiter)[1]),
+                    'main': '' if 'FITS_DR1_MAIN' not in release or len(release['FITS_DR1_MAIN']) < 1 else 'https://{}{}/{}{}'.format(envvars.BASE_DOMAIN, envvars.BASE_PATH, base_path, release['FITS_DR1_MAIN'].split(delimiter)[1]),
+                    'magnitude': '' if 'FITS_DR1_MAGNITUDE' not in release or len(release['FITS_DR1_MAGNITUDE']) < 1 else 'https://{}{}/{}{}'.format(envvars.BASE_DOMAIN, envvars.BASE_PATH, base_path, release['FITS_DR1_MAGNITUDE'].split(delimiter)[1]),
+                    'flux': '' if 'FITS_DR1_FLUX' not in release or len(release['FITS_DR1_FLUX']) < 1 else 'https://{}{}/{}{}'.format(envvars.BASE_DOMAIN, envvars.BASE_PATH, base_path, release['FITS_DR1_FLUX'].split(delimiter)[1]),
                 })
             response['releases'] = releases
-            logger.info(json.dumps(releases, indent=2))
+            # logger.info(json.dumps(releases, indent=2))
         except Exception as e:
             response['status'] = STATUS_ERROR
             response['msg'] = str(e).strip()
