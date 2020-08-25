@@ -30,6 +30,9 @@ import re
 STATUS_OK = 'ok'
 STATUS_ERROR = 'error'
 
+PASSWORD_REGEX = r'^[A-Za-z]+[A-Za-z0-9]{10,40}'
+PASSWORD_VALIDITY_MESSAGE = "Password must be between 10 and 30 characters long and contain only characters A-Z, a-z, 0-9, '.', '?', '!', '-'"
+
 ALLOWED_ROLE_LIST = envvars.ALLOWED_ROLE_LIST.split(',')
 
 # Get global instance of the job handler database interface
@@ -68,9 +71,9 @@ JIRA_API = jira.client.JIRA(
 
 # Initialize the Oracle database user manager
 if envvars.DESACCESS_INTERFACE == 'public':
-    USER_DB_MANAGER = dbutils.dbConfig(envvars.ORACLE_PUB)
+    USER_DB_MANAGER = dbutils.dbConfig(envvars.ORACLE_PUB, envvars.ORACLE_PUB_DBS)
 else:
-    USER_DB_MANAGER = dbutils.dbConfig(envvars.ORACLE_PRV)
+    USER_DB_MANAGER = dbutils.dbConfig(envvars.ORACLE_PRV, envvars.ORACLE_PRV_DBS)
 
 # The datetime type is not JSON serializable, so convert to string
 def json_converter(o):
@@ -1360,6 +1363,28 @@ class UserResetPasswordRequestHandler(BaseHandler):
         self.write(response)
 
 
+class UserResetValidateHandler(BaseHandler):
+    def post(self):
+        response = {
+            "status": STATUS_OK,
+            "msg": "",
+            'valid': False
+        }
+        token = self.getarg('token')
+        try:
+            valid, username, status, msg = USER_DB_MANAGER.validate_token(token, 24*3600)
+            if status != STATUS_OK:
+                # There was an error validating the token
+                response['status'] = STATUS_ERROR
+                response['msg'] = msg
+            response['valid'] = valid
+        except Exception as e:
+            response['status'] = STATUS_ERROR
+            response['msg'] = str(e).strip()
+            logger.error(response['msg'])
+        self.write(response)
+
+
 @analytics
 class UserResetPasswordHandler(BaseHandler):
     def post(self):
@@ -1373,14 +1398,22 @@ class UserResetPasswordHandler(BaseHandler):
         try:
             valid, username, status, msg = USER_DB_MANAGER.validate_token(token, 24*3600)
             if status != STATUS_OK:
+                # There was an error validating the token
                 response['status'] = STATUS_ERROR
                 response['msg'] = msg
             elif valid:
                 # Update the password
+                if not re.fullmatch(PASSWORD_REGEX, password):
+                    response['status'] = STATUS_ERROR
+                    response['msg'] = PASSWORD_VALIDITY_MESSAGE
+                    self.write(response)
+                    return
                 status, msg = USER_DB_MANAGER.update_password(username, password)
                 if status != STATUS_OK:
                     response['status'] = STATUS_ERROR
                     response['msg'] = msg
+                    self.write(response)
+                    return
                 else:
                     response['reset'] = True
                 # # Unlock the account
@@ -1391,10 +1424,8 @@ class UserResetPasswordHandler(BaseHandler):
                 # else:
                 #     response['reset'] = True
             else:
+                # The token is invalid
                 response['msg'] = msg
-            msg = 'Resetting password...'
-            response['msg'] = msg
-            logger.info(msg)
         except Exception as e:
             response['status'] = STATUS_ERROR
             response['msg'] = str(e).strip()
@@ -1471,9 +1502,9 @@ class UserRegisterHandler(BaseHandler):
                 self.write(response)
                 return
             # Limit valid password characters
-            if not re.fullmatch(r'[A-Za-z0-9]{10,30}', password):
+            if not re.fullmatch(PASSWORD_REGEX, password):
                 response['status'] = STATUS_ERROR
-                response['msg'] = 'Valid password characters are: A-Za-z0-9'
+                response['msg'] = PASSWORD_VALIDITY_MESSAGE
                 self.write(response)
                 return
             # Limit other input parameter characters partially to mitigate SQL injection attacks
@@ -1779,6 +1810,7 @@ def make_app(basePath=''):
             (r"{}/user/delete?".format(basePath), UserDeleteHandler),
             (r"{}/user/reset/request?".format(basePath), UserResetPasswordRequestHandler),
             (r"{}/user/reset/password?".format(basePath), UserResetPasswordHandler),
+            (r"{}/user/reset/validate?".format(basePath), UserResetValidateHandler),
             (r"{}/notifications/create/?".format(basePath), NotificationsCreateHandler),
             (r"{}/notifications/fetch/?".format(basePath), NotificationsFetchHandler),
             (r"{}/notifications/mark/?".format(basePath), NotificationsMarkHandler),
