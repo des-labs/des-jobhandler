@@ -7,6 +7,7 @@ import yaml
 import os
 import datetime as dt
 import uuid
+import re
 
 
 STATUS_OK = 'ok'
@@ -41,6 +42,9 @@ class dbConfig(object):
         except Exception as e:
             raise e
 
+    def is_alphanumeric(self, in_string):
+        return re.fullmatch(r'^[A-Za-z0-9]+$', in_string)
+
     def get_username_from_email(self, email):
         kwargs = {'host': self.host, 'port': self.port, 'service_name': self.db_manager}
         dsn = cx_Oracle.makedsn(**kwargs)
@@ -49,9 +53,9 @@ class dbConfig(object):
         username = None
         try:
             sql = """
-            SELECT USERNAME, EMAIL from DES_ADMIN.DES_USERS where EMAIL = '{}'
-            """.format(email.lower())
-            for row in cursor.execute(sql):
+            SELECT USERNAME, EMAIL from DES_ADMIN.DES_USERS where EMAIL = :email
+            """
+            for row in cursor.execute(sql, email=email.lower()):
                 username, email = row
         except Exception as e:
             logger.error(str(e).strip())
@@ -88,8 +92,10 @@ class dbConfig(object):
         dbh = cx_Oracle.connect(self.user_manager, self.pwd_manager, dsn=dsn)
         cursor = dbh.cursor()
         try:
-            cc = cursor.execute("select firstname,lastname,email from DES_ADMIN.DES_USERS where "
-                                "upper(username) = '{}'".format(user.upper())).fetchone()
+            sql = """
+            SELECT FIRSTNAME, LASTNAME, EMAIL from DES_ADMIN.DES_USERS WHERE USERNAME = :username
+            """
+            cc = cursor.execute(sql, username=user).fetchone()
         except:
             cc = ('','','')
         cursor.close()
@@ -102,7 +108,10 @@ class dbConfig(object):
         dbh = cx_Oracle.connect(self.user_manager, self.pwd_manager, dsn=dsn)
         cursor = dbh.cursor()
         try:
-            cc = cursor.execute("select username,firstname,lastname,email from DES_ADMIN.DES_USERS").fetchall()
+            sql = """
+            SELECT USERNAME, FIRSTNAME, LASTNAME, EMAIL from DES_ADMIN.DES_USERS
+            """
+            cc = cursor.execute(sql).fetchall()
         except:
             cc = ('','','','')
         cursor.close()
@@ -117,13 +126,13 @@ class dbConfig(object):
         cursor = dbh.cursor()
         qupdate = """
             UPDATE  DES_ADMIN.DES_USERS SET
-            FIRSTNAME = '{first}',
-            LASTNAME = '{last}',
-            EMAIL = '{email}'
-            WHERE USERNAME = '{user}'
-            """.format(first=firstname, last=lastname, email=email, user=username)
+            FIRSTNAME = :first,
+            LASTNAME = :last,
+            EMAIL = :email
+            WHERE USERNAME = :username
+            """
         try:
-            cursor.execute(qupdate)
+            cursor.execute(qupdate, first=firstname, last=lastname, email=email, username=username)
             dbh.commit()
             msg = 'Information for {} Updated'.format(username)
             status = 'ok'
@@ -167,10 +176,10 @@ class dbConfig(object):
         dbh = cx_Oracle.connect(self.user_manager, self.pwd_manager, dsn=dsn)
         cursor = dbh.cursor()
         sql = """
-            SELECT USERNAME FROM DES_ADMIN.DES_USERS WHERE USERNAME = '{user}'
-            """.format(user=username)
+            SELECT USERNAME FROM DES_ADMIN.DES_USERS WHERE USERNAME = :username
+            """
         try:
-            results = cursor.execute(sql).fetchone()
+            results = cursor.execute(sql, username=username).fetchone()
             if results:
                 status = STATUS_ERROR
                 msg = 'Username {} is unavailable. Choose a different one.'.format(username)
@@ -185,6 +194,17 @@ class dbConfig(object):
         status = STATUS_OK
         msg = ''
         username = username.lower()
+        # Sanitize inputs manually since DDL statements cannot use bind variables:
+        # https://cx-oracle.readthedocs.io/en/latest/user_guide/bind.html
+        if not self.is_alphanumeric(username):
+            status = STATUS_ERROR
+            msg = 'Invalid characters in username'
+            return status, msg
+        if not self.is_alphanumeric(password):
+            status = STATUS_ERROR
+            msg = 'Invalid characters in password'
+            return status, msg
+
         for db in self.databases:
             # self.db_manager = db
             # Open an Oracle connection and get a Cursor object
@@ -207,8 +227,8 @@ class dbConfig(object):
                 # If on the public interface, use a different SQL command than in the private interface
                 if envvars.DESACCESS_INTERFACE == 'public':
                     sql = """
-                    ALTER USER {0} IDENTIFIED BY {1}
-                    """.format(username, password)
+                    ALTER USER {username} IDENTIFIED BY {password}
+                    """.format(username=username, password=password)
                     cursor.execute(sql)
                     dbh.commit()
                 else:
@@ -241,9 +261,9 @@ class dbConfig(object):
         try:
             # Delete the reset token
             sql = """
-            DELETE FROM DES_ADMIN.RESET_URL WHERE USERNAME = '{}'
-            """.format(username)
-            cursor.execute(sql)
+            DELETE FROM DES_ADMIN.RESET_URL WHERE USERNAME = :username
+            """
+            cursor.execute(sql, username=username)
             dbh.commit()
         except Exception as e:
             status = STATUS_ERROR
@@ -257,6 +277,13 @@ class dbConfig(object):
         status = STATUS_OK
         msg = ''
         username = username.lower()
+        # Sanitize inputs manually since DDL statements cannot use bind variables:
+        # https://cx-oracle.readthedocs.io/en/latest/user_guide/bind.html
+        if not self.is_alphanumeric(username):
+            status = STATUS_ERROR
+            msg = 'Invalid characters in username'
+            return status, msg
+
         if not db:
             db = self.db_manager
         kwargs = {'host': self.host, 'port': self.port, 'service_name': db}
@@ -294,11 +321,11 @@ class dbConfig(object):
         dbh = cx_Oracle.connect(self.admin_user_manager, self.admin_pwd_manager, dsn=dsn)
         cursor = dbh.cursor()
         sql = """
-            SELECT CREATED, USERNAME FROM DES_ADMIN.RESET_URL WHERE URL = '{0}'
-            """.format(token)
+            SELECT CREATED, USERNAME FROM DES_ADMIN.RESET_URL WHERE URL = :token
+            """
         try:
             created, username = None, None
-            for row in cursor.execute(sql):
+            for row in cursor.execute(sql, token=token):
                 created, username = row
                 if not created:
                     msg = 'Activation token is invalid'
@@ -328,10 +355,10 @@ class dbConfig(object):
         dbh = cx_Oracle.connect(self.user_manager, self.pwd_manager, dsn=dsn)
         cursor = dbh.cursor()
         sql = """
-            SELECT EMAIL FROM DES_ADMIN.DES_USERS WHERE EMAIL = '{}'
-            """.format(email.lower())
+            SELECT EMAIL FROM DES_ADMIN.DES_USERS WHERE EMAIL = :email
+            """
         try:
-            results = cursor.execute(sql).fetchone()
+            results = cursor.execute(sql, email=email.lower()).fetchone()
             if results:
                 status = STATUS_ERROR
                 msg = 'Email address {} is already registered.'.format(email)
@@ -363,9 +390,9 @@ class dbConfig(object):
                 identifier = username
             # Get user profile
             sql = """
-            SELECT USERNAME, EMAIL, FIRSTNAME, LASTNAME from DES_ADMIN.DES_USERS where {} = '{}'
-            """.format(username_or_email, identifier)
-            results = cursor.execute(sql).fetchone()
+            SELECT USERNAME, EMAIL, FIRSTNAME, LASTNAME from DES_ADMIN.DES_USERS where {username_or_email} = :identifier
+            """.format(username_or_email=username_or_email)
+            results = cursor.execute(sql, identifier=identifier).fetchone()
             if not results:
                 status = STATUS_ERROR
                 msg = 'user or email not registered.'
@@ -377,9 +404,9 @@ class dbConfig(object):
                 now = dt.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
                 url = uuid.uuid4().hex
                 sql = """
-                INSERT INTO DES_ADMIN.RESET_URL VALUES ('{0}', '{1}', to_date('{2}' , 'yyyy/mm/dd hh24:mi:ss'))
-                """.format(username, url, now)
-                cursor.execute(sql)
+                INSERT INTO DES_ADMIN.RESET_URL VALUES (:username, :url, to_date(:now , 'yyyy/mm/dd hh24:mi:ss'))
+                """
+                cursor.execute(sql, username=username, url=url, now=now)
                 dbh.commit()
         except Exception as e:
             url = None
@@ -395,6 +422,12 @@ class dbConfig(object):
         status = STATUS_OK
         msg = ''
         username = username.lower()
+        # Sanitize inputs manually since DDL statements cannot use bind variables:
+        # https://cx-oracle.readthedocs.io/en/latest/user_guide/bind.html
+        if not self.is_alphanumeric(username):
+            status = STATUS_ERROR
+            msg = 'Invalid characters in username'
+            return status, msg
         kwargs = {'host': self.host, 'port': self.port, 'service_name': self.db_manager}
         dsn = cx_Oracle.makedsn(**kwargs)
         # The admin credentials are required for the DELETE and DROP commands
@@ -404,9 +437,9 @@ class dbConfig(object):
             status, msg = self.clear_reset_token(username)
             
             sql = """
-            DELETE FROM DES_ADMIN.DES_USERS where USERNAME = '{user}'
-            """.format(user=username)
-            results = cursor.execute(sql)
+            DELETE FROM DES_ADMIN.DES_USERS where USERNAME = :username
+            """
+            results = cursor.execute(sql, username=username)
             
             sql = """
             DROP USER {user} CASCADE
@@ -424,6 +457,18 @@ class dbConfig(object):
         status = STATUS_OK
         msg = ''
         username = username.lower()
+        
+        # Sanitize inputs manually since DDL statements cannot use bind variables:
+        # https://cx-oracle.readthedocs.io/en/latest/user_guide/bind.html
+        if not self.is_alphanumeric(username):
+            status = STATUS_ERROR
+            msg = 'Invalid characters in username'
+            return status, msg
+        if not self.is_alphanumeric(password):
+            status = STATUS_ERROR
+            msg = 'Invalid characters in password'
+            return status, msg
+
         kwargs = {'host': self.host, 'port': self.port, 'service_name': self.db_manager}
         dsn = cx_Oracle.makedsn(**kwargs)
         # The admin credentials are required for the CREATE, GRANT, and INSERT commands
@@ -451,17 +496,17 @@ class dbConfig(object):
 
             sql = """
             INSERT INTO DES_ADMIN.DES_USERS VALUES (
-            '{user}', '{first}', '{last}', '{email}', '{country}', '{inst}'
+            :username, :first, :last, :email, :country, :institution
             )
-            """.format(
-                user=username,
+            """
+            results = cursor.execute(sql, 
+                username=username,
                 first=first,
                 last=last,
                 email=email,
                 country=country,
-                inst=institution
+                institution=institution
             )
-            results = cursor.execute(sql)
             
             sql = """
             GRANT DES_READER to {user}
