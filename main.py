@@ -1650,17 +1650,24 @@ class HelpFormHandler(BaseHandler):
                 othertopic=othertopic
             )
             if envvars.DESACCESS_INTERFACE == 'public':
-                issuetype = 'DESaccess public alpha release help request ({})'.format(username)
+                issuetype = 'DESaccess public help request ({})'.format(username)
             else:
-                issuetype = 'DESaccess private alpha release help request ({})'.format(username)
+                issuetype = 'DESaccess private help request ({})'.format(username)
             issue = {
-                'project' : {'key': 'DESLABS'},
+                'project' : {'key': 'DESRELEASE'},
                 'issuetype': {'name': 'Task'},
                 'summary': issuetype,
                 'description' : body,
                 #'reporter' : {'name': 'desdm-wufoo'},
             }
             new_jira_issue = JIRA_API.create_issue(fields=issue)
+            assignment_success = False
+            try:
+                assignment_success = JIRA_API.assign_issue(new_jira_issue, envvars.JIRA_DEFAULT_ASSIGNEE)
+            except:
+                pass
+            if not assignment_success:
+                logger.error('Unable to assign to Jira user: {}'.format(envvars.JIRA_DEFAULT_ASSIGNEE))
             data = {
                 'username': username,
                 'firstname': firstname,
