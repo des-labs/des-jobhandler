@@ -1096,6 +1096,12 @@ class JobsDb:
     def get_notifications(self, message, username, roles):
         error_msg = ''
         messages = []
+
+        # Validate message option
+        if not isinstance(message, str) or message not in ['all', 'new']:
+            error_msg = 'message must be string "all" or "new"'
+            return messages, error_msg
+        
         self.open_db_connection()
         try:
             # Deduplicate input roles list and ensure default is included
@@ -1107,16 +1113,30 @@ class JobsDb:
                     roles_sql = '{},"{}"'.format(roles_sql, role_name)
             roles = roles_dedup
             roles_sql = '{})'.format(roles_sql)
+
+            # If the requester is an admin, provide notifications for all roles
+            sql_query_admin = '''
+                SELECT t1.id, t1.date, t1.title, t1.body
+                FROM `message` t1
+                INNER JOIN `message_role` t2
+                ON t1.id = t2.message_id
+            '''
+            # Get message IDs visible to each of the user's roles
+            sql_query_other = '''
+                SELECT t1.id, t1.date, t1.title, t1.body
+                FROM `message` t1
+                INNER JOIN `message_role` t2
+                ON t2.role_name IN {} AND t1.id = t2.message_id
+            '''.format(roles_sql)
+
+            if 'admin' in roles:
+                sql_query = sql_query_admin
+            else:
+                sql_query = sql_query_other
+            self.cur.execute(sql_query)
+
             messages_without_roles = []
             if message == 'all':
-                # Get message IDs visible to each of the user's roles
-                sql_query = '''
-                    SELECT t1.id, t1.date, t1.title, t1.body
-                    FROM `message` t1
-                    INNER JOIN `message_role` t2
-                    ON t2.role_name IN {} AND t1.id = t2.message_id
-                '''.format(roles_sql)
-                self.cur.execute(sql_query)
                 for (id, date, title, body,) in self.cur:
                     new_message = {
                         'id': id,
@@ -1140,14 +1160,6 @@ class JobsDb:
                         msg['roles'].append(role_name)
                     messages.append(msg)
             elif message == 'new':
-                # Get message IDs visible to each of the user's roles
-                sql_query = '''
-                    SELECT t1.id, t1.date, t1.title, t1.body
-                    FROM `message` t1
-                    INNER JOIN `message_role` t2
-                    ON t2.role_name IN {} AND t1.id = t2.message_id
-                '''.format(roles_sql)
-                self.cur.execute(sql_query)
                 all_messages = []
                 for (id, date, title, body,) in self.cur:
                     all_messages.append({
