@@ -247,7 +247,7 @@ class BaseHandler(tornado.web.RequestHandler):
         value = default
         try:
             # If the request encodes arguments in JSON, parse the body accordingly
-            if self.request.headers['Content-Type'] == 'application/json':
+            if 'Content-Type' in self.request.headers and self.request.headers['Content-Type'] in ['application/json', 'application/javascript']:
                 data = tornado.escape.json_decode(self.request.body)
                 if default == None:
                     # The argument is required and thus this will raise an exception if absent
@@ -1791,6 +1791,127 @@ class ListUsersHandler(BaseHandler):
         self.write(response)
 
 
+@authenticated
+@allowed_roles(ALLOWED_ROLE_LIST)
+class TablesListAllHandler(BaseHandler):
+    def post(self):
+        response = {
+            "status": STATUS_OK,
+            "msg": "",
+            "tables": {}
+        }
+        username = self.get_username_parameter()
+        db = self._token_decoded["db"]
+        password = JOBSDB.get_password(username)
+        query = """
+        SELECT t.table_name, a.num_rows AS NROWS
+        FROM DES_ADMIN.CACHE_TABLES t, all_tables a
+        WHERE a.owner || '.' || a.table_name = t.table_name
+        UNION
+        SELECT t.table_name, a.num_rows AS NROWS
+        FROM DES_ADMIN.CACHE_TABLES t, all_tables a
+        WHERE a.table_name = t.table_name AND a.owner = 'DES_ADMIN'
+        ORDER BY table_name;
+        """
+        try:
+            connection = ea.connect(db, user=username, passwd=password)
+            cursor = connection.cursor()
+            df = connection.query_to_pandas(query)
+            # Limit results to 1000 rows. Should never be necessary.
+            df = df[0:1000]
+            response['tables'] = json.loads(df.to_json(orient='records'))
+        except Exception as e:
+            response['status'] = STATUS_ERROR
+            response['msg'] = str(e).strip()
+        cursor.close()
+        connection.close()
+        self.write(response)
+
+
+@authenticated
+@allowed_roles(ALLOWED_ROLE_LIST)
+class TablesDescribeTableHandler(BaseHandler):
+    def post(self):
+        response = {
+            "status": STATUS_OK,
+            "msg": "",
+            "schema": {}
+        }
+        username = self.get_username_parameter()
+        db = self._token_decoded["db"]
+        password = JOBSDB.get_password(username)
+        # Get table name
+        table = self.getarg('table').upper()
+        # If there is a period in the table name, set owner name from this
+        # and ignore any owner parameter in the request
+        if '.' in table:
+            owner = table.split('.')[0]
+            table = table.split('.')[1]
+        else:
+            owner = self.getarg('owner', '').upper()
+            if owner == '':
+                owner = username.upper()
+            elif owner == "NOBODY":
+                owner = "DES_ADMIN"
+        query = """
+        select atc.column_name, atc.data_type,
+        case atc.data_type
+        when 'NUMBER' then '(' || atc.data_precision || ',' || atc.data_scale || ')'
+        when 'VARCHAR2' then atc.CHAR_LENGTH || ' characters'
+        else atc.data_length || ''  end as DATA_FORMAT,
+        acc.comments
+        from all_tab_cols atc , all_col_comments acc
+        where atc.owner = '{owner}' and atc.table_name = '{table}'
+        and acc.owner = '{owner}' and acc.table_name = '{table}'
+        and acc.column_name = atc.column_name
+        order by atc.column_name
+        """.format(owner=owner, table=table)
+        try:
+            connection = ea.connect(db, user=username, passwd=password)
+            cursor = connection.cursor()
+            df = connection.query_to_pandas(query)
+            # Limit results to 1000 rows. Should never be necessary.
+            df = df[0:1000]
+            response['schema'] = json.loads(df.to_json(orient='records'))
+        except Exception as e:
+            response['status'] = STATUS_ERROR
+            response['msg'] = str(e).strip()
+        cursor.close()
+        connection.close()
+        self.write(response)
+
+@authenticated
+@allowed_roles(ALLOWED_ROLE_LIST)
+class TablesListMineHandler(BaseHandler):
+    def post(self):
+        response = {
+            "status": STATUS_OK,
+            "msg": "",
+            "tables": {}
+        }
+        username = self.get_username_parameter()
+        db = self._token_decoded["db"]
+        password = JOBSDB.get_password(username)
+        query = """
+        SELECT t.table_name, s.bytes/1024/1024/1024 SIZE_GBYTES, t.num_rows NROWS
+        FROM user_segments s, user_tables t
+        WHERE s.segment_name = t.table_name ORDER BY t.table_name
+        """
+        try:
+            connection = ea.connect(db, user=username, passwd=password)
+            cursor = connection.cursor()
+            df = connection.query_to_pandas(query)
+            # Limit results to 1000 rows. Should never be necessary.
+            df = df[0:1000]
+            response['tables'] = json.loads(df.to_json(orient='records'))
+        except Exception as e:
+            response['status'] = STATUS_ERROR
+            response['msg'] = str(e).strip()
+        cursor.close()
+        connection.close()
+        self.write(response)
+
+
 def make_app(basePath=''):
     settings = {"debug": True}
     return tornado.web.Application(
@@ -1839,6 +1960,9 @@ def make_app(basePath=''):
             (r"{}/dev/db/wipe?".format(basePath), DbWipe),
             (r"{}/tiles/info/coords?".format(basePath), GetTileLinks),
             (r"{}/tiles/info/name?".format(basePath), GetTileLinks),
+            (r"{}/tables/list/all?".format(basePath), TablesListAllHandler),
+            (r"{}/tables/list/mine?".format(basePath), TablesListMineHandler),
+            (r"{}/tables/describe?".format(basePath), TablesDescribeTableHandler),
         ],
         **settings
     )
