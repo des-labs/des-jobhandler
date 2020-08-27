@@ -1817,8 +1817,6 @@ class TablesListAllHandler(BaseHandler):
             connection = ea.connect(db, user=username, passwd=password)
             cursor = connection.cursor()
             df = connection.query_to_pandas(query)
-            # Limit results to 1000 rows. Should never be necessary.
-            df = df[0:1000]
             response['tables'] = json.loads(df.to_json(orient='records'))
         except Exception as e:
             response['status'] = STATUS_ERROR
@@ -1870,8 +1868,6 @@ class TablesDescribeTableHandler(BaseHandler):
             connection = ea.connect(db, user=username, passwd=password)
             cursor = connection.cursor()
             df = connection.query_to_pandas(query)
-            # Limit results to 1000 rows. Should never be necessary.
-            df = df[0:1000]
             response['schema'] = json.loads(df.to_json(orient='records'))
         except Exception as e:
             response['status'] = STATUS_ERROR
