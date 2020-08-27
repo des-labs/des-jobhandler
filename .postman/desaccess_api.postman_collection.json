@@ -336,7 +336,7 @@
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "{\n    \"title\": \"A message for everyone\",\n    \"body\": \"This is the a message for everyone\",\n    \"roles\": [\"default\"]\n}",
+					"raw": "{\n    \"title\": \"Introducing DESaccess notifications\",\n    \"body\": \"Look for the new notifications icon to read about the latest news about the DESaccess alpha release. You may discover new features or how we've updated the software based on your feedback.\",\n    \"roles\": [\"default\"]\n}",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -596,6 +596,125 @@
 			"response": []
 		},
 		{
+			"name": "tables/list/all",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "ca4560db-c6bb-4089-9f4c-976a839c5891",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \n}",
+					"options": {
+						"raw": {
+							"language": "javascript"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{api_base_url}}/tables/list/all",
+					"host": [
+						"{{api_base_url}}"
+					],
+					"path": [
+						"tables",
+						"list",
+						"all"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "tables/list/mine",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "17d4bc93-dcf5-4e15-a154-1c65fc34b661",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \n}",
+					"options": {
+						"raw": {
+							"language": "javascript"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{api_base_url}}/tables/list/mine",
+					"host": [
+						"{{api_base_url}}"
+					],
+					"path": [
+						"tables",
+						"list",
+						"mine"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "tables/describe",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "051885ed-75fa-4117-84d8-65b1a78d8882",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"table\": \"APASS_DR7\",\n    \"owner\": \"nobody\"\n}",
+					"options": {
+						"raw": {
+							"language": "javascript"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{api_base_url}}/tables/describe",
+					"host": [
+						"{{api_base_url}}"
+					],
+					"path": [
+						"tables",
+						"describe"
+					]
+				}
+			},
+			"response": []
+		},
+		{
 			"name": "jlab/delete",
 			"event": [
 				{
@@ -668,6 +787,169 @@
 					"path": [
 						"jlab",
 						"status"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "jlab/prune",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "36715cf6-8fe5-480b-93db-e619a2809b83",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"username\": \"all\"\n}",
+					"options": {
+						"raw": {
+							"language": "javascript"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{api_base_url}}/jlab/status",
+					"host": [
+						"{{api_base_url}}"
+					],
+					"path": [
+						"jlab",
+						"status"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "user/register",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "a9380859-1cb5-46fa-bed5-845e36cd5994",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"username\": \"\",\n    \"password\": \"\",\n    \"firstname\": \"\",\n    \"lastname\": \"\",\n    \"email\": \"\"\n}",
+					"options": {
+						"raw": {
+							"language": "javascript"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{api_base_url}}/user/register",
+					"host": [
+						"{{api_base_url}}"
+					],
+					"path": [
+						"user",
+						"register"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "user/reset/request",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "ffe13ff8-9484-482d-b838-38ffdbb0efa8",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"username\": \"\"\n}",
+					"options": {
+						"raw": {
+							"language": "javascript"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{api_base_url}}/user/reset/request",
+					"host": [
+						"{{api_base_url}}"
+					],
+					"path": [
+						"user",
+						"reset",
+						"request"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "user/delete",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "2e2d0a07-6666-4881-b81d-f8c26bb1b9c9",
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "DELETE",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"username\": \"\"\n}",
+					"options": {
+						"raw": {
+							"language": "javascript"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{api_base_url}}/user/delete",
+					"host": [
+						"{{api_base_url}}"
+					],
+					"path": [
+						"user",
+						"delete"
 					]
 				}
 			},
