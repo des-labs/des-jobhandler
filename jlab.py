@@ -22,7 +22,7 @@ apps_v1_api = client.AppsV1Api()
 networking_v1_beta1_api = client.NetworkingV1beta1Api()
 namespace = jobutils.get_namespace()
 
-def create_deployment(apps_v1_api, username, token):
+def create_deployment(apps_v1_api, username, token, gpu):
     name = 'jlab-{}'.format(username)
     try:
         init_container = client.V1Container(
@@ -114,7 +114,8 @@ def create_deployment(apps_v1_api, username, token):
                     volumes=[
                         volume_config,
                         volume_persistent
-                    ]
+                    ],
+                    node_selector = {'gpu': gpu}
                 )
             )
         # Spec
@@ -339,11 +340,11 @@ def delete(username):
         logger.error(error_msg)
     return error_msg
     
-def deploy(username, base_path, token):
+def deploy(username, base_path, token, gpu):
     error_msg = ''
     try:
         create_config_map(api_v1, username, base_path, token)
-        create_deployment(apps_v1_api, username, token)
+        create_deployment(apps_v1_api, username, token, gpu)
         create_service(api_v1, username)
         create_ingress(networking_v1_beta1_api, username)
     except Exception as e:
@@ -351,12 +352,12 @@ def deploy(username, base_path, token):
         logger.error(error_msg)
     return error_msg
 
-def create(username, base_path, token):
+def create(username, base_path, token, gpu):
     logger.info('Deleting existing Kubernetes resources...')
     error_msg = delete(username)
     if error_msg == '':
         logger.info('Deploying new Kubernetes resources...')
-        error_msg = deploy(username, base_path, token)
+        error_msg = deploy(username, base_path, token, gpu)
     return error_msg
 
 def status(username):

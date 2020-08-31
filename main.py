@@ -1108,7 +1108,12 @@ class JupyterLabCreateHandler(BaseHandler):
             response['token'] = str(uuid.uuid4()).replace("-", "")
             base_path = '/jlab/{}'.format(username)
             response['url'] = '{}{}?token={}'.format(envvars.FRONTEND_BASE_URL, base_path, response['token'])
-            error_msg = jlab.create(username, base_path, response['token'])
+            if any(role in self._token_decoded['roles'] for role in ['admin', 'gpu']):
+                gpu = self.getarg('gpu', 'false')
+            else:
+                gpu = 'false'
+
+            error_msg = jlab.create(username, base_path, response['token'], gpu)
             if error_msg != '':
                 response['status'] = STATUS_ERROR
                 response['msg'] = error_msg
