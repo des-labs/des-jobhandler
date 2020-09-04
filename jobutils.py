@@ -70,7 +70,7 @@ class JobsDb:
         self.database = mysql_database
         self.cur = None
         self.cnx = None
-        self.db_schema_version = 13
+        self.db_schema_version = 14
         self.table_names = [
             'job',
             'query',

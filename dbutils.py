@@ -520,4 +520,61 @@ class dbConfig(object):
         dbh.close()
         return status, msg
 
+    def refresh_table_cache(self):
+        status = STATUS_OK
+        msg = ''
+        try:
+            if envvars.DESACCESS_INTERFACE == 'public':
+                refresh_tables_sql = "select distinct synonym_name as table_name from all_synonyms where table_owner = 'DES_ADMIN'"
+            else:
+                refresh_tables_sql = """
+                insert into DES_ADMIN.CACHE_TABLES (TABLE_NAME)
+                select distinct t1.owner || '.' || t1.table_name as table_name
+                from all_tables t1,dba_users t2
+                where upper(t1.owner)=upper(t2.username)
+                and t1.owner not in
+                ('XDB','SYS', 'EXFSYS' ,'MDSYS','WMSYS','ORDSYS','ORDDATA','SYSTEM',
+                'APEX_040200','CTXSYS','OLAPSYS','LBACSYS', 'DVSYS', 'DRIPUBLICADM', 'GSMADMIN_INTERNAL',
+                'DBSNMP','DRIPUBLICCATALOG','APPQOSSYS','OJVMSYS','OUTLN','AUDSYS','DBSFWUSER')
+                union
+                select distinct synonym_name as table_name from all_synonyms where table_owner = 'DES_ADMIN'
+                union
+                select distinct v1.owner || '.' || v1.view_name as table_name
+                from all_views v1,dba_users v2
+                where upper(v1.owner)=upper(v2.username)
+                and v1.owner not in
+                ('XDB','SYS', 'EXFSYS' ,'MDSYS','WMSYS','ORDSYS','ORDDATA','SYSTEM',
+                'APEX_040200','CTXSYS','OLAPSYS','LBACSYS', 'DVSYS', 'DRIPUBLICADM', 'GSMADMIN_INTERNAL',
+                'DBSNMP','DRIPUBLICCATALOG','APPQOSSYS','OJVMSYS','OUTLN','AUDSYS','DBSFWUSER')
+                order by table_name
+                """
+            refresh_columns_sql = """
+            insert into DES_ADMIN.CACHE_COLUMNS
+            select distinct(t.column_name) as column_name
+            from
+            all_tab_columns t , DES_ADMIN.CACHE_TABLES t2
+            where t.table_name=t2.table_name
+            """
+            for db in self.databases:
+                # Connect to the relevant database
+                kwargs = {'host': self.host, 'port': self.port, 'service_name': db}
+                dsn = cx_Oracle.makedsn(**kwargs)
+                dbh = cx_Oracle.connect(self.admin_user_manager, self.admin_pwd_manager, dsn=dsn)
+                cursor = dbh.cursor()
 
+                # Empty cache tables
+                clean_cache_tables = 'DELETE from DES_ADMIN.CACHE_TABLES'
+                clean_cache_cols = 'DELETE from DES_ADMIN.CACHE_COLUMNS'
+                cursor.execute(clean_cache_tables)
+                cursor.execute(clean_cache_cols)
+
+                # Update the cache tables with table and column info
+                cursor.execute(refresh_tables_sql)
+                cursor.execute(refresh_columns_sql)
+                cursor.close()
+                dbh.close()
+        except Exception as e:
+            status = STATUS_ERROR
+            msg = str(e).strip()
+            logger.error(msg)
+        return status, msg

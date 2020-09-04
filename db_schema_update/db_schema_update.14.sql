@@ -1,0 +1,1 @@
+INSERT INTO `cron` (`name`, `period`, `enabled`) VALUES ('refresh_database_table_cache', 1440, 1)

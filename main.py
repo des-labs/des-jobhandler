@@ -113,6 +113,42 @@ def analytics(cls_handler):
     cls_handler._execute = wrap_execute(cls_handler._execute)
     return cls_handler
 
+
+def webcron_jupyter_prune(current_time=None):
+    status = STATUS_OK
+    msg = ''
+    try:
+        if not current_time:
+            current_time = datetime.datetime.utcnow()
+        # Get list of users in Jupyter role
+        jupyter_users = JOBSDB.get_role_user_list('jupyter')
+        pruned, msg = jlab.prune(jupyter_users, current_time)
+        logger.info('Pruned Jupyter servers for users: {}'.format(pruned))
+    except Exception as e:
+        status = STATUS_ERROR
+        msg = str(e).strip()
+        logger.error(msg)
+    return status, msg
+
+
+def webcron_refresh_database_table_cache():
+    status = STATUS_OK
+    msg = ''
+    # Refresh the cache of DES database tables and their schemas
+    try:
+        status, msg = USER_DB_MANAGER.refresh_table_cache()
+        if status != STATUS_OK:
+            msg = 'webcron refresh_database_table_cache error: {}'.format(msg)
+            logger.error(msg)
+        else:
+            logger.info('Refreshed the cache of DES database tables and their schemas.')
+    except Exception as e:
+        status = STATUS_ERROR
+        msg = str(e).strip()
+        logger.error(msg)
+    return status, msg
+
+
 # The @webcron decorator executes cron jobs at intervals equal to or greater
 # than the cron job's frequency spec. Cron jobs are manually registered in the
 # JobHandler database like so
@@ -134,11 +170,10 @@ def webcron(cls_handler):
                     if not cronjob['last_run'] or (current_time - cronjob['last_run']).seconds/60 >= cronjob['period']:
                         # Time to run the cron job again
                         logger.info('Running cron job "{}" at "{}".'.format(cronjob['name'], current_time))
-                        if cronjob['name'] == 'jupyter_prune':
-                            # Get list of users in Jupyter role
-                            jupyter_users = JOBSDB.get_role_user_list('jupyter')
-                            pruned, error_msg = jlab.prune(jupyter_users, current_time)
-                            logger.info('Pruned Jupyter servers for users: {}'.format(pruned))
+                        if cronjob == 'jupyter_prune':
+                            webcron_jupyter_prune(current_time)
+                        elif cronjob == 'refresh_database_table_cache':
+                            webcron_refresh_database_table_cache()
                         # elif cronjob['name'] == 'another_task':
                             # et cetera ...
                         # Update the last_run time with the current time
@@ -154,6 +189,7 @@ def webcron(cls_handler):
         return _execute
     cls_handler._execute = wrap_execute(cls_handler._execute)
     return cls_handler
+
 
 # The @allowed_roles decorator must be accompanied by a preceding @authenticated decorator, allowing
 # it to restrict access to the decorated function to authenticated users with specified roles.
@@ -274,6 +310,30 @@ class BaseHandler(tornado.web.RequestHandler):
             self.finish()
             raise e
         return value
+
+
+@authenticated
+@allowed_roles(['admin'])
+class TriggerWebcronHandler(BaseHandler):
+    def post(self):
+        response = {
+            'status': STATUS_OK,
+            'message': ''
+        }
+        try:
+            cronjob = self.getarg('cronjob')
+            if cronjob == 'jupyter_prune':
+                webcron_jupyter_prune()
+            elif cronjob == 'refresh_database_table_cache':
+                webcron_refresh_database_table_cache()
+            else:
+                response['msg'] = 'Specified cronjob is not valid.'
+        except Exception as e:
+            response['msg'] = str(e).strip()
+            logger.error(response['msg'])
+            response['status'] = STATUS_ERROR
+        self.write(response)
+
 
 @authenticated
 @allowed_roles(ALLOWED_ROLE_LIST)
@@ -1856,6 +1916,14 @@ class TablesDescribeTableHandler(BaseHandler):
                 owner = username.upper()
             elif owner == "NOBODY":
                 owner = "DES_ADMIN"
+
+        # Sanitize inputs
+        if not re.fullmatch(r'[A-Z0-9_]+', table) or not re.fullmatch(r'[A-Z0-9_]+', owner):
+            response['status'] = STATUS_ERROR
+            response['msg'] = 'Invalid table or owner name.'
+            self.write(response)
+            return
+
         query = """
         select atc.column_name, atc.data_type,
         case atc.data_type
@@ -1959,6 +2027,7 @@ def make_app(basePath=''):
             (r"{}/data/dr1/(.*)?".format(basePath), TileDataHandler, {'path': '/tiles/dr1'}),
             (r"{}/dev/debug/trigger?".format(basePath), DebugTrigger),
             (r"{}/dev/db/wipe?".format(basePath), DbWipe),
+            (r"{}/dev/webcron?".format(basePath), TriggerWebcronHandler),
             (r"{}/tiles/info/coords?".format(basePath), GetTileLinks),
             (r"{}/tiles/info/name?".format(basePath), GetTileLinks),
             (r"{}/tables/list/all?".format(basePath), TablesListAllHandler),
