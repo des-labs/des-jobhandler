@@ -115,7 +115,7 @@ def create_deployment(apps_v1_api, username, token, gpu):
                         volume_config,
                         volume_persistent
                     ],
-                    node_selector = {'gpu': gpu}
+                    node_selector = {'gpu': '{}'.format(gpu).lower()}
                 )
             )
         # Spec
