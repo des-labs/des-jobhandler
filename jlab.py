@@ -39,9 +39,18 @@ def create_deployment(apps_v1_api, username, token, gpu):
                 )
             ]
         )
+        if gpu == True:
+            limits = {
+                'nvidia.com/gpu': 1
+            }
+        else:
+            limits = None
         container = client.V1Container(
             name=name,
             image=envvars.DOCKER_IMAGE_JLAB_SERVER,
+            resources=client.V1ResourceRequirements(
+                limits=limits
+            ),
             image_pull_policy="Always",
             ports=[client.V1ContainerPort(container_port=8888)],
             env=[
