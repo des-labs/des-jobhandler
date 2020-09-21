@@ -16,6 +16,8 @@ import email_utils
 import shutil
 import jira.client
 import dbutils
+from io import StringIO
+from pandas import read_csv
 
 STATUS_OK = 'ok'
 STATUS_ERROR = 'error'
@@ -444,6 +446,27 @@ class JobsDb:
             error_msg = 'Error updating job record'
         self.close_db_connection()
         return error_msg
+
+    def count_pending_jobs(self, username):
+        num_pending_jobs = 0
+        self.open_db_connection()
+        try:
+            self.cur.execute(
+                (
+                    "SELECT `status` FROM `job` where `user` = %s"
+                ),
+                (
+                    username,
+                )
+            )
+            for (status,) in self.cur:
+                if status not in ['success', 'failure', 'unknown']:
+                    num_pending_jobs += 1
+        except Exception as e:
+            logger.error(str(e).strip())
+        self.close_db_connection()
+        return num_pending_jobs
+
 
     def update_job_complete(self, apitoken, response):
         error_msg = None
@@ -1711,6 +1734,30 @@ def submit_job(params):
 
         # Complete the job configuration by defining the `spec` node
         conf["configjob"]["spec"] = spec
+
+        # Count the number of positions in the requested job.
+        logger.info(spec['positions'])
+        cutout_positions = read_csv(StringIO(spec['positions']), dtype={
+            'RA': float,
+            'DEC': float,
+            'COADD_OBJECT_ID': int,
+            'XSIZE': float,
+            'YSIZE': float
+        })
+        logger.info(cutout_positions)
+        if params['limits']['cutout']['cutouts_per_job'] > 0 and len(cutout_positions) > params['limits']['cutout']['cutouts_per_job']:
+            status = STATUS_ERROR
+            msg = 'Number of requested cutouts ({}) exceeds the maximum allowed per job request ({}).'.format(len(cutout_positions), params['limits']['cutout']['cutouts_per_job'])
+            return status,msg,job_id
+
+        # Count the number of jobs currently pending for the submitting user.
+        if params['limits']['cutout']['concurrent_jobs'] > 0:
+            num_pending_jobs = JOBSDB.count_pending_jobs(username)
+            logger.info('num_pending_jobs: {}'.format(num_pending_jobs))
+            if num_pending_jobs > params['limits']['cutout']['concurrent_jobs']:
+                status = STATUS_ERROR
+                msg = 'Number of requested jobs ({}) exceeds the maximum allowed concurrent jobs ({}).'.format(num_pending_jobs, params['limits']['cutout']['concurrent_jobs'])
+                return status,msg,job_id
 
     else:
         # Invalid job type

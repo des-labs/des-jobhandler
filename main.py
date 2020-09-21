@@ -596,6 +596,20 @@ class JobHandler(BaseHandler):
         )
         logger.info(json.dumps(params, indent=2))
 
+        # Enforce job request limits
+        if any(role in self._token_decoded["roles"] for role in ['admin', 'unlimited']):
+            LIMIT_CUTOUTS_CUTOUTS_PER_JOB = 0
+            LIMIT_CUTOUTS_CONCURRENT_JOBS = 0
+        else:
+            LIMIT_CUTOUTS_CUTOUTS_PER_JOB = envvars.LIMIT_CUTOUTS_CUTOUTS_PER_JOB
+            LIMIT_CUTOUTS_CONCURRENT_JOBS = envvars.LIMIT_CUTOUTS_CONCURRENT_JOBS
+        params['limits'] = {
+            'cutout': {
+                'concurrent_jobs': LIMIT_CUTOUTS_CONCURRENT_JOBS,
+                'cutouts_per_job': LIMIT_CUTOUTS_CUTOUTS_PER_JOB,
+            },
+        }
+
         job_id = ''
         try:
             status, message, job_id = jobutils.submit_job(params)
