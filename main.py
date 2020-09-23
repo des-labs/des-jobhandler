@@ -263,16 +263,36 @@ class BaseHandler(tornado.web.RequestHandler):
         self.finish()
     
     def get_username_parameter(self):
+        response = {
+            'status': STATUS_OK,
+            'message': ''
+        }
         username = None
         try:
-            # If username is not specified, assume it is the authenticated user
-            username = self._token_decoded["username"]
-            input_username = self.getarg('username', '')
-            # Allow admins to specify any username
-            if 'admin' in self._token_decoded['roles'] and input_username != '':
+            # Authenticated username from auth token:
+            authn_username = self._token_decoded["username"].lower()
+            # Username provided as request parameter:
+            input_username = self.getarg('username', '').lower()
+            # If no username parameter is provided, default to the authenticated username
+            if input_username == '' or input_username == authn_username:
+                username = authn_username
+            # If the username parameter is not the authenticated user and the authenticated user is an admin, use the parameter value
+            elif 'admin' in self._token_decoded['roles']:
                 username = input_username
-        except:
-            pass
+            # If the username parameter is not the authenticated user and the authenticated user is not an admin, fail
+            else:
+                username = None
+                raise Exception('If username is provided it must match the authenticated user.')
+        except Exception as e:
+            response['status'] = STATUS_ERROR
+            response['message'] = str(e).strip()
+            # 400 Bad Request: The server could not understand the request due to invalid syntax.
+            # The assumption is that if a function uses `getarg()` to get a required parameter,
+            # then the request must be a bad request if this exception occurs.
+            self.set_status(400)
+            self.write(json.dumps(response))
+            self.finish()
+            raise e
         return username
 
     def getarg(self, arg, default=None):
@@ -378,24 +398,22 @@ class ProfileUpdateHandler(BaseHandler):
     def post(self):
         response = {}
         response["new_token"] = self._token_encoded
-        body = {k: self.get_argument(k) for k in self.request.arguments}
         # Enforce lowercase usernames
-        username = body['username'].lower()
-        first = body['firstname']
-        last = body['lastname']
-        email = body['email']
-        # TODO: Allow users with "admin" role to update any user profile
-        if username == self._token_decoded["username"]:
+        try:
+            username = self.get_username_parameter()
+            first = self.getarg('firstname')
+            last = self.getarg('lastname')
+            email = self.getarg('email')
+        except:
+            return
+        try:
             status, msg = USER_DB_MANAGER.update_info(username, first, last, email)
             response['status'] = status
             response['message'] = msg
-        else:
+        except Exception as e:
+            response['message'] = str(e).strip()
             response['status'] = STATUS_ERROR
-            response['message'] = 'User info to update must belong to the authenticated user.'
-        self.flush()
         self.write(response)
-        self.finish()
-        return
 
 
 @authenticated
@@ -405,44 +423,34 @@ class ProfileUpdatePasswordHandler(BaseHandler):
     # API endpoint: /profile/update/password
     def post(self):
         response = {}
-        body = {k: self.get_argument(k) for k in self.request.arguments}
-        username = body['username'].lower()
-        oldpwd = body['oldpwd']
-        newpwd = body['newpwd']
-        database = body['db']
-        # TODO: Allow users with "admin" role to update any user profile
-        if username == self._token_decoded["username"]:
+        try:
+            username = self.get_username_parameter()
+            oldpwd = self.getarg('oldpwd')
+            newpwd = self.getarg('newpwd')
+            database = self.getarg('db', self._token_decoded["db"])
+        except:
+            return
+        try:
             status, message = USER_DB_MANAGER.change_credentials(username, oldpwd, newpwd, database)
             response['status'] = status
             response['message'] = message
-        else:
+        except Exception as e:
+            response['message'] = str(e).strip()
             response['status'] = STATUS_ERROR
-            response['message'] = 'User info to update must belong to the authenticated user.'
-        self.flush()
         self.write(response)
-        self.finish()
-        return
 
 
 class LoginHandler(BaseHandler):
     # API endpoint: /login
     def post(self):
-        # body = {k: self.get_argument(k) for k in self.request.arguments}
-        # username = '' if 'username' not in body else body["username"]
-        # email = '' if 'email' not in body else body["email"]
-        # passwd = '' if 'password' not in body else body["password"]
-        # db = '' if 'database' not in body else body["database"]
-
         response = {
             'status': STATUS_OK,
             'message': ''
         }
-        # Required parameters
-        passwd = self.getarg('password')
-        db = self.getarg('database')
-        # Optional parameters
         username = self.getarg('username', '')
         email = self.getarg('email', '')
+        passwd = self.getarg('password')
+        db = self.getarg('database')
         # At least one identifier must be provided
         if username == '' and email == '':
             response["status"] = STATUS_ERROR
@@ -524,7 +532,6 @@ class LogoutHandler(BaseHandler):
 @allowed_roles(ALLOWED_ROLE_LIST)
 @analytics
 class JobHandler(BaseHandler):
-    # API endpoint: /job/submit
     def put(self):
         '''
         Required parameters:
@@ -563,7 +570,14 @@ class JobHandler(BaseHandler):
             params["db"] = self._token_decoded["db"]
         
         # REQUIRED PARAMETER FOR ALL JOBS
-        params['job'] = self.getarg('job')
+
+        job_type = self.request.path.split('/')[-1]
+        if job_type in ['query', 'cutout']:
+            params['job'] = job_type
+        else:
+            params['job'] = self.getarg('job')
+
+        params['return_list'] = True
 
         params = add_request_params_if_supplied(params, 
             [ 
@@ -591,7 +605,7 @@ class JobHandler(BaseHandler):
                 'rgb_minimum',
                 'rgb_stretch',
                 'rgb_asinh',
-                'return_list',
+                # 'return_list',
             ]
         )
         logger.info(json.dumps(params, indent=2))
@@ -2002,6 +2016,8 @@ def make_app(basePath=''):
             (r"{}/job/status?".format(basePath), JobStatusHandler),
             (r"{}/job/delete?".format(basePath), JobHandler),
             (r"{}/job/submit?".format(basePath), JobHandler),
+            (r"{}/job/cutout?".format(basePath), JobHandler),
+            (r"{}/job/query?".format(basePath), JobHandler),
             (r"{}/job/complete?".format(basePath), JobComplete),
             (r"{}/job/start?".format(basePath), JobStart),
             (r"{}/job/rename?".format(basePath), JobRename),
