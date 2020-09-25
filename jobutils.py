@@ -259,76 +259,44 @@ class JobsDb:
         job_info_list = []
         try:
             if job_id == "all":
-                self.cur.execute(
-                    (
-                        "SELECT j.type, j.name, j.uuid, j.status, j.msg, j.time_start, j.time_complete, j.time_submitted, q.data, q.query, q.files, c.file_list, c.positions "
-                        "FROM `job` j "
-                        "LEFT JOIN `query` q "
-                        "ON j.id = q.job_id "
-                        "LEFT JOIN `cutout` c "
-                        "ON j.id = c.job_id "
-                        "WHERE j.user = %s AND j.deleted = 0 ORDER BY j.time_start DESC "
-                    ),
-                    (
-                        username,
-                    )
-                )
-                job_info = None
-                for (type, name, uuid, status, msg, time_start, time_complete, time_submitted, data, query, files, file_list, positions) in self.cur:
-                    job_info = {}
-                    job_info["job_type"] = type
-                    job_info["job_name"] = name
-                    job_info["job_id"] = uuid
-                    job_info["job_status"] = status
-                    job_info["job_status_message"] = msg
-                    job_info["job_time_start"] = time_start
-                    job_info["job_time_complete"] = time_complete
-                    job_info["job_time_submitted"] = time_submitted
-                    job_info["data"] = {} if data is None else json.loads(data)
-                    job_info["query"] = query
-                    job_info["query_files"] = files
-                    job_info["cutout_files"] = file_list
-                    job_info["cutout_positions"] = positions
-                    job_info_list.append(job_info)
+                uuid_criterion_sql = ''
+                sql_values = (username,)
             else:
-                self.cur.execute(
-                    (
-                        "SELECT j.type, j.name, j.uuid, j.status, j.msg, j.time_start, j.time_complete, j.time_submitted, q.data, q.query, q.files, c.file_list, c.positions "
-                        "FROM `job` j "
-                        "LEFT JOIN `query` q "
-                        "ON j.id = q.job_id "
-                        "LEFT JOIN `cutout` c "
-                        "ON j.id = c.job_id "
-                        "WHERE j.user = %s AND j.uuid = %s AND j.deleted = 0 ORDER BY j.time_start DESC LIMIT 1"
-                    ),
-                    (
-                        username,
-                        job_id
-                    )
-                )
-                job_info = None
-                for (type, name, uuid, status, msg, time_start, time_complete, time_submitted, data, query, files, file_list, positions) in self.cur:
-                    job_info = {}
-                    job_info["job_type"] = type
-                    job_info["job_name"] = name
-                    job_info["job_id"] = uuid
-                    job_info["job_status"] = status
-                    job_info["job_status_message"] = msg
-                    job_info["job_time_start"] = time_start
-                    job_info["job_time_complete"] = time_complete
-                    job_info["job_time_submitted"] = time_submitted
-                    job_info["data"] = {} if data is None else json.loads(data)
-                    job_info["query"] = query
-                    job_info["query_files"] = files
-                    job_info["cutout_files"] = file_list
-                    job_info["cutout_positions"] = positions
-                    job_info_list.append(job_info)
-                if job_info == None:
-                    request_status = 'error'
-                    msg = 'Error retrieving job status for user {}, specific job_id {}'.format(username, job_id)
-                    logger.error(msg)
+                uuid_criterion_sql = ' AND j.uuid = %s '
+                sql_values = (username, job_id)
+            sql = '''
+            SELECT j.type, j.name, j.uuid, j.status, j.msg, j.time_start, j.time_complete, j.time_submitted, q.data, q.query, q.files, c.file_list, c.positions 
+            FROM `job` j 
+            LEFT JOIN `query` q 
+            ON j.id = q.job_id 
+            LEFT JOIN `cutout` c 
+            ON j.id = c.job_id 
+            WHERE j.user = %s {} AND j.deleted = 0 ORDER BY j.time_start DESC 
+            '''.format(uuid_criterion_sql)
+            self.cur.execute(sql, sql_values)
+            job_info = None
+            for (type, name, uuid, status, msg, time_start, time_complete, time_submitted, data, query, files, file_list, positions) in self.cur:
+                job_info = {}
+                job_info["job_type"] = type
+                job_info["job_name"] = name
+                job_info["job_id"] = uuid
+                job_info["job_status"] = status
+                job_info["job_status_message"] = msg
+                job_info["job_time_start"] = "" if time_start is None else time_start
+                job_info["job_time_complete"] = "" if time_complete is None else time_complete
+                job_info["job_time_submitted"] = "" if time_submitted is None else time_submitted
+                job_info["data"] = {} if data is None else json.loads(data)
+                job_info["query"] = query
+                job_info["query_files"] = [] if files is None else json.loads(files)
+                job_info["cutout_files"] = [] if file_list is None else json.loads(file_list)
+                job_info["cutout_positions"] = "" if positions is None else positions
+                job_info_list.append(job_info)
+            if job_id != "all" and not job_info_list:
+                request_status = STATUS_ERROR
+                msg = 'Error retrieving job status for user {}, specific job_id {}'.format(username, job_id)
+                logger.error(msg)
         except:
-            request_status = 'error'
+            request_status = STATUS_ERROR
             msg = 'Error retrieving job status for user {}, job_id {}'.format(username, job_id)
             logger.error(msg)
         self.close_db_connection()
