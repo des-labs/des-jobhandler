@@ -149,6 +149,26 @@ def webcron_refresh_database_table_cache():
     return status, msg
 
 
+def webcron_prune_job_files(job_ttl=envvars.DESACCESS_JOB_FILES_LIFETIME, job_warning_period=envvars.DESACCESS_JOB_FILES_WARNING_PERIOD, current_time=None):
+    status = STATUS_OK
+    msg = ''
+    # Delete job files older than the set lifetime. Send warning to users whose jobs are approaching their expiration.
+    try:
+        if not current_time:
+            current_time = datetime.datetime.utcnow()
+        status, msg = JOBSDB.prune_job_files(USER_DB_MANAGER, job_ttl, job_warning_period, current_time)
+        if status != STATUS_OK:
+            msg = 'webcron webcron_prune_job_files error: {}'.format(msg)
+            logger.error(msg)
+        else:
+            logger.info('Pruned job files.')
+    except Exception as e:
+        status = STATUS_ERROR
+        msg = str(e).strip()
+        logger.error(msg)
+    return status, msg
+
+
 # The @webcron decorator executes cron jobs at intervals equal to or greater
 # than the cron job's frequency spec. Cron jobs are manually registered in the
 # JobHandler database like so
@@ -174,6 +194,8 @@ def webcron(cls_handler):
                             webcron_jupyter_prune(current_time)
                         elif cronjob == 'refresh_database_table_cache':
                             webcron_refresh_database_table_cache()
+                        elif cronjob == 'prune_job_files':
+                            webcron_prune_job_files()
                         # elif cronjob['name'] == 'another_task':
                             # et cetera ...
                         # Update the last_run time with the current time
@@ -253,6 +275,7 @@ class TileDataHandler(tornado.web.StaticFileHandler):
 @webcron
 class BaseHandler(tornado.web.RequestHandler):
     def set_default_headers(self):
+        self.set_header("Content-Type", "application/json")
         self.set_header("Access-Control-Allow-Origin", "*")
         self.set_header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization")
         self.set_header("Access-Control-Allow-Methods",
@@ -346,6 +369,8 @@ class TriggerWebcronHandler(BaseHandler):
                 webcron_jupyter_prune()
             elif cronjob == 'refresh_database_table_cache':
                 webcron_refresh_database_table_cache()
+            elif cronjob == 'prune_job_files':
+                webcron_prune_job_files()
             else:
                 response['msg'] = 'Specified cronjob is not valid.'
         except Exception as e:
@@ -526,6 +551,29 @@ class LogoutHandler(BaseHandler):
         }
         response["message"] = "logout {}".format(self._token_decoded["username"])
         response["status"] = JOBSDB.session_logout(self._token_decoded["username"])
+        self.write(json.dumps(response))
+
+@analytics
+class JobRenewHandler(BaseHandler):
+    def get(self, token):
+        response = {
+            'status': STATUS_OK,
+            'message': '',
+            'valid': False
+        }
+        logger.info('Renewal request token: {} ({})'.format(token, self.request.path))
+        try:
+            status, msg, valid = JOBSDB.renew_job(token)
+            response["valid"] = valid
+            if status != STATUS_OK:
+                response["status"] = STATUS_ERROR
+                response["message"] = msg
+                self.write(json.dumps(response))
+                return
+        except Exception as e:
+            response["status"] = STATUS_ERROR
+            response["message"] = str(e).strip()
+            logger.error(response["status"])
         self.write(json.dumps(response))
 
 @authenticated
@@ -2021,6 +2069,7 @@ def make_app(basePath=''):
             (r"{}/job/complete?".format(basePath), JobComplete),
             (r"{}/job/start?".format(basePath), JobStart),
             (r"{}/job/rename?".format(basePath), JobRename),
+            (r"{}/job/renew/(.*)?".format(basePath), JobRenewHandler),
             (r"{}/login/?".format(basePath), LoginHandler),
             (r"{}/logout/?".format(basePath), LogoutHandler),
             (r"{}/profile/?".format(basePath), ProfileHandler),

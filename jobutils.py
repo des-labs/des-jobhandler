@@ -72,7 +72,7 @@ class JobsDb:
         self.database = mysql_database
         self.cur = None
         self.cnx = None
-        self.db_schema_version = 14
+        self.db_schema_version = 15
         self.table_names = [
             'job',
             'query',
@@ -237,7 +237,6 @@ class JobsDb:
 
         except Exception as e:
             logger.error(str(e).strip())
-
 
     def validate_apitoken(self, apitoken):
         self.open_db_connection()
@@ -434,7 +433,6 @@ class JobsDb:
             logger.error(str(e).strip())
         self.close_db_connection()
         return num_pending_jobs
-
 
     def update_job_complete(self, apitoken, response):
         error_msg = None
@@ -807,6 +805,227 @@ class JobsDb:
             logger.error(error_msg)
         self.close_db_connection()
         return [status, error_msg]
+
+    def renew_job(self, renewal_token):
+        status = STATUS_OK
+        msg = ''
+        valid = True
+        self.open_db_connection()
+        try:
+            # Validate the submitted renewal token
+            status, msg, job_table_id = JOBSDB.validate_renewal_token(renewal_token)
+            if status != STATUS_OK or not isinstance(job_table_id, int):
+                valid = False
+                self.close_db_connection()
+                return status, msg, valid
+            # Record the job renewal
+            sql = '''
+            INSERT INTO `job_renewal`
+            (job_id, renewal_date)
+            VALUES (%s, %s)
+            '''
+            self.cur.execute(sql, (
+                job_table_id,
+                datetime.datetime.utcnow(),
+                )
+            )
+            if not self.cur.lastrowid:
+                status = STATUS_ERROR
+                msg = 'Error recording job renewal for job table row id "{}" in job_renewal database table'.format(job_table_id)
+                self.close_db_connection()
+                return status, msg, valid
+            # Remove the spent renewal token from the database table
+            sql = '''
+            DELETE FROM `job_renewal_token` WHERE `renewal_token` = %s
+            '''
+            self.cur.execute(sql, (renewal_token,))
+            if self.cur.rowcount < 1:
+                status = STATUS_ERROR
+                msg = 'Error deleting spent job renewal token for job table row id "{}" from job_renewal_token database table'.format(job_table_id)
+                self.close_db_connection()
+                return status, msg, valid
+        except Exception as e:
+            status = STATUS_ERROR
+            msg = str(e).strip()
+            logger.error(msg)
+        self.close_db_connection()
+        return status, msg, valid
+
+    def validate_renewal_token(self, renewal_token):
+        status = STATUS_OK
+        msg = ''
+        job_table_id = None
+        self.open_db_connection()
+        try:
+            sql = '''
+            SELECT `job_id` from `job_renewal_token` WHERE `renewal_token` = %s LIMIT 1
+            '''
+            self.cur.execute(sql, (renewal_token,))
+            for (job_id,) in self.cur:
+                job_table_id = job_id
+            if not job_table_id:
+                msg = 'Invalid job renewal token'
+        except Exception as e:
+            status = STATUS_ERROR
+            msg = str(e).strip()
+            logger.error(msg)
+        self.close_db_connection()
+        return status, msg, job_table_id
+
+    def prune_job_files(self, USER_DB_MANAGER, job_ttl, job_warning_period, current_time):
+
+        def get_renewals_used(job_row_id):
+            renewals_used = 0
+            # Determine if the job file storage may be renewed.
+            sql = '''
+            SELECT `id` FROM `job_renewal` WHERE `job_id` = %s
+            '''
+            self.cur.execute(sql, (job_row_id,))
+            self.cur.fetchall()
+            renewals_used = self.cur.rowcount
+            return renewals_used
+        
+        status = STATUS_OK
+        msg = ''
+        logger.info('job_ttl: {}, job_warning_period: {}'.format(job_ttl, job_warning_period))
+        # Enforce a positive finite lifetime and warning period.
+        if job_ttl <= 0 or job_warning_period <= 0 or job_ttl - job_warning_period <= 0:
+            status = STATUS_ERROR
+            msg = 'Invalid job lifetime and/or warning period specified. Skipping job file pruning...'
+            return status, msg
+        self.open_db_connection()
+        try:
+            # TODO: Replace SQL query with one that compares the dates directly using MySQL instead
+            # of iterating through all non-deleted jobs and using Python to do the math
+            #
+            sql = '''
+            SELECT `id` as row_id, `uuid` as job_id, `user` as username, `type` as job_type, `name` as job_name, `time_complete` 
+            FROM `job` WHERE `deleted` = 0 AND `time_complete` > 0
+            '''
+            self.cur.execute(sql)
+            jobs = []
+            for (row_id, job_id, username, job_type, job_name, time_complete,) in self.cur:
+                if time_complete:
+                    jobs.append({
+                        'row_id': row_id, 
+                        'job_id': job_id, 
+                        'username': username, 
+                        'job_type': job_type, 
+                        'job_name': job_name, 
+                        'time_complete': time_complete
+                    })
+            for job in jobs:
+                logger.info(job)
+                job_id = job['job_id']
+                job_row_id = job['row_id']
+                job_type = job['job_type']
+                job_name = job['job_name']
+                time_complete = job['time_complete']
+                username = job['username']
+                # Determine number of job renewals used already
+                renewals_used = get_renewals_used(job_row_id)
+                # Calculate the new expiration date
+                expiration_date = time_complete + datetime.timedelta(0, job_ttl * (renewals_used + 1))
+                warning_date = expiration_date - datetime.timedelta(0, job_warning_period)
+                logger.info('Job "{}" has been renewed {} times. The expiration date is currently "{}"'.format(job_id, renewals_used, expiration_date))
+                # Calculate the duration in seconds between the job completion
+                # diff_time = (current_time - time_complete).seconds
+                #
+                # Job file storage has expired
+                #
+                if current_time > expiration_date:
+                    # Prune the job files
+                    logger.info('Deleting files from job "{}"'.format(job_id))
+                    logger.info('Deleting any existing renewal tokens...')
+                    sql = '''
+                    DELETE FROM `job_renewal_token` WHERE `job_id` = %s
+                    '''
+                    self.cur.execute(sql, (job_row_id,))
+                    logger.info('Deleting any existing renewal records...')
+                    sql = '''
+                    DELETE FROM `job_renewal` WHERE `job_id` = %s
+                    '''
+                    self.cur.execute(sql, (job_row_id,))
+                    # TODO: Reduce redundancy of this code with the API handler function in `main.py`
+                    conf = {
+                        "job_type": job_type,
+                        "namespace": get_namespace(),
+                        "job_name": job_name,
+                        "job_id": job_id,
+                        "cm_name": get_job_configmap_name(job_type, job_id, username),
+                    }
+                    # Delete the k8s Job if it is still running
+                    kubejob.delete_job(conf)
+                    # Delete the job files on disk
+                    status, msg = JOBSDB.delete_job_files(job_id, username)
+                    if status == STATUS_OK:
+                        # Mark the job deleted in the JobHandler database
+                        msg = JOBSDB.mark_job_deleted(job_id)
+                        if msg != '':
+                            status = STATUS_ERROR
+                            msg = 'Error marking job "{}" as deleted during periodic pruning.'.format(job_id)
+                            logger.error(msg)
+                            self.close_db_connection()
+                            return status, msg
+                        else:
+                            logger.info('Job "{}" files deleted in periodic pruning.'.format(job_id))
+                    else:
+                        status = STATUS_ERROR
+                        msg = 'Error deleting files for job "{}" during periodic pruning.'.format(job_id)
+                        logger.error(msg)
+                        self.close_db_connection()
+                        return status, msg
+                #
+                # Job file storage will expire within the warning time period
+                #
+                elif current_time > warning_date:
+                    # Calculate the number of remaining allowed renewals
+                    renewals_remaining = envvars.DESACCESS_JOB_FILES_MAX_RENEWALS - renewals_used
+                    # Check if a renewal token has already been generated for this job
+                    sql = '''
+                    SELECT `renewal_token` FROM `job_renewal_token` WHERE `job_id` = %s
+                    '''
+                    self.cur.execute(sql, (job_row_id,))
+                    renewal_token_exists = False
+                    for (renewal_token,) in self.cur:
+                        renewal_token_exists = True
+                    if renewals_remaining > 0 and not renewal_token_exists:
+                        # Generate a new renewal token and insert into the renewal token database table
+                        renewal_token = generate_job_id()
+                        sql = '''
+                        INSERT INTO `job_renewal_token`
+                        (job_id, renewal_token)
+                        VALUES (%s, %s)
+                        '''
+                        self.cur.execute(sql, (job_row_id, renewal_token))
+                        if not self.cur.lastrowid:
+                            status = STATUS_ERROR
+                            msg = 'Error adding new renewal token to database table "job_renewal_token" for job "{}"'.format(job_id)
+                            self.close_db_connection()
+                            return status, msg
+                        # Send warning notification email
+                        logger.info('Sending warning notification email about pruning files from job "{}"'.format(job_id))
+                        given_name, family_name, email = USER_DB_MANAGER.get_basic_info(username)
+                        try:
+                            email_utils.send_job_prune_warning(
+                                username, 
+                                [email], 
+                                job_name, 
+                                job_id, 
+                                round(job_warning_period/(24*60*60)), 
+                                round(job_ttl/(24*60*60)), 
+                                renewals_remaining, 
+                                renewal_token,
+                                expiration_date,
+                            )
+                        except:
+                            status = STATUS_ERROR
+                            msg = 'Error sending email notification of impending file purge for job "{}" during periodic pruning.'.format(job_id)
+        except Exception as e:
+            msg = str(e).strip()
+            logger.error(msg)
+        self.close_db_connection()
+        return status, msg
 
     def rename_job(self, job_id, job_name):
         error_msg = ''

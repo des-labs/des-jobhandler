@@ -7,11 +7,13 @@ import jinja2
 import os
 import envvars
 
+
 def render(tpl_path, context):
     path, filename = os.path.split(tpl_path)
     return jinja2.Environment(
         loader=jinja2.FileSystemLoader(path or './')
     ).get_template(filename).render(context)
+
 
 class SingleEmailHeader(object):
     def __init__(self, username, recipients, context, char='r', ps=None):
@@ -100,6 +102,7 @@ def help_request_notification(username, recipients, jira_issue_number, jira_issu
     header.s.quit()
     return "Email Sent to {}".format(header.recipients)
 
+
 def send_activation(firstname, lastname, username, recipients, url):
     if not isinstance(recipients, list):
         recipients = [recipients]
@@ -121,6 +124,7 @@ def send_activation(firstname, lastname, username, recipients, url):
     header.s.sendmail(header.fromemail, header.recipients, header.msg.as_string())
     header.s.quit()
     return "Email Sent to {}".format(header.recipients)
+
 
 def send_reset(username, recipients, token):
     if not isinstance(recipients, list):
@@ -145,6 +149,7 @@ def send_reset(username, recipients, token):
     header.s.quit()
     return "Email Sent to {}".format(header.recipients)
 
+
 def email_notify_admins_new_user(firstname, lastname, username, recipients, url):
     if not isinstance(recipients, list):
         recipients = [recipients]
@@ -162,6 +167,35 @@ def email_notify_admins_new_user(firstname, lastname, username, recipients, url)
         """.format(username, firstname, lastname),
         "action": "Activation Link",
         "link": activate_link,
+    }
+    header = SingleEmailHeader(username, recipients, context, char='c')
+    MP1 = MIMEText(header.html, 'html')
+    header.msg.attach(MP1)
+    # The TO and CC header fields are populated by the header construction, and any additional recipient addresses are effectively BCC
+    header.s.sendmail(header.fromemail, header.recipients, header.msg.as_string())
+    header.s.quit()
+    return "Email Sent to {}".format(header.recipients)
+
+
+def send_job_prune_warning(username, recipients, job_name, job_id, warning_period, job_lifetime, renewals_remaining, renewal_token, expiration_date):
+    if not isinstance(recipients, list):
+        recipients = [recipients]
+    link = '{}/renew/{}'.format(envvars.FRONTEND_BASE_URL, renewal_token)
+
+    if renewals_remaining <= 1:
+        renewal_message = '<b>This is the last time you may renew your job file storage.</b>'
+    else:
+        renewal_message = 'You have {} renewals remaining.'.format(renewals_remaining-1)
+
+    context = {
+        "Subject": "DESaccess Job Scheduled for Deletion",
+        "username": username,
+        "msg": """
+        <p>The file storage for job <code>{job_name}</code> (Job ID: <code>{job_id}</code>) is scheduled for automatic deletion on {expiration_date} (UTC).<p>
+        <p>You may use the link below to extend your job file storage another {job_lifetime} days. {renewal_message}</p>
+        """.format(job_name=job_name, job_id=job_id, warning_period=warning_period, renewal_message=renewal_message, job_lifetime=job_lifetime, expiration_date=expiration_date),
+        "action": "Renew job file storage",
+        "link": link,
     }
     header = SingleEmailHeader(username, recipients, context, char='c')
     MP1 = MIMEText(header.html, 'html')
