@@ -88,7 +88,6 @@ class JobsDb:
             'cron',
             'analytics',
             'job_renewal',
-            'job_renewal_token',
         ]
 
     def open_db_connection(self):
@@ -272,7 +271,7 @@ class JobsDb:
             ON j.id = q.job_id 
             LEFT JOIN `cutout` c 
             ON j.id = c.job_id 
-            LEFT JOIN `job_renewal_token` r 
+            LEFT JOIN `job_renewal` r 
             ON j.id = r.job_id 
             WHERE j.user = %s {} AND j.deleted = 0 ORDER BY j.time_start DESC 
             '''.format(uuid_criterion_sql)
@@ -812,7 +811,7 @@ class JobsDb:
         self.close_db_connection()
         return [status, error_msg]
 
-    def renew_job(self, renewal_token):
+    def renew_job(self, renewal_token, job_ttl=envvars.DESACCESS_JOB_FILES_LIFETIME):
         status = STATUS_OK
         msg = ''
         valid = True
@@ -825,31 +824,38 @@ class JobsDb:
                 self.close_db_connection()
                 return status, msg, valid
             # Record the job renewal
+
             sql = '''
-            INSERT INTO `job_renewal`
-            (job_id, renewal_date)
-            VALUES (%s, %s)
-            '''
-            self.cur.execute(sql, (
-                job_table_id,
-                datetime.datetime.utcnow(),
-                )
-            )
-            if not self.cur.lastrowid:
-                status = STATUS_ERROR
-                msg = 'Error recording job renewal for job table row id "{}" in job_renewal database table'.format(job_table_id)
-                self.close_db_connection()
-                return status, msg, valid
-            # Remove the spent renewal token from the database table
-            sql = '''
-            DELETE FROM `job_renewal_token` WHERE `renewal_token` = %s
+            SELECT `job_id`, `renewals_used`, `renewals_left`, `expiration_date` FROM `job_renewal`
+            WHERE `renewal_token` = %s LIMIT 1
             '''
             self.cur.execute(sql, (renewal_token,))
-            if self.cur.rowcount < 1:
-                status = STATUS_ERROR
-                msg = 'Error deleting spent job renewal token for job table row id "{}" from job_renewal_token database table'.format(job_table_id)
-                self.close_db_connection()
-                return status, msg, valid
+            results = self.cur.fetchall()
+            for (job_id, renewals_used, renewals_left, expiration_date) in results:
+                # If there are no more renewals available, return a failure message
+                if renewals_left < 1:
+                    status = STATUS_ERROR
+                    msg = 'No more renewals are allowed for this job.'
+                    self.close_db_connection()
+                    return status, msg, valid
+                # Update the job_renewal information by updating the number of used/left renewals and advancing the expiration date
+                sql = '''
+                UPDATE `job_renewal` 
+                SET `renewals_used` = %s, `renewals_left` = %s, `renewal_token` = %s, `expiration_date` = %s
+                WHERE `job_id` = %s 
+                '''
+                self.cur.execute(sql, (
+                    renewals_used + 1,
+                    renewals_left - 1,
+                    generate_uuid() if renewals_left > 1 else None,
+                    expiration_date + datetime.timedelta(0, job_ttl),
+                    job_table_id,
+                ))
+                if self.cur.rowcount != 1:
+                    status = STATUS_ERROR
+                    msg = 'Error updating job renewal for job table row id "{}" in job_renewal database table'.format(job_table_id)
+                    self.close_db_connection()
+                    return status, msg, valid
         except Exception as e:
             status = STATUS_ERROR
             msg = str(e).strip()
@@ -865,7 +871,7 @@ class JobsDb:
         self.open_db_connection()
         try:
             sql = '''
-            SELECT r.job_id as job_row_id, j.user as job_username FROM `job_renewal_token` r 
+            SELECT r.job_id as job_row_id, j.user as job_username FROM `job_renewal` r 
             LEFT JOIN `job` j
             ON r.job_id = j.id
             WHERE r.renewal_token = %s LIMIT 1
@@ -884,21 +890,9 @@ class JobsDb:
         return status, msg, job_table_id, username
 
     def prune_job_files(self, USER_DB_MANAGER, job_ttl, job_warning_period, current_time):
-
-        def get_renewals_used(job_row_id):
-            renewals_used = 0
-            # Determine if the job file storage may be renewed.
-            sql = '''
-            SELECT `id` FROM `job_renewal` WHERE `job_id` = %s
-            '''
-            self.cur.execute(sql, (job_row_id,))
-            self.cur.fetchall()
-            renewals_used = self.cur.rowcount
-            return renewals_used
-        
         status = STATUS_OK
         msg = ''
-        logger.info('job_ttl: {}, job_warning_period: {}'.format(job_ttl, job_warning_period))
+        # logger.info('job_ttl: {}, job_warning_period: {}'.format(job_ttl, job_warning_period))
         # Enforce a positive finite lifetime and warning period.
         if job_ttl <= 0 or job_warning_period <= 0 or job_ttl - job_warning_period <= 0:
             status = STATUS_ERROR
@@ -906,37 +900,39 @@ class JobsDb:
             return status, msg
         self.open_db_connection()
         try:
-            # TODO: Replace SQL query with one that compares the dates directly using MySQL instead
-            # of iterating through all non-deleted jobs and using Python to do the math
-            #
             sql = '''
-            SELECT `id` as row_id, `uuid` as job_id, `user` as username, `type` as job_type, `name` as job_name, `time_complete` 
-            FROM `job` WHERE `deleted` = 0 AND `time_complete` > 0
+            SELECT j.id as job_row_id, j.uuid as job_id, j.user as username, j.type as job_type, j.name as job_name, j.time_complete, 
+                   r.id as renewal_row_id, r.renewals_used, r.renewals_left, r.expiration_date, r.renewal_token
+            FROM `job` j
+            LEFT JOIN `job_renewal` r
+            ON j.id = r.job_id
+            WHERE j.deleted = 0 AND j.time_complete > 0
             '''
             self.cur.execute(sql)
-            jobs = []
-            for (row_id, job_id, username, job_type, job_name, time_complete,) in self.cur:
-                if time_complete:
-                    jobs.append({
-                        'row_id': row_id, 
-                        'job_id': job_id, 
-                        'username': username, 
-                        'job_type': job_type, 
-                        'job_name': job_name, 
-                        'time_complete': time_complete
-                    })
-            for job in jobs:
-                logger.info(job)
-                job_id = job['job_id']
-                job_row_id = job['row_id']
-                job_type = job['job_type']
-                job_name = job['job_name']
-                time_complete = job['time_complete']
-                username = job['username']
-                # Determine number of job renewals used already
-                renewals_used = get_renewals_used(job_row_id)
-                # Calculate the new expiration date
-                expiration_date = time_complete + datetime.timedelta(0, job_ttl * (renewals_used + 1))
+            completed_jobs = self.cur.fetchall()
+            for (job_row_id, job_id, username, job_type, job_name, time_complete, renewal_row_id, renewals_used, renewals_left, expiration_date, renewal_token) in completed_jobs:
+                # If the expiration_date is None, then the job_renewal record needs to be added. Otherwise,
+                # assume all columns have valid information
+                if not renewal_row_id:
+                    renewals_used = 0
+                    renewals_left = envvars.DESACCESS_JOB_FILES_MAX_RENEWALS
+                    expiration_date = time_complete + datetime.timedelta(0, job_ttl)
+                    renewal_token = generate_uuid()
+                    # logger.info('job_renewal record missing for job {}. Creating...'.format(job_row_id))
+                    sql = '''
+                    INSERT INTO `job_renewal` 
+                    (`job_id`, `renewals_used`, `renewals_left`, `expiration_date`, `renewal_token`)
+                    VALUES (%s, %s, %s, %s, %s)
+                    '''
+                    self.cur.execute(sql, (
+                        job_row_id,
+                        renewals_used,
+                        renewals_left,
+                        expiration_date,
+                        renewal_token,
+                    ))
+                    if not self.cur.lastrowid:
+                        logger.error('Error adding record to job_renewal table for job {}'.format(job_row_id))
                 warning_date = expiration_date - datetime.timedelta(0, job_warning_period)
                 logger.info('Job "{}" has been renewed {} times. The expiration date is currently "{}"'.format(job_id, renewals_used, expiration_date))
                 #
@@ -944,17 +940,12 @@ class JobsDb:
                 #
                 if current_time > expiration_date:
                     # Prune the job files
-                    logger.info('Deleting files from job "{}"'.format(job_id))
-                    logger.info('Deleting any existing renewal tokens...')
-                    sql = '''
-                    DELETE FROM `job_renewal_token` WHERE `job_id` = %s
-                    '''
-                    self.cur.execute(sql, (job_row_id,))
-                    logger.info('Deleting any existing renewal records...')
+                    # logger.info('Deleting any existing renewal records...')
                     sql = '''
                     DELETE FROM `job_renewal` WHERE `job_id` = %s
                     '''
                     self.cur.execute(sql, (job_row_id,))
+                    # logger.info('Deleting files from job "{}"'.format(job_id))
                     # TODO: Reduce redundancy of this code with the API handler function in `main.py`
                     conf = {
                         "job_type": job_type,
@@ -987,52 +978,27 @@ class JobsDb:
                 #
                 # Job file storage will expire within the warning time period
                 #
-                elif current_time > warning_date:
-                    # Calculate the number of remaining allowed renewals
-                    renewals_remaining = envvars.DESACCESS_JOB_FILES_MAX_RENEWALS - renewals_used
-                    # Check if a renewal token has already been generated for this job
-                    sql = '''
-                    SELECT `renewal_token` FROM `job_renewal_token` WHERE `job_id` = %s
-                    '''
-                    self.cur.execute(sql, (job_row_id,))
-                    renewal_token_exists = False
-                    for (renewal_token,) in self.cur:
-                        renewal_token_exists = True
-                    if renewals_remaining > 0 and not renewal_token_exists:
-                        # Generate a new renewal token and insert into the renewal token database table
-                        renewal_token = generate_job_id()
-                        sql = '''
-                        INSERT INTO `job_renewal_token`
-                        (job_id, renewal_token, expiration_date)
-                        VALUES (%s, %s, %s)
-                        '''
-                        self.cur.execute(sql, (job_row_id, renewal_token, expiration_date))
-                        if not self.cur.lastrowid:
+                elif current_time > warning_date and renewals_left > 0:
+                    # Send warning notification email if user has not disabled them by user preference
+                    renewal_preference, error_msg = self.get_user_preference('renewal_emails', username)
+                    if renewal_preference != 'disabled':
+                        # logger.info('Sending warning notification email about pruning files from job "{}"'.format(job_id))
+                        given_name, family_name, email = USER_DB_MANAGER.get_basic_info(username)
+                        try:
+                            email_utils.send_job_prune_warning(
+                                username, 
+                                [email], 
+                                job_name, 
+                                job_id, 
+                                round(job_warning_period/(24*60*60)), 
+                                round(job_ttl/(24*60*60)), 
+                                renewals_left, 
+                                renewal_token,
+                                expiration_date,
+                            )
+                        except:
                             status = STATUS_ERROR
-                            msg = 'Error adding new renewal token to database table "job_renewal_token" for job "{}"'.format(job_id)
-                            self.close_db_connection()
-                            return status, msg
-                        # Send warning notification email if user has not disabled them by user preference
-                        renewal_preference, error_msg = self.get_user_preference('renewal_emails', username)
-                        logger.info('renewal pref: {}'.format(renewal_preference))
-                        if renewal_preference != 'disabled':
-                            logger.info('Sending warning notification email about pruning files from job "{}"'.format(job_id))
-                            given_name, family_name, email = USER_DB_MANAGER.get_basic_info(username)
-                            try:
-                                email_utils.send_job_prune_warning(
-                                    username, 
-                                    [email], 
-                                    job_name, 
-                                    job_id, 
-                                    round(job_warning_period/(24*60*60)), 
-                                    round(job_ttl/(24*60*60)), 
-                                    renewals_remaining, 
-                                    renewal_token,
-                                    expiration_date,
-                                )
-                            except:
-                                status = STATUS_ERROR
-                                msg = 'Error sending email notification of impending file purge for job "{}" during periodic pruning.'.format(job_id)
+                            msg = 'Error sending email notification of impending file purge for job "{}" during periodic pruning.'.format(job_id)
         except Exception as e:
             msg = str(e).strip()
             logger.error(msg)
@@ -1507,7 +1473,7 @@ class JobsDb:
                 preferences = {} if preferences is None else json.loads(preferences)
             # No user preferences have been set yet
             if rowId == None:
-                logger.info('No preferences set yet for user "{}"'.format(username))
+                # logger.info('No preferences set yet for user "{}"'.format(username))
                 preferences[preference] = value
                 self.cur.execute(
                     (
@@ -1524,9 +1490,9 @@ class JobsDb:
                     error_msg = 'Error setting user preference'
             # User preferences exist, so they must be updated.
             else:
-                logger.info('Preferences exist for user "{}": {}'.format(username, preferences))
+                # logger.info('Preferences exist for user "{}": {}'.format(username, preferences))
                 preferences[preference] = value
-                logger.info('Updating preferences for user "{}": {}'.format(username, preferences))
+                # logger.info('Updating preferences for user "{}": {}'.format(username, preferences))
                 self.cur.execute(
                     (
                         "UPDATE `user_preferences` SET preferences = %s "
@@ -1627,7 +1593,7 @@ def get_namespace():
     return namespace
 
 
-def generate_job_id():
+def generate_uuid():
     return str(uuid.uuid4()).replace("-", "")
 
 
@@ -1685,7 +1651,7 @@ def submit_job(params):
         username = params["username"].lower()
         password = JOBSDB.get_password(username)
         job_type = params["job"]
-        job_id = generate_job_id()
+        job_id = generate_uuid()
         conf = {}
         conf["job"] = job_type
         conf["db"] = params['db']

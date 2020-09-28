@@ -1,15 +1,10 @@
 CREATE TABLE IF NOT EXISTS `job_renewal`(
 	`id` int NOT NULL AUTO_INCREMENT,
 	`job_id` int NOT NULL,
-	`renewal_date` datetime NOT NULL,
-	PRIMARY KEY (`id`), UNIQUE KEY `id` (`id`)
-)
-#---
-CREATE TABLE IF NOT EXISTS `job_renewal_token`(
-	`id` int NOT NULL AUTO_INCREMENT,
-	`job_id` int NOT NULL,
-	`renewal_token` char(32) NOT NULL,
+	`renewals_used` int NOT NULL,
+	`renewals_left` int NOT NULL,
 	`expiration_date` datetime NOT NULL,
+	`renewal_token` char(32),
 	PRIMARY KEY (`id`), UNIQUE KEY `id` (`id`)
 )
 #---
