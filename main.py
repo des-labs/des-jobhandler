@@ -275,7 +275,7 @@ class TileDataHandler(tornado.web.StaticFileHandler):
 @webcron
 class BaseHandler(tornado.web.RequestHandler):
     def set_default_headers(self):
-        self.set_header("Content-Type", "application/json")
+        # self.set_header("Content-Type", "application/json")
         self.set_header("Access-Control-Allow-Origin", "*")
         self.set_header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization")
         self.set_header("Access-Control-Allow-Methods",
@@ -1439,6 +1439,28 @@ class UserPreferencesHandler(BaseHandler):
         self.write(response)
 
 
+@analytics
+class UserPreferencesStopRenewalEmailsHandler(BaseHandler):
+    def get(self):
+        response = '<html></html>'
+        renewal_token = self.getarg('token')
+        try:
+            status, msg, job_table_id, username = JOBSDB.validate_renewal_token(renewal_token)
+            if username:
+                error_msg = JOBSDB.set_user_preference('renewal_emails', 'disabled', username)
+                if error_msg != '':
+                    response = '<html><body>There was an error disabling job renewal emails: {}</body></html>'.format(error_msg)
+                else:
+                    response = '<html><body>You will no longer receive job renewal emails.</body></html>'
+            else:
+                response = '<html><body>There was an error disabling job renewal emails: Link is invalid or has expired.</body></html>'
+        except Exception as e:
+            error_msg = str(e).strip()
+            logger.error(error_msg)
+            response = '<html><body>There was an error disabling job renewal emails: {}</body></html>'.format(error_msg)
+        self.write(response)
+
+
 @authenticated
 @allowed_roles(['admin'])
 class UserDeleteHandler(BaseHandler):
@@ -2081,6 +2103,7 @@ def make_app(basePath=''):
             (r"{}/user/role/list?".format(basePath), ListUserRolesHandler),
             (r"{}/user/list?".format(basePath), ListUsersHandler),
             (r"{}/user/preference?".format(basePath), UserPreferencesHandler),
+            (r"{}/user/preference/stoprenewalemails?".format(basePath), UserPreferencesStopRenewalEmailsHandler),
             (r"{}/user/register?".format(basePath), UserRegisterHandler),
             (r"{}/user/activate?".format(basePath), UserActivateHandler),
             (r"{}/user/delete?".format(basePath), UserDeleteHandler),

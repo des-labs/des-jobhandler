@@ -87,6 +87,8 @@ class JobsDb:
             'user_preferences',
             'cron',
             'analytics',
+            'job_renewal',
+            'job_renewal_token',
         ]
 
     def open_db_connection(self):
@@ -264,17 +266,19 @@ class JobsDb:
                 uuid_criterion_sql = ' AND j.uuid = %s '
                 sql_values = (username, job_id)
             sql = '''
-            SELECT j.type, j.name, j.uuid, j.status, j.msg, j.time_start, j.time_complete, j.time_submitted, q.data, q.query, q.files, c.file_list, c.positions 
+            SELECT j.type, j.name, j.uuid, j.status, j.msg, j.time_start, j.time_complete, j.time_submitted, q.data, q.query, q.files, c.file_list, c.positions, r.renewal_token, r.expiration_date
             FROM `job` j 
             LEFT JOIN `query` q 
             ON j.id = q.job_id 
             LEFT JOIN `cutout` c 
             ON j.id = c.job_id 
+            LEFT JOIN `job_renewal_token` r 
+            ON j.id = r.job_id 
             WHERE j.user = %s {} AND j.deleted = 0 ORDER BY j.time_start DESC 
             '''.format(uuid_criterion_sql)
             self.cur.execute(sql, sql_values)
             job_info = None
-            for (type, name, uuid, status, msg, time_start, time_complete, time_submitted, data, query, files, file_list, positions) in self.cur:
+            for (type, name, uuid, status, msg, time_start, time_complete, time_submitted, data, query, files, file_list, positions, renewal_token, expiration_date) in self.cur:
                 job_info = {}
                 job_info["job_type"] = type
                 job_info["job_name"] = name
@@ -289,6 +293,8 @@ class JobsDb:
                 job_info["query_files"] = [] if files is None else json.loads(files)
                 job_info["cutout_files"] = [] if file_list is None else json.loads(file_list)
                 job_info["cutout_positions"] = "" if positions is None else positions
+                job_info["renewal_token"] = "" if renewal_token is None else renewal_token
+                job_info["expiration_date"] = "" if expiration_date is None else expiration_date
                 job_info_list.append(job_info)
             if job_id != "all" and not job_info_list:
                 request_status = STATUS_ERROR
@@ -813,7 +819,7 @@ class JobsDb:
         self.open_db_connection()
         try:
             # Validate the submitted renewal token
-            status, msg, job_table_id = JOBSDB.validate_renewal_token(renewal_token)
+            status, msg, job_table_id, username = JOBSDB.validate_renewal_token(renewal_token)
             if status != STATUS_OK or not isinstance(job_table_id, int):
                 valid = False
                 self.close_db_connection()
@@ -855,14 +861,19 @@ class JobsDb:
         status = STATUS_OK
         msg = ''
         job_table_id = None
+        username = None
         self.open_db_connection()
         try:
             sql = '''
-            SELECT `job_id` from `job_renewal_token` WHERE `renewal_token` = %s LIMIT 1
+            SELECT r.job_id as job_row_id, j.user as job_username FROM `job_renewal_token` r 
+            LEFT JOIN `job` j
+            ON r.job_id = j.id
+            WHERE r.renewal_token = %s LIMIT 1
             '''
             self.cur.execute(sql, (renewal_token,))
-            for (job_id,) in self.cur:
-                job_table_id = job_id
+            for (job_row_id, job_username,) in self.cur:
+                job_table_id = job_row_id
+                username = job_username
             if not job_table_id:
                 msg = 'Invalid job renewal token'
         except Exception as e:
@@ -870,7 +881,7 @@ class JobsDb:
             msg = str(e).strip()
             logger.error(msg)
         self.close_db_connection()
-        return status, msg, job_table_id
+        return status, msg, job_table_id, username
 
     def prune_job_files(self, USER_DB_MANAGER, job_ttl, job_warning_period, current_time):
 
@@ -928,8 +939,6 @@ class JobsDb:
                 expiration_date = time_complete + datetime.timedelta(0, job_ttl * (renewals_used + 1))
                 warning_date = expiration_date - datetime.timedelta(0, job_warning_period)
                 logger.info('Job "{}" has been renewed {} times. The expiration date is currently "{}"'.format(job_id, renewals_used, expiration_date))
-                # Calculate the duration in seconds between the job completion
-                # diff_time = (current_time - time_complete).seconds
                 #
                 # Job file storage has expired
                 #
@@ -994,33 +1003,36 @@ class JobsDb:
                         renewal_token = generate_job_id()
                         sql = '''
                         INSERT INTO `job_renewal_token`
-                        (job_id, renewal_token)
-                        VALUES (%s, %s)
+                        (job_id, renewal_token, expiration_date)
+                        VALUES (%s, %s, %s)
                         '''
-                        self.cur.execute(sql, (job_row_id, renewal_token))
+                        self.cur.execute(sql, (job_row_id, renewal_token, expiration_date))
                         if not self.cur.lastrowid:
                             status = STATUS_ERROR
                             msg = 'Error adding new renewal token to database table "job_renewal_token" for job "{}"'.format(job_id)
                             self.close_db_connection()
                             return status, msg
-                        # Send warning notification email
-                        logger.info('Sending warning notification email about pruning files from job "{}"'.format(job_id))
-                        given_name, family_name, email = USER_DB_MANAGER.get_basic_info(username)
-                        try:
-                            email_utils.send_job_prune_warning(
-                                username, 
-                                [email], 
-                                job_name, 
-                                job_id, 
-                                round(job_warning_period/(24*60*60)), 
-                                round(job_ttl/(24*60*60)), 
-                                renewals_remaining, 
-                                renewal_token,
-                                expiration_date,
-                            )
-                        except:
-                            status = STATUS_ERROR
-                            msg = 'Error sending email notification of impending file purge for job "{}" during periodic pruning.'.format(job_id)
+                        # Send warning notification email if user has not disabled them by user preference
+                        renewal_preference, error_msg = self.get_user_preference('renewal_emails', username)
+                        logger.info('renewal pref: {}'.format(renewal_preference))
+                        if renewal_preference != 'disabled':
+                            logger.info('Sending warning notification email about pruning files from job "{}"'.format(job_id))
+                            given_name, family_name, email = USER_DB_MANAGER.get_basic_info(username)
+                            try:
+                                email_utils.send_job_prune_warning(
+                                    username, 
+                                    [email], 
+                                    job_name, 
+                                    job_id, 
+                                    round(job_warning_period/(24*60*60)), 
+                                    round(job_ttl/(24*60*60)), 
+                                    renewals_remaining, 
+                                    renewal_token,
+                                    expiration_date,
+                                )
+                            except:
+                                status = STATUS_ERROR
+                                msg = 'Error sending email notification of impending file purge for job "{}" during periodic pruning.'.format(job_id)
         except Exception as e:
             msg = str(e).strip()
             logger.error(msg)
@@ -1479,6 +1491,7 @@ class JobsDb:
     def set_user_preference(self, preference, value, username):
         error_msg = ''
         self.open_db_connection()
+        preferences = {}
         try:
             self.cur.execute(
                 (
@@ -1494,7 +1507,7 @@ class JobsDb:
                 preferences = {} if preferences is None else json.loads(preferences)
             # No user preferences have been set yet
             if rowId == None:
-                preferences = {}
+                logger.info('No preferences set yet for user "{}"'.format(username))
                 preferences[preference] = value
                 self.cur.execute(
                     (
@@ -1511,7 +1524,9 @@ class JobsDb:
                     error_msg = 'Error setting user preference'
             # User preferences exist, so they must be updated.
             else:
+                logger.info('Preferences exist for user "{}": {}'.format(username, preferences))
                 preferences[preference] = value
+                logger.info('Updating preferences for user "{}": {}'.format(username, preferences))
                 self.cur.execute(
                     (
                         "UPDATE `user_preferences` SET preferences = %s "
@@ -1522,8 +1537,6 @@ class JobsDb:
                         username,
                     )
                 )
-                if not self.cur.lastrowid:
-                    error_msg = 'Error setting user preference'
         except Exception as e:
             error_msg = str(e).strip()
             logger.error(error_msg)
@@ -1613,6 +1626,7 @@ def get_namespace():
             namespace = 'default'
     return namespace
 
+
 def generate_job_id():
     return str(uuid.uuid4()).replace("-", "")
 
@@ -1648,7 +1662,6 @@ def get_job_template(job_type):
     with open(jobConfigTemplateFile) as f:
         templateText = f.read()
     return Template(templateText)
-
 
 
 def submit_job(params):
