@@ -980,8 +980,9 @@ class JobsDb:
                 #
                 elif current_time > warning_date and renewals_left > 0:
                     # Send warning notification email if user has not disabled them by user preference
-                    renewal_preference, error_msg = self.get_user_preference('renewal_emails', username)
-                    if renewal_preference != 'disabled':
+                    renewal_preference, error_msg = self.get_user_preference('sendRenewalEmails', username)
+                    # Send renewal emails by default, but do not send them if the user preference specifically disables it 
+                    if renewal_preference != False:
                         # logger.info('Sending warning notification email about pruning files from job "{}"'.format(job_id))
                         given_name, family_name, email = USER_DB_MANAGER.get_basic_info(username)
                         try:
@@ -1454,10 +1455,13 @@ class JobsDb:
         self.close_db_connection()
         return value, error_msg
 
-    def set_user_preference(self, preference, value, username):
-        error_msg = ''
-        self.open_db_connection()
+    def set_user_preference(self, pref, value, username):
         preferences = {}
+        error_msg = ''
+        if pref == 'all' and not isinstance(value, dict):
+            error_msg = 'When setting all preferences, the value must be an object.'
+            return error_msg
+        self.open_db_connection()
         try:
             self.cur.execute(
                 (
@@ -1471,10 +1475,13 @@ class JobsDb:
             for (id, preferences,) in self.cur:
                 rowId = id
                 preferences = {} if preferences is None else json.loads(preferences)
-            # No user preferences have been set yet
+            # If all the preferences are being overwritten use the value directly, otherwise set an individual key-value pair
+            if pref == 'all':
+                preferences = value
+            else:
+                preferences[pref] = value
+            # If no user preferences have been set yet, create the table record
             if rowId == None:
-                # logger.info('No preferences set yet for user "{}"'.format(username))
-                preferences[preference] = value
                 self.cur.execute(
                     (
                         "INSERT INTO `user_preferences` "
@@ -1488,11 +1495,8 @@ class JobsDb:
                 )
                 if not self.cur.lastrowid:
                     error_msg = 'Error setting user preference'
-            # User preferences exist, so they must be updated.
+            # Otherwise user preferences exist, so they must be updated.
             else:
-                # logger.info('Preferences exist for user "{}": {}'.format(username, preferences))
-                preferences[preference] = value
-                # logger.info('Updating preferences for user "{}": {}'.format(username, preferences))
                 self.cur.execute(
                     (
                         "UPDATE `user_preferences` SET preferences = %s "

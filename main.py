@@ -275,7 +275,9 @@ class TileDataHandler(tornado.web.StaticFileHandler):
 @webcron
 class BaseHandler(tornado.web.RequestHandler):
     def set_default_headers(self):
-        # self.set_header("Content-Type", "application/json")
+        # By default the responses are JSON format. Individual GET responses that are text/html must
+        # declare the header in the relevant subclass
+        self.set_header("Content-Type", "application/json")
         self.set_header("Access-Control-Allow-Origin", "*")
         self.set_header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization")
         self.set_header("Access-Control-Allow-Methods",
@@ -1420,6 +1422,26 @@ class NotificationsMarkHandler(BaseHandler):
 @allowed_roles(ALLOWED_ROLE_LIST)
 @analytics
 class UserPreferencesHandler(BaseHandler):
+    def post(self):
+        response = {
+            "status": STATUS_OK,
+            "msg": "",
+            'pref': {}
+        }
+        username = self.get_username_parameter()
+        pref = self.getarg('pref')
+        try:
+            value, error_msg = JOBSDB.get_user_preference(pref, username)
+            if error_msg != '':
+                response['status'] = STATUS_ERROR
+                response['msg'] = error_msg
+            else:
+                response['pref'] = value
+        except Exception as e:
+            response['msg'] = str(e).strip()
+            response['status'] = STATUS_ERROR
+        self.write(response)
+
     def put(self):
         response = {
             "status": STATUS_OK,
@@ -1442,12 +1464,13 @@ class UserPreferencesHandler(BaseHandler):
 @analytics
 class UserPreferencesStopRenewalEmailsHandler(BaseHandler):
     def get(self):
+        self.set_header("Content-Type", "text/html")
         response = '<html></html>'
         renewal_token = self.getarg('token')
         try:
             status, msg, job_table_id, username = JOBSDB.validate_renewal_token(renewal_token)
             if username:
-                error_msg = JOBSDB.set_user_preference('renewal_emails', 'disabled', username)
+                error_msg = JOBSDB.set_user_preference('sendRenewalEmails', False, username)
                 if error_msg != '':
                     response = '<html><body>There was an error disabling job renewal emails: {}</body></html>'.format(error_msg)
                 else:
