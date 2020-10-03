@@ -1835,11 +1835,11 @@ def submit_job(params):
             msg = 'Valid databases are DESDR and DESSCI'
             return status,msg,job_id
 
-        if 'release' in params and params["release"].upper() in ['Y1A1','Y6A1','Y3A2','SVA1']:
+        if 'release' in params and params["release"].upper() in ['Y1A1','Y6A1','Y3A2','SVA1','DR1','DR2']:
             spec['release'] = params["release"].upper()
         else:
             status = STATUS_ERROR
-            msg = "Valid releases are Y6A1,Y3A2,Y1A1,SVA1"
+            msg = "Valid releases are Y6A1,Y3A2,Y1A1,SVA1,DR1,DR2"
             return status,msg,job_id
         try:
             if "xsize" in params:
@@ -1901,6 +1901,12 @@ def submit_job(params):
                 status = STATUS_ERROR
                 msg = 'rgb_minimum, rgb_stretch, rgb_asinh must be numerical values'
                 return status,msg,job_id
+        
+        # Provide the Oracle database service account information
+        if spec['db'] == 'DESDR':
+            spec['oracle_service_account_db'] = envvars.SERVICE_ACCOUNT_DB
+            spec['oracle_service_account_user'] = envvars.SERVICE_ACCOUNT_USER
+            spec['oracle_service_account_pass'] = envvars.SERVICE_ACCOUNT_PASS
 
         # Complete the job configuration by defining the `spec` node
         conf["configjob"]["spec"] = spec
