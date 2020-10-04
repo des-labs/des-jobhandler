@@ -211,3 +211,36 @@ def send_job_prune_warning(username, recipients, job_name, job_id, warning_perio
     header.s.sendmail(header.fromemail, header.recipients, header.msg.as_string())
     header.s.quit()
     return "Email Sent to {}".format(header.recipients)
+
+# def parse_email_list_file():
+#     # logger.setLevel(logging.WARNING)
+#     with open('/email_list/desaccess_email_list.txt', 'r') as listfile:
+#         all_lines = listfile.readlines()
+#         email_list = []
+#         for line in all_lines:
+#             line = line.strip()
+#             # logger.info('Parsing line: "{}"'.format(line))
+#             try:
+#                 user_info = []
+#                 for item in re.sub(r'[\s]+', ',', line.strip()).split(','):
+#                     # logger.info('    Item: "{}"'.format(item))
+#                     # If a comment is encountered, skip any remaining items
+#                     if re.match(r'^#.*', item):
+#                         break
+#                     elif item != '':
+#                         user_info.append(item)
+#                 # Simplistic check that the first item is an email address
+#                 if len(user_info) >= 3 and user_info[0].find('@') >= 0 and user_info[0].find('.') >= 0:
+#                     email = user_info[0]
+#                     given_name = user_info[1]
+#                     family_name = ' '.join(user_info[2:])
+#                     email_list.append([email, given_name, family_name])
+#                     # logger.info('    User info parsed: {}/{}/{}'.format(email, given_name, family_name))
+#                     if len(user_info) > 3:
+#                         logger.info('    User info parsed: ({}) {}    {}'.format(email, given_name, family_name))
+#                 # Ignore empty values due to comment lines
+#                 elif user_info:
+#                     logger.error('Invalid user info: {}'.format(user_info))
+#             except Exception as e:
+#                 logger.error('Error parsing email list line: {}'.format(str(e).strip()))
+#         logger.info('Total user accounts in email address: {}'.format(len(email_list)))

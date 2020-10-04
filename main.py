@@ -169,6 +169,34 @@ def webcron_prune_job_files(job_ttl=envvars.DESACCESS_JOB_FILES_LIFETIME, job_wa
     return status, msg
 
 
+def webcron_sync_email_list():
+    status = STATUS_OK
+    msg = ''
+    # Sync the current list of public DESaccess users to the remote data source for the announcement email list
+    all_users = None
+    list_file = '/email_list/desaccess_email_list.txt'
+    temp_file = '{}.tmp'.format(list_file)
+    try:
+        all_users = USER_DB_MANAGER.list_all_users()
+        # Sanity check to ensure that the the user list is probably valid
+        if all_users and len(all_users) > 10:
+            with open(temp_file, 'w') as listfile:
+                print('## Data for Sympa member import\n#\n#', file=listfile)
+                for user in all_users:
+                    username, given_name, family_name, email = user
+                    print('{} {} {}'.format(email, given_name, family_name), file=listfile)
+    except Exception as e:
+        status = STATUS_ERROR
+        msg = str(e).strip()
+        logger.error(msg)
+    else:
+        if all_users and len(all_users) > 10:
+            shutil.copyfile(temp_file, list_file)
+            logger.info('Email list file "{}" updated.'.format(list_file))
+            os.remove(temp_file)
+    return status, msg
+
+
 # The @webcron decorator executes cron jobs at intervals equal to or greater
 # than the cron job's frequency spec. Cron jobs are manually registered in the
 # JobHandler database like so
@@ -196,6 +224,8 @@ def webcron(cls_handler):
                             webcron_refresh_database_table_cache()
                         elif cronjob == 'prune_job_files':
                             webcron_prune_job_files()
+                        elif cronjob == 'sync_email_list':
+                            webcron_sync_email_list()
                         # elif cronjob['name'] == 'another_task':
                             # et cetera ...
                         # Update the last_run time with the current time
@@ -373,6 +403,8 @@ class TriggerWebcronHandler(BaseHandler):
                 webcron_refresh_database_table_cache()
             elif cronjob == 'prune_job_files':
                 webcron_prune_job_files()
+            elif cronjob == 'sync_email_list':
+                webcron_sync_email_list()
             else:
                 response['msg'] = 'Specified cronjob is not valid.'
         except Exception as e:
@@ -1646,6 +1678,7 @@ class UserActivateHandler(BaseHandler):
                     response['msg'] = msg
                 else:
                     response['activated'] = True
+                    webcron_sync_email_list()
             else:
                 response['msg'] = msg
         except Exception as e:
@@ -1780,8 +1813,6 @@ class UserRegisterHandler(BaseHandler):
                 response['msg'] = str(e).strip()
                 self.write(response)
                 return
-            # # TODO: Subscribe new user to the des-dr-announce listserv
-            # email_utils.subscribe_email(email)
 
             # # Check that URL is valid
             # valid, status, msg = USER_DB_MANAGER.valid_url(url)

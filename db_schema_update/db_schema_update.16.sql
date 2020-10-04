@@ -1,0 +1,1 @@
+INSERT INTO `cron` (`name`, `period`, `enabled`) VALUES ('sync_email_list', 1440, 1)
