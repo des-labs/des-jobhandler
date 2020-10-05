@@ -172,6 +172,9 @@ def webcron_prune_job_files(job_ttl=envvars.DESACCESS_JOB_FILES_LIFETIME, job_wa
 def webcron_sync_email_list():
     status = STATUS_OK
     msg = ''
+    # This is only relevant to the public interface.
+    if envvars.DESACCESS_INTERFACE != 'public':
+        return status, msg
     # Sync the current list of public DESaccess users to the remote data source for the announcement email list
     all_users = None
     list_file = '/email_list/desaccess_email_list.txt'
