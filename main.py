@@ -177,20 +177,37 @@ def webcron_sync_email_list():
     list_file = '/email_list/desaccess_email_list.txt'
     temp_file = '{}.tmp'.format(list_file)
     try:
+        # Fetch the current list of all users
         all_users = USER_DB_MANAGER.list_all_users()
+        # Filter the user list to ensure valid information for email list data source file
+        email_data_source_list = []
+        for username, given_name, family_name, email in all_users:
+            if not given_name:
+                given_name = ''
+            if not family_name:
+                family_name = ''
+            # Simplistic check that the email address is valid
+            if isinstance(email, str) and email.find('@') > 0 and email.split('@')[1].find('.') > 0:
+                email_data_source_list.append([email, given_name, family_name])
+            else:
+                try:
+                    logger.warning('User account omitted from email list data source file: username: {}, email: {}, given_name: {}, family_name: {}'.format(username, email, given_name, family_name))
+                except:
+                    pass
         # Sanity check to ensure that the the user list is probably valid
-        if all_users and len(all_users) > 10:
+        if len(email_data_source_list) > 10:
             with open(temp_file, 'w') as listfile:
                 print('## Data for Sympa member import\n#\n#', file=listfile)
-                for user in all_users:
-                    username, given_name, family_name, email = user
+                for email, given_name, family_name in email_data_source_list:
                     print('{} {} {}'.format(email, given_name, family_name), file=listfile)
+        else:
+            logger.warning('Email list data source file was not updated because the number of valid email addresses is only {}'.format(len(email_data_source_list)))
     except Exception as e:
         status = STATUS_ERROR
         msg = str(e).strip()
         logger.error(msg)
     else:
-        if all_users and len(all_users) > 10:
+        if len(email_data_source_list) > 10:
             shutil.copyfile(temp_file, list_file)
             logger.info('Email list file "{}" updated.'.format(list_file))
             os.remove(temp_file)
