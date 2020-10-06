@@ -17,10 +17,12 @@ import shutil
 import jira.client
 import dbutils
 from io import StringIO
-from pandas import read_csv
+from pandas import read_csv, DataFrame
 
 STATUS_OK = 'ok'
 STATUS_ERROR = 'error'
+# TODO: Replace this global hard-coded variable with input configuration
+MAX_SIZE_IN_ARCMINUTES = 12.0
 
 log_format = "%(asctime)s  %(name)8s  %(levelname)5s  %(message)s"
 logging.basicConfig(
@@ -63,6 +65,72 @@ def password_decrypt(password):
     locksmith = Fernet(key)
     return locksmith.decrypt(password.encode('UTF-8')).decode('UTF-8')
 
+def validate_cutout_csv(csv_text):
+    status = STATUS_OK
+    msg = ''
+    position_type = None
+    temp_csv_file = '.temp.csv'
+    processed_csv_text = csv_text
+
+    def validate_sizes(size_col):
+        valid_sizes = True
+        for size in size_col:
+            logger.info(size)
+            if float(size) > MAX_SIZE_IN_ARCMINUTES:
+                return False
+        return valid_sizes
+
+    try:
+        parsedData = read_csv(StringIO(csv_text), dtype={
+            'RA': float,
+            'DEC': float,
+            'COADD_OBJECT_ID': int,
+            'XSIZE': float,
+            'YSIZE': float
+        })
+
+        if all(k in parsedData for k in ('RA','DEC','XSIZE','YSIZE')):
+            position_type = "coords"
+            df = DataFrame(parsedData, columns=['RA','DEC','XSIZE','YSIZE'])
+            df['XSIZE'] = df['XSIZE'].map(lambda x: '%.2f' % x)
+            df['YSIZE'] = df['YSIZE'].map(lambda x: '%.2f' % x)
+            for size_col in [df['XSIZE'], df['YSIZE']]:
+                if not validate_sizes(size_col):
+                    status = STATUS_ERROR,
+                    msg = 'The max value for xsize and ysize is {} arcminutes.'.format(MAX_SIZE_IN_ARCMINUTES)
+                    return position_type, processed_csv_text, status, msg
+            df.to_csv(temp_csv_file, index=False, float_format='%.12f')
+        elif all(k in parsedData for k in ('RA','DEC')):
+            position_type = "coords"
+            df = DataFrame(parsedData, columns=['RA','DEC'])
+            df.to_csv(temp_csv_file, index=False, float_format='%.12f')
+        elif all(k in parsedData for k in ('COADD_OBJECT_ID','XSIZE','YSIZE')):
+            position_type = "id"
+            df = DataFrame(parsedData, columns=['COADD_OBJECT_ID','XSIZE','YSIZE'])
+            for size_col in [df['XSIZE'], df['YSIZE']]:
+                if not validate_sizes(size_col):
+                    status = STATUS_ERROR,
+                    msg = 'The max value for xsize and ysize is {} arcminutes.'.format(MAX_SIZE_IN_ARCMINUTES)
+                    return position_type, processed_csv_text, status, msg
+            df.to_csv(temp_csv_file, index=False, float_format='%.2f')
+        elif 'COADD_OBJECT_ID' in parsedData:
+            position_type = "id"
+            df = DataFrame(parsedData, columns=['COADD_OBJECT_ID'])
+            df.to_csv(temp_csv_file, index=False, float_format='%.2f')
+        else:
+            logger.info('CSV header must have RA/DEC or COADD_OBJECT_ID')
+            status = STATUS_ERROR,
+            msg = 'CSV header must have RA/DEC or COADD_OBJECT_ID'
+            return position_type, processed_csv_text, status, msg
+
+        with open(temp_csv_file) as f:
+            processed_csv_text = f.read()
+        os.remove(temp_csv_file)
+    except Exception as e:
+        logger.error(str(e).strip())
+        status = STATUS_ERROR,
+        msg = str(e).strip()
+    return position_type, processed_csv_text, status, msg
 
 class JobsDb:
     def __init__(self, mysql_host, mysql_user, mysql_password, mysql_database):
@@ -1824,6 +1892,12 @@ def submit_job(params):
             spec['coadd'] = params["coadd"]
         elif "positions" in params:
             spec['positions'] = params["positions"].encode('utf-8').decode('unicode-escape')
+            position_type, processed_csv_text, status, msg = validate_cutout_csv(spec['positions'])
+            if status == STATUS_OK:
+                spec['positions'] = processed_csv_text.encode('utf-8').decode('unicode-escape')
+            else:
+                status = STATUS_ERROR
+                return status,msg,job_id
         else:
             status = STATUS_ERROR
             msg = 'Cutout job requires RA/DEC coordinates or Coadd IDs.'
@@ -1849,6 +1923,10 @@ def submit_job(params):
         except:
             status = STATUS_ERROR
             msg = 'xsize and ysize must be numerical values'
+            return status,msg,job_id
+        if spec['xsize'] > MAX_SIZE_IN_ARCMINUTES or spec['ysize'] > MAX_SIZE_IN_ARCMINUTES:
+            status = STATUS_ERROR
+            msg = 'The max value for xsize and ysize is {} arcminutes.'.format(MAX_SIZE_IN_ARCMINUTES)
             return status,msg,job_id
         # Set color strings from request parameters
         search_args = ['colors_rgb', 'colors_fits']

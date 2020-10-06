@@ -14,8 +14,6 @@ from jwtutils import validate_token
 import envvars
 import jobutils
 import time
-from io import StringIO
-from pandas import read_csv, DataFrame
 import os
 import easyaccess as ea
 import jira.client
@@ -949,52 +947,14 @@ class DbWipe(BaseHandler):
 
 class ValidateCsvHandler(BaseHandler):
     def post(self):
-        csvText = self.getarg('csvText')
-        tempCsvFile = '.temp.csv'
+        csv_text = self.getarg('csvText')
         try:
-
-            parsedData = read_csv(StringIO(csvText), dtype={
-                'RA': float,
-                'DEC': float,
-                'COADD_OBJECT_ID': int,
-                'XSIZE': float,
-                'YSIZE': float
-            })
-
-            if all(k in parsedData for k in ('RA','DEC','XSIZE','YSIZE')):
-                df = DataFrame(parsedData, columns=['RA','DEC','XSIZE','YSIZE'])
-                df['XSIZE'] = df['XSIZE'].map(lambda x: '%.2f' % x)
-                df['YSIZE'] = df['YSIZE'].map(lambda x: '%.2f' % x)
-                df.to_csv(tempCsvFile, index=False, float_format='%.12f')
-                type = "coords"
-            elif all(k in parsedData for k in ('RA','DEC')):
-                df = DataFrame(parsedData, columns=['RA','DEC'])
-                df.to_csv(tempCsvFile, index=False, float_format='%.12f')
-                type = "coords"
-            elif all(k in parsedData for k in ('COADD_OBJECT_ID','XSIZE','YSIZE')):
-                df = DataFrame(parsedData, columns=['COADD_OBJECT_ID','XSIZE','YSIZE'])
-                df.to_csv(tempCsvFile, index=False, float_format='%.2f')
-                type = "id"
-            elif 'COADD_OBJECT_ID' in parsedData:
-                df = DataFrame(parsedData, columns=['COADD_OBJECT_ID'])
-                df.to_csv(tempCsvFile, index=False, float_format='%.2f')
-                type = "id"
-            else:
-                logger.info('CSV header must have RA/DEC or COADD_OBJECT_ID')
-                self.write({
-                    "status": STATUS_ERROR,
-                    "msg": 'CSV header must have RA/DEC or COADD_OBJECT_ID'
-                })
-                return
-
-            with open(tempCsvFile) as f:
-                processedCsvText = f.read()
-            os.remove(tempCsvFile)
+            position_type, processed_csv_text, status, msg = jobutils.validate_cutout_csv(csv_text)
             self.write({
-                "status": STATUS_OK,
-                "msg": "",
-                "csv": processedCsvText,
-                "type": type
+                "status": status,
+                "msg": msg,
+                "csv": processed_csv_text,
+                "type": position_type
             })
         except Exception as e:
             logger.error(str(e).strip())
