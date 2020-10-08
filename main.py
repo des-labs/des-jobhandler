@@ -1377,14 +1377,15 @@ class JupyterLabFileListHandler(BaseHandler):
             username = self.get_username_parameter()
             jupyter_dir = os.path.join('/jobfiles', username, 'jupyter/public')
             jupyter_dirs = []
-            with os.scandir(jupyter_dir) as it:
-                for entry in it:
-                    if not entry.name.startswith('.') and entry.is_dir():
-                        mod_timestamp = datetime.datetime.fromtimestamp(entry.stat().st_mtime)
-                        jupyter_dirs.append({
-                            'directory': entry.name,
-                            'time': mod_timestamp
-                        })
+            if os.path.isdir(jupyter_dir):
+                with os.scandir(jupyter_dir) as it:
+                    for entry in it:
+                        if not entry.name.startswith('.') and entry.is_dir():
+                            mod_timestamp = datetime.datetime.fromtimestamp(entry.stat().st_mtime)
+                            jupyter_dirs.append({
+                                'directory': entry.name,
+                                'time': mod_timestamp
+                            })
             response['folders'] = jupyter_dirs
         except Exception as e:
             response['msg'] = str(e).strip()
