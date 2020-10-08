@@ -22,7 +22,7 @@ class dbConfig(object):
             "oracle_user_manager.yaml"
         )
         with open(file, 'r') as cfile:
-            conf = yaml.load(cfile)[manager_db]
+            conf = yaml.load(cfile, Loader=yaml.FullLoader)[manager_db]
         self.host = conf['host']
         self.port = conf['port']
         self.user_manager = conf['user']

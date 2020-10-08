@@ -41,13 +41,28 @@ JOBSDB = jobutils.JobsDb(
     mysql_database=envvars.MYSQL_DATABASE
 )
 
+# Configure logging
+#
+# Set logging format and basic config
 log_format = "%(asctime)s  %(name)8s  %(levelname)5s  %(message)s"
 logging.basicConfig(
     level=logging.INFO,
     handlers=[logging.FileHandler("test.log"), logging.StreamHandler()],
     format=log_format,
 )
+# Create a logging filter to protect user passwords and reduce clutter.
+class TornadoLogFilter(logging.Filter):
+    def filter(self, record):
+        print(record.getMessage())
+        if record.getMessage().find('api/login') > -1 or record.getMessage().find('api/job/status') > -1:
+            ret_val = 0
+        else:
+            ret_val = 1
+        return ret_val
+logging.getLogger("tornado.access").addFilter(TornadoLogFilter())
+# Define the logger for this module
 logger = logging.getLogger("main")
+logger.setLevel(logging.INFO)
 
 # Initialize global Jira API object
 #
@@ -57,7 +72,7 @@ jira_access_file = os.path.join(
     "jira_access.yaml"
 )
 with open(jira_access_file, 'r') as cfile:
-    conf = yaml.load(cfile)['jira']
+    conf = yaml.load(cfile, Loader=yaml.FullLoader)['jira']
 # Initialize Jira API object
 JIRA_API = jira.client.JIRA(
     options={'server': 'https://opensource.ncsa.illinois.edu/jira'},
@@ -232,8 +247,18 @@ def webcron(cls_handler):
             try:
                 current_time = datetime.datetime.utcnow()
                 for cronjob in cronjobs:
+                    if cronjob['last_run']:
+                        last_run_time = cronjob['last_run']
+                    else:
+                        last_run_time = False
+                    logger.debug('cronjob ({} min): {}'.format(cronjob['period'],cronjob['name']))
+                    logger.debug('current time: {}'.format(current_time))
+                    logger.debug('last run: {}'.format(last_run_time))
                     # Period is an integer in units of minutes
-                    if not cronjob['last_run'] or (current_time - cronjob['last_run']).seconds/60 >= cronjob['period']:
+                    time_diff = current_time - last_run_time
+                    time_diff_in_minutes = time_diff.total_seconds()/60
+                    logger.debug('time diff (min): {}'.format(time_diff_in_minutes))
+                    if not last_run_time or time_diff_in_minutes >= cronjob['period']:
                         # Time to run the cron job again
                         logger.info('Running cron job "{}" at "{}".'.format(cronjob['name'], current_time))
                         if cronjob == 'jupyter_prune':

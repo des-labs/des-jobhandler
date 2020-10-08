@@ -41,7 +41,7 @@ jira_access_file = os.path.join(
     "jira_access.yaml"
 )
 with open(jira_access_file, 'r') as cfile:
-    conf = yaml.load(cfile)['jira']
+    conf = yaml.load(cfile, Loader=yaml.FullLoader)['jira']
 # Initialize Jira API object
 JIRA_API = jira.client.JIRA(
     options={'server': 'https://opensource.ncsa.illinois.edu/jira'},
