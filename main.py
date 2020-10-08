@@ -1161,12 +1161,18 @@ class NotificationsCreateHandler(BaseHandler):
         roles = self.getarg('roles', [])
         if not roles:
             roles = ['default']
+        email = self.getarg('email', False)
         try:
             # Insert message into database table
             error_msg = JOBSDB.create_notification(title, body, roles, datetime.datetime.utcnow())
             if error_msg != '':
                 response['status'] = STATUS_ERROR
                 response['msg'] = error_msg
+            else:
+                # Only send email if the roles list includes "default" and this is the public interface
+                if envvars.DESACCESS_INTERFACE == 'public' and email and 'default' in roles:
+                    logger.info('Sending notification email to public email list.')
+                    email_utils.email_notify_public_list(envvars.DESACCESS_PUBLIC_EMAILS, title, body)
         except Exception as e:
             response['status'] = STATUS_ERROR
             response['msg'] = str(e).strip()
@@ -1206,12 +1212,18 @@ class NotificationsEditHandler(BaseHandler):
         title = self.getarg('title')
         body = self.getarg('body')
         roles = self.getarg('roles')
+        email = self.getarg('email', False)
         try:
             # Delete message from database table
             error_msg = JOBSDB.edit_notification(id, title, body, roles)
             if error_msg != '':
                 response['status'] = STATUS_ERROR
                 response['msg'] = error_msg
+            else:
+                # Only send email if the roles list includes "default" and this is the public interface
+                if envvars.DESACCESS_INTERFACE == 'public' and email and 'default' in roles:
+                    logger.info('Sending notification email to public email list.')
+                    email_utils.email_notify_public_list(envvars.DESACCESS_PUBLIC_EMAILS, title, body)
         except Exception as e:
             response['status'] = STATUS_ERROR
             response['msg'] = str(e).strip()

@@ -16,7 +16,7 @@ def render(tpl_path, context):
 
 
 class SingleEmailHeader(object):
-    def __init__(self, username, recipients, context, char='r', ps=None):
+    def __init__(self, username, recipients, context, char='r', template='email_template.html', ps=None):
         self.recipients = recipients
         self.server = 'smtp.ncsa.illinois.edu'
         # self.server = 'localhost'
@@ -37,7 +37,7 @@ class SingleEmailHeader(object):
         else:
             self.ps = ps
         self.context['ps'] = self.ps
-        self.html = render(os.path.join(os.path.dirname(__file__), 'email_template.html'), self.context)
+        self.html = render(os.path.join(os.path.dirname(__file__), template), self.context)
 
 
 def send_note(username, jobid, job_name, recipients):
@@ -205,6 +205,23 @@ def send_job_prune_warning(username, recipients, job_name, job_id, warning_perio
         "link": link,
     }
     header = SingleEmailHeader(username, recipients, context, char='c')
+    MP1 = MIMEText(header.html, 'html')
+    header.msg.attach(MP1)
+    # The TO and CC header fields are populated by the header construction, and any additional recipient addresses are effectively BCC
+    header.s.sendmail(header.fromemail, header.recipients, header.msg.as_string())
+    header.s.quit()
+    return "Email Sent to {}".format(header.recipients)
+
+
+def email_notify_public_list(recipients, subject, body):
+    if not isinstance(recipients, list):
+        recipients = [recipients]
+    context = {
+        "Subject": subject,
+        "msg": body,
+        "link": ''
+    }
+    header = SingleEmailHeader('', recipients, context, char='c', template='email_template_public_notification.html', ps='')
     MP1 = MIMEText(header.html, 'html')
     header.msg.attach(MP1)
     # The TO and CC header fields are populated by the header construction, and any additional recipient addresses are effectively BCC
