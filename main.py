@@ -1293,7 +1293,7 @@ class JupyterLabCreateHandler(BaseHandler):
         try:
             username = self.get_username_parameter()
             response['token'] = str(uuid.uuid4()).replace("-", "")
-            base_path = '/jlab/{}'.format(username)
+            base_path = '{}/jlab/{}'.format(envvars.FRONTEND_BASE_PATH, username)
             response['url'] = '{}{}?token={}'.format(envvars.FRONTEND_BASE_URL, base_path, response['token'])
             if any(role in self._token_decoded['roles'] for role in ['admin', 'gpu']):
                 gpu = self.getarg('gpu', 'false')

@@ -179,72 +179,36 @@ def create_ingress(networking_v1_beta1_api, username):
     name = 'jlab-{}'.format(username)
     try:
         # TODO: Improve this parameterization so that no cluster-specific details are hard-coded
-        if envvars.BASE_DOMAIN.lower() in ['deslabs.ncsa.illinois.edu', 'des.ncsa.illinois.edu']:
-            if envvars.BASE_DOMAIN.lower() == 'deslabs.ncsa.illinois.edu':
-                ingress_class = 'deslabs'
-            else:
-                ingress_class = 'nginx'
-            body = client.NetworkingV1beta1Ingress(
-                api_version="networking.k8s.io/v1beta1",
-                kind="Ingress",
-                metadata=client.V1ObjectMeta(name=name, annotations={
-                    'kubernetes.io/ingress.class': ingress_class
-                }),
-                spec=client.NetworkingV1beta1IngressSpec(
-                    # tls=[
-                    #     client.ExtensionsV1beta1IngressTLS(
-                    #         hosts=[
-                    #             envvars.BASE_DOMAIN
-                    #         ],
-                    #         secret_name=envvars.TLS_SECRET
-                    #     )
-                    # ],
-                    rules=[client.NetworkingV1beta1IngressRule(
-                        # host=envvars.BASE_DOMAIN,
-                        http=client.NetworkingV1beta1HTTPIngressRuleValue(
-                            paths=[client.NetworkingV1beta1HTTPIngressPath(
-                                path="/jlab/{}".format(username),
-                                backend=client.NetworkingV1beta1IngressBackend(
-                                    service_port=8888,
-                                    service_name=name)
-
-                            )]
-                        )
+        body = client.NetworkingV1beta1Ingress(
+            api_version="networking.k8s.io/v1beta1",
+            kind="Ingress",
+            metadata=client.V1ObjectMeta(name=name, annotations={
+                'kubernetes.io/ingress.class': envvars.INGRESS_CLASS_JLAB_SERVER
+            }),
+            spec=client.NetworkingV1beta1IngressSpec(
+                tls=[
+                    client.ExtensionsV1beta1IngressTLS(
+                        hosts=[
+                            envvars.BASE_DOMAIN
+                        ],
+                        secret_name=envvars.TLS_SECRET
                     )
-                    ]
-                )
-            )
-        else:
-            body = client.NetworkingV1beta1Ingress(
-                api_version="networking.k8s.io/v1beta1",
-                kind="Ingress",
-                metadata=client.V1ObjectMeta(name=name, annotations={
-                    'kubernetes.io/ingress.class': 'trans'
-                }),
-                spec=client.NetworkingV1beta1IngressSpec(
-                    tls=[
-                        client.ExtensionsV1beta1IngressTLS(
-                            hosts=[
-                                envvars.BASE_DOMAIN
-                            ],
-                            secret_name=envvars.TLS_SECRET
-                        )
-                    ],
-                    rules=[client.NetworkingV1beta1IngressRule(
-                        host=envvars.BASE_DOMAIN,
-                        http=client.NetworkingV1beta1HTTPIngressRuleValue(
-                            paths=[client.NetworkingV1beta1HTTPIngressPath(
-                                path="/jlab/{}".format(username),
-                                backend=client.NetworkingV1beta1IngressBackend(
-                                    service_port=8888,
-                                    service_name=name)
+                ],
+                rules=[client.NetworkingV1beta1IngressRule(
+                    host=envvars.BASE_DOMAIN,
+                    http=client.NetworkingV1beta1HTTPIngressRuleValue(
+                        paths=[client.NetworkingV1beta1HTTPIngressPath(
+                            path="{}/jlab/{}".format(envvars.FRONTEND_BASE_PATH, username),
+                            backend=client.NetworkingV1beta1IngressBackend(
+                                service_port=8888,
+                                service_name=name)
 
-                            )]
-                        )
+                        )]
                     )
-                    ]
                 )
+                ]
             )
+        )
         # Creation of the Ingress in specified namespace
         networking_v1_beta1_api.create_namespaced_ingress(
             namespace=namespace,
@@ -414,7 +378,7 @@ def prune(users, current_time):
             token = config_map[name].split("'")[1]
             # Get the list of running JupyterLab kernels using the JupyterLab API
             r = requests.get(
-                'https://{}/jlab/{}/api/kernels'.format(envvars.BASE_DOMAIN, username),
+                '{}/jlab/{}/api/kernels'.format(envvars.FRONTEND_BASE_URL, username),
                 params={
                     'token': token
                 }
