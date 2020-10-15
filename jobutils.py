@@ -1674,7 +1674,8 @@ def get_job_name(jobType, jobId, username):
 
 
 def get_job_configmap_name(jobType, jobId, username):
-    return "{}-{}-{}-cm".format(jobType, jobId, username)
+    # Some user names have underscores which are not valid Kubernetes resource name characters
+    return "{}-{}-{}-cm".format(jobType, jobId, re.sub(r'_', '', username))
 
 
 def get_job_template_base():

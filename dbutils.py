@@ -92,10 +92,13 @@ class dbConfig(object):
         dbh = cx_Oracle.connect(self.user_manager, self.pwd_manager, dsn=dsn)
         cursor = dbh.cursor()
         try:
-            sql = """
-            SELECT FIRSTNAME, LASTNAME, EMAIL from DES_ADMIN.DES_USERS WHERE USERNAME = :username
-            """
-            cc = cursor.execute(sql, username=user).fetchone()
+            if user == envvars.MONITOR_SERVICE_ACCOUNT_USERNAME:
+                cc = (envvars.MONITOR_SERVICE_ACCOUNT_USERNAME, envvars.MONITOR_SERVICE_ACCOUNT_USERNAME, 'devnull@ncsa.illinois.edu')
+            else:
+                sql = """
+                SELECT FIRSTNAME, LASTNAME, EMAIL from DES_ADMIN.DES_USERS WHERE USERNAME = :username
+                """
+                cc = cursor.execute(sql, username=user).fetchone()
         except:
             cc = ('','','')
         cursor.close()
