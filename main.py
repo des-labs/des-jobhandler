@@ -82,11 +82,13 @@ JIRA_API = jira.client.JIRA(
     )
 )
 
-# Initialize the Oracle database user manager
+# Initialize the Oracle database user manager and set email list address
 if envvars.DESACCESS_INTERFACE == 'public':
     USER_DB_MANAGER = dbutils.dbConfig(envvars.ORACLE_PUB, envvars.ORACLE_PUB_DBS)
+    EMAIL_LIST_ADDRESS = envvars.DESACCESS_PUBLIC_EMAILS
 else:
     USER_DB_MANAGER = dbutils.dbConfig(envvars.ORACLE_PRV, envvars.ORACLE_PRV_DBS)
+    EMAIL_LIST_ADDRESS = envvars.DESACCESS_PRIVATE_EMAILS
 
 # The datetime type is not JSON serializable, so convert to string
 def json_converter(o):
@@ -185,9 +187,6 @@ def webcron_prune_job_files(job_ttl=envvars.DESACCESS_JOB_FILES_LIFETIME, job_wa
 def webcron_sync_email_list():
     status = STATUS_OK
     msg = ''
-    # This is only relevant to the public interface.
-    if envvars.DESACCESS_INTERFACE != 'public':
-        return status, msg
     # Sync the current list of public DESaccess users to the remote data source for the announcement email list
     all_users = None
     list_file = '/email_list/desaccess_email_list.txt'
@@ -1194,10 +1193,10 @@ class NotificationsCreateHandler(BaseHandler):
                 response['status'] = STATUS_ERROR
                 response['msg'] = error_msg
             else:
-                # Only send email if the roles list includes "default" and this is the public interface
-                if envvars.DESACCESS_INTERFACE == 'public' and email and 'default' in roles:
-                    logger.info('Sending notification email to public email list.')
-                    email_utils.email_notify_public_list(envvars.DESACCESS_PUBLIC_EMAILS, title, body)
+                # Only send email if the roles list includes "default"
+                if email and 'default' in roles:
+                    logger.info('Sending notification email to email list.')
+                    email_utils.email_notify_public_list(EMAIL_LIST_ADDRESS, title, body)
         except Exception as e:
             response['status'] = STATUS_ERROR
             response['msg'] = str(e).strip()
@@ -1245,10 +1244,10 @@ class NotificationsEditHandler(BaseHandler):
                 response['status'] = STATUS_ERROR
                 response['msg'] = error_msg
             else:
-                # Only send email if the roles list includes "default" and this is the public interface
-                if envvars.DESACCESS_INTERFACE == 'public' and email and 'default' in roles:
-                    logger.info('Sending notification email to public email list.')
-                    email_utils.email_notify_public_list(envvars.DESACCESS_PUBLIC_EMAILS, title, body)
+                # Only send email if the roles list includes "default"
+                if email and 'default' in roles:
+                    logger.info('Sending notification email to email list.')
+                    email_utils.email_notify_public_list(EMAIL_LIST_ADDRESS, title, body)
         except Exception as e:
             response['status'] = STATUS_ERROR
             response['msg'] = str(e).strip()
