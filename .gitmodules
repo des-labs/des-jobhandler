@@ -2,3 +2,11 @@
 	path = easyaccess
 	url = https://github.com/des-labs/easyaccess
 	branch = master
+# [submodule "des-tasks"]
+# 	path = des-tasks
+# 	url = https://github.com/des-labs/des-tasks
+# 	branch = master
+[submodule "des-tasks"]
+	path = des_tasks
+	url = https://github.com/des-labs/des-tasks
+	branch = master
