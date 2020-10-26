@@ -721,14 +721,16 @@ class JobHandler(BaseHandler):
                 'ysize',
                 'colors_rgb',
                 'colors_fits',
-                'make_tiffs',
+                # 'make_tiffs',
                 'make_fits',
-                'make_pngs',
+                # 'make_pngs',
                 'make_rgb_lupton',
                 'make_rgb_stiff',
                 'rgb_minimum',
                 'rgb_stretch',
                 'rgb_asinh',
+                # TODO: Remove dev option
+                'dev',
                 # 'return_list',
             ]
         )

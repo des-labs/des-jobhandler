@@ -7,4 +7,3 @@ k8s.conf
 local_dev/*
 .codesync
 config/db_init.yaml
-des-tasks/

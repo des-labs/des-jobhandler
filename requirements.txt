@@ -10,3 +10,10 @@ rpdb
 cryptography
 pandas
 jira
+
+# For cutout bulkthumbs module
+requests
+numpy
+Pillow
+astropy
+mpi4py

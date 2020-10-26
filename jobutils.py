@@ -18,6 +18,8 @@ import jira.client
 import dbutils
 from io import StringIO
 from pandas import read_csv, DataFrame
+from des_tasks.cutout.worker import task as cutout_task
+import numpy as np
 
 STATUS_OK = 'ok'
 STATUS_ERROR = 'error'
@@ -81,47 +83,94 @@ def validate_cutout_csv(csv_text):
         return valid_sizes
 
     try:
-        parsedData = read_csv(StringIO(csv_text), dtype={
-            'RA': float,
-            'DEC': float,
-            'COADD_OBJECT_ID': int,
-            'XSIZE': float,
-            'YSIZE': float
-        })
+        df = DataFrame(read_csv(StringIO(csv_text), skipinitialspace=True, dtype={
+            'COADD_OBJECT_ID': str,
+            'RA': np.float64,
+            'DEC': np.float64,
+            'XSIZE': np.float64,
+            'YSIZE': np.float64,
+            'FITS_COLORS': str,
+            'RGB_STIFF_COLORS': str,
+            'RGB_LUPTON_COLORS': str,
+            'MAKE_FITS': np.float64,
+            'MAKE_RGB_STIFF': np.float64,
+            'MAKE_RGB_LUPTON': np.float64,
+        },
+        na_values={
+            'COADD_OBJECT_ID': '',
+            'RA': '',
+            'DEC': '',
+            'XSIZE': '',
+            'YSIZE': '',
+            'FITS_COLORS': '',
+            'RGB_STIFF_COLORS': '',
+            'RGB_LUPTON_COLORS': '',
+        }))
 
-        if all(k in parsedData for k in ('RA','DEC','XSIZE','YSIZE')):
-            position_type = "coords"
-            df = DataFrame(parsedData, columns=['RA','DEC','XSIZE','YSIZE'])
-            df['XSIZE'] = df['XSIZE'].map(lambda x: '%.2f' % x)
-            df['YSIZE'] = df['YSIZE'].map(lambda x: '%.2f' % x)
-            for size_col in [df['XSIZE'], df['YSIZE']]:
-                if not validate_sizes(size_col):
-                    status = STATUS_ERROR,
+        import math
+        for row_index, cutout in df.iterrows():
+            logger.info('\n{}:\n{}'.format(row_index, cutout))
+            if not any(k in cutout for k in ('RA','DEC','COADD_OBJECT_ID')):
+                msg = 'Each row must have either RA/DEC or COADD_OBJECT_ID'
+                logger.info(msg)
+                status = STATUS_ERROR
+                return position_type, processed_csv_text, status, msg
+            if not all(k in cutout for k in ['RA', 'DEC']) or any(math.isnan(cutout[k]) for k in ['RA', 'DEC']):
+                if not 'COADD_OBJECT_ID' in cutout or not isinstance(cutout['COADD_OBJECT_ID'], str):
+                    msg = 'Both RA and DEC are required'
+                    logger.info(msg)
+                    status = STATUS_ERROR
+                    return position_type, processed_csv_text, status, msg
+            if 'COADD_OBJECT_ID' in cutout and isinstance(cutout['COADD_OBJECT_ID'], str) and ('RA' in cutout and not math.isnan(cutout['RA']) or 'DEC' in cutout and not math.isnan(cutout['DEC'])):
+                msg = 'Only COADD_OBJECT_ID or RA/DEC can be specified, but not both'
+                logger.info(msg)
+                status = STATUS_ERROR
+                return position_type, processed_csv_text, status, msg
+            # df.at[row_index, 'XSIZE'] = cutout['XSIZE'].map(lambda x: '%.2f' % x)
+            # df.at[row_index, 'YSIZE'] = cutout['YSIZE'].map(lambda x: '%.2f' % x)
+            for size in [cutout['XSIZE'], cutout['YSIZE']]:
+                if float(size) > MAX_SIZE_IN_ARCMINUTES:
+                    status = STATUS_ERROR
                     msg = 'The max value for xsize and ysize is {} arcminutes.'.format(MAX_SIZE_IN_ARCMINUTES)
                     return position_type, processed_csv_text, status, msg
-            df.to_csv(temp_csv_file, index=False, float_format='%.12f')
-        elif all(k in parsedData for k in ('RA','DEC')):
-            position_type = "coords"
-            df = DataFrame(parsedData, columns=['RA','DEC'])
-            df.to_csv(temp_csv_file, index=False, float_format='%.12f')
-        elif all(k in parsedData for k in ('COADD_OBJECT_ID','XSIZE','YSIZE')):
-            position_type = "id"
-            df = DataFrame(parsedData, columns=['COADD_OBJECT_ID','XSIZE','YSIZE'])
-            for size_col in [df['XSIZE'], df['YSIZE']]:
-                if not validate_sizes(size_col):
-                    status = STATUS_ERROR,
-                    msg = 'The max value for xsize and ysize is {} arcminutes.'.format(MAX_SIZE_IN_ARCMINUTES)
-                    return position_type, processed_csv_text, status, msg
-            df.to_csv(temp_csv_file, index=False, float_format='%.2f')
-        elif 'COADD_OBJECT_ID' in parsedData:
-            position_type = "id"
-            df = DataFrame(parsedData, columns=['COADD_OBJECT_ID'])
-            df.to_csv(temp_csv_file, index=False, float_format='%.2f')
-        else:
-            logger.info('CSV header must have RA/DEC or COADD_OBJECT_ID')
-            status = STATUS_ERROR,
-            msg = 'CSV header must have RA/DEC or COADD_OBJECT_ID'
-            return position_type, processed_csv_text, status, msg
+            # df.at[row_index, 'RA'] = cutout['RA'].map(lambda x: '%.12f' % x)
+            # df.at[row_index, 'DEC'] = cutout['DEC'].map(lambda x: '%.12f' % x)
+
+        df.to_csv(temp_csv_file, index=False, float_format='%.12f')
+
+        # if all(k in parsedData for k in ('RA','DEC','XSIZE','YSIZE')):
+        #     position_type = "coords"
+        #     df = DataFrame(parsedData, columns=['RA','DEC','XSIZE','YSIZE'])
+        #     df['XSIZE'] = df['XSIZE'].map(lambda x: '%.2f' % x)
+        #     df['YSIZE'] = df['YSIZE'].map(lambda x: '%.2f' % x)
+        #     for size_col in [df['XSIZE'], df['YSIZE']]:
+        #         if not validate_sizes(size_col):
+        #             status = STATUS_ERROR,
+        #             msg = 'The max value for xsize and ysize is {} arcminutes.'.format(MAX_SIZE_IN_ARCMINUTES)
+        #             return position_type, processed_csv_text, status, msg
+        #     df.to_csv(temp_csv_file, index=False, float_format='%.12f')
+        # elif all(k in parsedData for k in ('RA','DEC')):
+        #     position_type = "coords"
+        #     df = DataFrame(parsedData, columns=['RA','DEC'])
+        #     df.to_csv(temp_csv_file, index=False, float_format='%.12f')
+        # elif all(k in parsedData for k in ('COADD_OBJECT_ID','XSIZE','YSIZE')):
+        #     position_type = "id"
+        #     df = DataFrame(parsedData, columns=['COADD_OBJECT_ID','XSIZE','YSIZE'])
+        #     for size_col in [df['XSIZE'], df['YSIZE']]:
+        #         if not validate_sizes(size_col):
+        #             status = STATUS_ERROR,
+        #             msg = 'The max value for xsize and ysize is {} arcminutes.'.format(MAX_SIZE_IN_ARCMINUTES)
+        #             return position_type, processed_csv_text, status, msg
+        #     df.to_csv(temp_csv_file, index=False, float_format='%.2f')
+        # elif 'COADD_OBJECT_ID' in parsedData:
+        #     position_type = "id"
+        #     df = DataFrame(parsedData, columns=['COADD_OBJECT_ID'])
+        #     df.to_csv(temp_csv_file, index=False, float_format='%.2f')
+        # else:
+        #     logger.info('CSV header must have RA/DEC or COADD_OBJECT_ID')
+        #     status = STATUS_ERROR,
+        #     msg = 'CSV header must have RA/DEC or COADD_OBJECT_ID'
+        #     return position_type, processed_csv_text, status, msg
 
         with open(temp_csv_file) as f:
             processed_csv_text = f.read()
@@ -426,8 +475,8 @@ class JobsDb:
                 self.cur.execute(
                     (
                         "INSERT INTO `cutout` "
-                        "(`job_id`, `db`, `release`, `ra`, `dec`, `coadd`, `positions`, `make_tiffs`, "
-                        "make_fits, make_pngs, make_rgb_lupton, make_rgb_stiff, "
+                        "(`job_id`, `db`, `release`, `ra`, `dec`, `coadd`, `positions`, "
+                        "make_fits, make_rgb_lupton, make_rgb_stiff, "
                         "return_list, xsize, ysize, colors_rgb, colors_fits, "
                         "rgb_minimum, rgb_stretch, rgb_asinh) "
                         "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
@@ -440,9 +489,9 @@ class JobsDb:
                         opt_vals['dec'],
                         opt_vals['coadd'],
                         opt_vals['positions'],
-                        conf["configjob"]["spec"]["make_tiffs"],
+                        # conf["configjob"]["spec"]["make_tiffs"],
                         conf["configjob"]["spec"]["make_fits"],
-                        conf["configjob"]["spec"]["make_pngs"],
+                        # conf["configjob"]["spec"]["make_pngs"],
                         conf["configjob"]["spec"]["make_rgb_lupton"],
                         conf["configjob"]["spec"]["make_rgb_stiff"],
                         conf["configjob"]["spec"]["return_list"],
@@ -489,6 +538,7 @@ class JobsDb:
 
     def count_pending_jobs(self, username):
         num_pending_jobs = 0
+        logger.info('user: {}'.format(username))
         self.open_db_connection()
         try:
             self.cur.execute(
@@ -1705,17 +1755,17 @@ def get_job_template(job_type):
 
 def submit_job(params):
 
-    def filter_and_order_colors(colorString):
-        # Returns a comma-separated string of color characters ordered by wavelength
-        if isinstance(colorString, str):
-            # Discard all invalid characters and delete redundancies
-            color_list_filtered_deduplicated = list(set(re.sub(r'([^grizy])', '', colorString.lower())))
-            ordered_colors = []
-            # Order the colors from long to short wavelength
-            for color in list('yzirg'):
-                if color in color_list_filtered_deduplicated:
-                    ordered_colors.append(color)
-            return ','.join(ordered_colors)
+    # def filter_and_order_colors(colorString):
+    #     # Returns a comma-separated string of color characters ordered by wavelength
+    #     if isinstance(colorString, str):
+    #         # Discard all invalid characters and delete redundancies
+    #         color_list_filtered_deduplicated = list(set(re.sub(r'([^grizy])', '', colorString.lower())))
+    #         ordered_colors = []
+    #         # Order the colors from long to short wavelength
+    #         for color in list('yzirg'):
+    #             if color in color_list_filtered_deduplicated:
+    #                 ordered_colors.append(color)
+    #         return ','.join(ordered_colors)
 
     status = STATUS_OK
     msg = ''
@@ -1878,14 +1928,16 @@ def submit_job(params):
         # Initialize the job spec object
         spec = {
         'jobid': job_id,
-        'usernm': username,
-        'passwd': password,
+        'username': username,
+        'password': password,
         'tiledir': 'auto',
-        'outdir': os.path.join('/home/worker/output/cutout', job_id),
+        # 'outdir': os.path.join('/home/worker/output/cutout', job_id),
         }
 
         # If RA/DEC are present in request parameters, ignore coadd if present.
         # If RA/DEC are not both present, assume
+        # TODO: RA/DEC and COADD IDs are now ignored. The position information must be included in the
+        # CSV-formatted "positions" parameter value.
         if all(k in params for k in ("ra", "dec")):
             spec['ra'] = params["ra"]
             spec['dec'] = params["dec"]
@@ -1893,6 +1945,7 @@ def submit_job(params):
             spec['coadd'] = params["coadd"]
         elif "positions" in params:
             spec['positions'] = params["positions"].encode('utf-8').decode('unicode-escape')
+            logger.info(spec['positions'])
             position_type, processed_csv_text, status, msg = validate_cutout_csv(spec['positions'])
             if status == STATUS_OK:
                 spec['positions'] = processed_csv_text.encode('utf-8').decode('unicode-escape')
@@ -1918,68 +1971,87 @@ def submit_job(params):
             return status,msg,job_id
         try:
             if "xsize" in params:
-                spec['xsize'] = float("{:.2f}".format(float(params["xsize"])))
+                spec['XSIZE'] = float("{:.2f}".format(float(params["xsize"])))
             if "ysize" in params:
-                spec['ysize'] = float("{:.2f}".format(float(params["ysize"])))
+                spec['YSIZE'] = float("{:.2f}".format(float(params["ysize"])))
         except:
             status = STATUS_ERROR
             msg = 'xsize and ysize must be numerical values'
             return status,msg,job_id
-        if spec['xsize'] > MAX_SIZE_IN_ARCMINUTES or spec['ysize'] > MAX_SIZE_IN_ARCMINUTES:
+        if spec['XSIZE'] > MAX_SIZE_IN_ARCMINUTES or spec['YSIZE'] > MAX_SIZE_IN_ARCMINUTES:
             status = STATUS_ERROR
             msg = 'The max value for xsize and ysize is {} arcminutes.'.format(MAX_SIZE_IN_ARCMINUTES)
             return status,msg,job_id
-        # Set color strings from request parameters
-        search_args = ['colors_rgb', 'colors_fits']
-        for string_param in search_args:
-            spec[string_param] = ''
-        for string_param in list(set(search_args).intersection(set(params))):
-            if isinstance(params[string_param], str) and len(params[string_param]) > 0:
-                spec[string_param] = params[string_param]
-        # Set default value if string is empty
-        if len(spec['colors_fits']) < 1:
-            spec['colors_fits'] = 'i'
-        # Set boolean arguments from request parameters
-        bool_param_found = False
-        search_args = ['make_tiffs', 'make_fits', 'make_pngs', 'make_rgb_lupton', 'make_rgb_stiff', 'return_list']
-        for bool_param in search_args:
-            spec[bool_param] = False
-        for bool_param in list(set(search_args).intersection(set(params))):
-            spec[bool_param] = params[bool_param] == 'true' or str(params[bool_param]) == 'True'
-            if spec[bool_param]:
-                bool_param_found = True
-        # If no booleans were set then no information was actually requested
-        if not bool_param_found:
+
+        # FITS file specification
+        if 'make_fits' in params and str(params['make_fits']).lower() == 'true':
+            logger.info('make_fits: {}'.format(params['make_fits']))
+            spec['MAKE_FITS'] = 1
+        else:
+            spec['MAKE_FITS'] = 0
+
+        # Set the default FITS colors
+        spec['FITS_COLORS'] = 'i'
+        # If colors_fits parameter is provided, it must be valid or return an error. If not provided, the default is used.
+        if 'colors_fits' in params and isinstance(params['colors_fits'], str) and len(''.join(list(set(re.sub(r'([^grizy])', '', params['colors_fits']).lower())))) >= 1:
+            spec['FITS_COLORS'] = params['colors_fits']
+        else:
             status = STATUS_ERROR
-            msg = 'No information requested.'
+            msg = 'If FITS images are requested, at least one band must be specified.'
             return status,msg,job_id
-        # If color images were requested, colors must be specified
-        elif (spec['make_rgb_stiff'] or spec['make_rgb_lupton']) and len(spec['colors_rgb']) < 1:
+
+        # RGB STIFF format color image
+        if 'make_rgb_stiff' in params and str(params['make_rgb_stiff']).lower() == 'true':
+            spec['MAKE_RGB_STIFF'] = 1
+        else:
+            spec['MAKE_RGB_STIFF'] = 0
+
+        # RGB Lupton format color image
+        if 'make_rgb_lupton' in params and str(params['make_rgb_lupton']).lower() == 'true':
+            spec['MAKE_RGB_LUPTON'] = 1
+            # The validity of the color spec has already been verified
+        else:
+            spec['MAKE_RGB_LUPTON'] = 0
+
+        # Set the default RGB colors
+        spec['RGB_STIFF_COLORS'] = 'gri'
+        spec['RGB_LUPTON_COLORS'] = 'gri'
+        # If colors_rgb parameter is provided, it must be valid or return an error. If not provided, the default is used.
+        if 'colors_rgb' in params and isinstance(params['colors_rgb'], str) and len(''.join(list(set(re.sub(r'([^grizy])', '', params['colors_rgb']).lower())))) >= 3:
+            spec['RGB_STIFF_COLORS']  = params['colors_rgb']
+            spec['RGB_LUPTON_COLORS'] = params['colors_rgb']
+        else:
             status = STATUS_ERROR
-            msg = 'colors_rgb is required when requesting make_rgb_stiff or make_rgb_lupton'
+            msg = 'If RGB images are requested, at least three valid color bands must be specified.'
             return status,msg,job_id
-        # Filter and order color strings
-        for string_param in ['colors_rgb', 'colors_fits']:
-            if len(spec[string_param]) > 0:
-                spec[string_param] = filter_and_order_colors(spec[string_param])
-                # Error and return if no valid colors are specified
-                if not spec[string_param]:
-                    status = STATUS_ERROR
-                    msg = 'Valid colors are y,z,i,r,g'
-                    return status,msg,job_id
-                elif string_param == 'colors_rgb' and len(spec[string_param].split(',')) != 3:
-                    status = STATUS_ERROR
-                    msg = 'Exactly three colors must be specified for colors_rgb'
-                    return status,msg,job_id
+            
+        # # Filter and order color strings
+        # for string_param in ['colors_rgb', 'colors_fits']:
+        #     if len(spec[string_param]) > 0:
+        #         spec[string_param] = filter_and_order_colors(spec[string_param])
+        #         # Error and return if no valid colors are specified
+        #         if not spec[string_param]:
+        #             status = STATUS_ERROR
+        #             msg = 'Valid colors are y,z,i,r,g'
+        #             return status,msg,job_id
+        #         elif string_param == 'colors_rgb' and len(spec[string_param].split(',')) != 3:
+        #             status = STATUS_ERROR
+        #             msg = 'Exactly three colors must be specified for colors_rgb'
+        #             return status,msg,job_id
+
         # Process Lupton RGB options
+        spec['RGB_MINIMUM'] = 1.0
+        spec['RGB_STRETCH'] = 50.0
+        spec['RGB_ASINH'] = 10.0
         search_args = ['rgb_minimum', 'rgb_stretch', 'rgb_asinh']
-        for rgb_param in list(set(search_args).intersection(set(params))):
-            try:
-                spec[rgb_param] = float(params[rgb_param])
-            except:
-                status = STATUS_ERROR
-                msg = 'rgb_minimum, rgb_stretch, rgb_asinh must be numerical values'
-                return status,msg,job_id
+        for rgb_param in search_args:
+            if rgb_param in params:
+                try:
+                    spec[rgb_param.upper()] = float(params[rgb_param])
+                except:
+                    status = STATUS_ERROR
+                    msg = 'If rgb_minimum, rgb_stretch, rgb_asinh are provided, they must be numerical values'
+                    return status,msg,job_id
         
         # Provide the Oracle database service account information
         if spec['db'] == 'DESDR':
@@ -1991,13 +2063,19 @@ def submit_job(params):
         conf["configjob"]["spec"] = spec
 
         # Count the number of positions in the requested job.
-        logger.info(spec['positions'])
-        cutout_positions = read_csv(StringIO(spec['positions']), dtype={
-            'RA': float,
-            'DEC': float,
-            'COADD_OBJECT_ID': int,
-            'XSIZE': float,
-            'YSIZE': float
+        logger.info('\n{}'.format(spec['positions']))
+        cutout_positions = read_csv(StringIO(spec['positions']), skipinitialspace=True, dtype={
+            'COADD_OBJECT_ID': str,
+            'RA': np.float64,
+            'DEC': np.float64,
+            'XSIZE': np.float64,
+            'YSIZE': np.float64,
+            'FITS_COLORS': str,
+            'RGB_STIFF_COLORS': str,
+            'RGB_LUPTON_COLORS': str,
+            'MAKE_FITS': np.float64,
+            'MAKE_RGB_STIFF': np.float64,
+            'MAKE_RGB_LUPTON': np.float64,
         })
         logger.info(cutout_positions)
         if params['limits']['cutout']['cutouts_per_job'] > 0 and len(cutout_positions) > params['limits']['cutout']['cutouts_per_job']:
@@ -2005,14 +2083,15 @@ def submit_job(params):
             msg = 'Number of requested cutouts ({}) exceeds the maximum allowed per job request ({}).'.format(len(cutout_positions), params['limits']['cutout']['cutouts_per_job'])
             return status,msg,job_id
 
-        # Count the number of jobs currently pending for the submitting user.
-        if params['limits']['cutout']['concurrent_jobs'] > 0:
-            num_pending_jobs = JOBSDB.count_pending_jobs(username)
-            logger.info('num_pending_jobs: {}'.format(num_pending_jobs))
-            if num_pending_jobs > params['limits']['cutout']['concurrent_jobs']:
-                status = STATUS_ERROR
-                msg = 'Number of requested jobs ({}) exceeds the maximum allowed concurrent jobs ({}).'.format(num_pending_jobs, params['limits']['cutout']['concurrent_jobs'])
-                return status,msg,job_id
+        logger.info('Counting the number of pending jobs...')
+        # # Count the number of jobs currently pending for the submitting user.
+        # if params['limits']['cutout']['concurrent_jobs'] > 0:
+        #     num_pending_jobs = JOBSDB.count_pending_jobs(username)
+        #     logger.info('num_pending_jobs: {}'.format(num_pending_jobs))
+        #     if num_pending_jobs > params['limits']['cutout']['concurrent_jobs']:
+        #         status = STATUS_ERROR
+        #         msg = 'Number of requested jobs ({}) exceeds the maximum allowed concurrent jobs ({}).'.format(num_pending_jobs, params['limits']['cutout']['concurrent_jobs'])
+        #         return status,msg,job_id
 
     else:
         # Invalid job type
@@ -2025,12 +2104,79 @@ def submit_job(params):
     else:
         msg = "Job:{} id:{} by:{}".format(job_type, job_id, username)
     try:
-        kubejob.create_configmap(conf)
-        kubejob_status, kubejob_msg = kubejob.create_job(conf)
-        if kubejob_status == STATUS_ERROR:
-            status = STATUS_ERROR
-            msg = kubejob_msg
-            return status,msg,job_id
+        # If this is a dev run, do not create a Kubernetes Job
+        if job_type == 'cutout' and 'dev' in params and str(params['dev']).lower() == 'true':
+            logger.info('Running synchronously via JobHandler')
+            user_dir = os.path.join('/jobfiles', conf['configjob']['spec']['username'])
+            outdir = os.path.join(user_dir, 'cutout', job_id)
+            # Hack to get log path set correctly
+            conf['configjob']['metadata']['log'] = os.path.join(user_dir, 'cutout', '{}.log'.format(job_id))
+            conf['configjob']['spec']['outdir'] = outdir
+            
+            
+            # cutout_task.run(
+            #     # Instead of taking the config data and (1) converting to a ConfigMap definition, which is then (2) mounted as
+            #     # a file in the task Job container, which is then (3) imported as a Python dict object, we pass it here directly.
+            #     conf['configjob'], 
+            #     # When running in JobHandler's container, the user directory is not mounted directly as they are when tasks run as k8s Jobs
+            #     user_dir=user_dir
+            # )
+
+            # Transcribe the task.py script to run here because 
+            # the self-HTTP-requests to API endpoints for starting and
+            # stopping the job cannot complete synchronously
+            config = conf['configjob']
+            # Make the cutout subdirectory if it does not already exist.
+            cutout_dir = os.path.join(user_dir, 'cutout')
+            logger.info('making cutout dir: {}'.format(cutout_dir))
+            os.makedirs(cutout_dir, exist_ok=True)
+            config['cutout_dir'] = cutout_dir
+            os.makedirs(config['spec']['outdir'], exist_ok=True)
+            # Record task has begun
+            logger.info('running update job start: {}'.format(config['metadata']['apiToken']))
+            JOBSDB.update_job_start(config['metadata']['apiToken'])
+            # Execute task
+            response = {
+                'status': STATUS_OK,
+                'msg': ''
+            }
+            logger.info('creating cutout config file from: {}'.format(json.dumps(config['spec'], indent=2)))
+            # Dump cutout config to YAML file in working directory
+            cutout_config_file = 'cutout_config.yaml'
+            with open(cutout_config_file, 'w') as file:
+                yaml.dump(config['spec'], file)
+
+            import subprocess
+            # TODO: replace hard-coded value with number of CPUs allocated to the k8s Job
+            num_cpus = 1
+            args = 'mpirun -n {} python3 cutouts/bulkthumbs.py --config {}'.format(num_cpus, cutout_config_file)
+            try:
+                run_output = subprocess.check_output([args], shell=True)
+            except subprocess.CalledProcessError as e:
+                logging.error(e.output)
+                response['status'] = STATUS_ERROR
+                response['msg'] = e.output
+            # Task complete
+            import glob
+            # Report that work has completed
+            # If no errors have occurred already, parse the job summary file for file info
+            path = config['spec']['outdir']
+            files = glob.glob(os.path.join(path, '*/*'))
+            relpaths = []
+            total_size = 0.0
+            for file in files:
+                relpaths.append(os.path.relpath(file, start=config['cutout_dir']))
+                total_size += os.path.getsize(file)
+            response['files'] = relpaths
+            response['sizes'] = total_size
+            JOBSDB.update_job_complete(config['metadata']['apiToken'], response)
+        else:
+            kubejob.create_configmap(conf)
+            kubejob_status, kubejob_msg = kubejob.create_job(conf)
+            if kubejob_status == STATUS_ERROR:
+                status = STATUS_ERROR
+                msg = kubejob_msg
+                return status,msg,job_id
     except Exception as e:
         status = STATUS_ERROR
         msg = str(e).strip()
@@ -2044,3 +2190,5 @@ def submit_job(params):
         status = STATUS_ERROR
         msg = str(e).strip()
     return status,msg,job_id
+
+
