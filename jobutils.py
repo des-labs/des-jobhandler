@@ -15,9 +15,10 @@ import re
 import email_utils
 import shutil
 import jira.client
-import dbutils
-from io import StringIO
-from pandas import read_csv, DataFrame
+from des_tasks.cutout.worker.bulkthumbs import validate_user_defaults as validate_cutout_user_defaults
+from des_tasks.cutout.worker.bulkthumbs import validate_positions_table as validate_cutout_positions_table
+
+import numpy as np
 
 STATUS_OK = 'ok'
 STATUS_ERROR = 'error'
@@ -30,8 +31,7 @@ logging.basicConfig(
     handlers=[logging.FileHandler("test.log"), logging.StreamHandler()],
     format=log_format,
 )
-logger = logging.getLogger("main")
-
+logger = logging.getLogger(__name__)
 
 # Initialize global Jira API object
 #
@@ -65,73 +65,6 @@ def password_decrypt(password):
     locksmith = Fernet(key)
     return locksmith.decrypt(password.encode('UTF-8')).decode('UTF-8')
 
-def validate_cutout_csv(csv_text):
-    status = STATUS_OK
-    msg = ''
-    position_type = None
-    temp_csv_file = '.temp.csv'
-    processed_csv_text = csv_text
-
-    def validate_sizes(size_col):
-        valid_sizes = True
-        for size in size_col:
-            logger.info(size)
-            if float(size) > MAX_SIZE_IN_ARCMINUTES:
-                return False
-        return valid_sizes
-
-    try:
-        parsedData = read_csv(StringIO(csv_text), dtype={
-            'RA': float,
-            'DEC': float,
-            'COADD_OBJECT_ID': int,
-            'XSIZE': float,
-            'YSIZE': float
-        })
-
-        if all(k in parsedData for k in ('RA','DEC','XSIZE','YSIZE')):
-            position_type = "coords"
-            df = DataFrame(parsedData, columns=['RA','DEC','XSIZE','YSIZE'])
-            df['XSIZE'] = df['XSIZE'].map(lambda x: '%.2f' % x)
-            df['YSIZE'] = df['YSIZE'].map(lambda x: '%.2f' % x)
-            for size_col in [df['XSIZE'], df['YSIZE']]:
-                if not validate_sizes(size_col):
-                    status = STATUS_ERROR,
-                    msg = 'The max value for xsize and ysize is {} arcminutes.'.format(MAX_SIZE_IN_ARCMINUTES)
-                    return position_type, processed_csv_text, status, msg
-            df.to_csv(temp_csv_file, index=False, float_format='%.12f')
-        elif all(k in parsedData for k in ('RA','DEC')):
-            position_type = "coords"
-            df = DataFrame(parsedData, columns=['RA','DEC'])
-            df.to_csv(temp_csv_file, index=False, float_format='%.12f')
-        elif all(k in parsedData for k in ('COADD_OBJECT_ID','XSIZE','YSIZE')):
-            position_type = "id"
-            df = DataFrame(parsedData, columns=['COADD_OBJECT_ID','XSIZE','YSIZE'])
-            for size_col in [df['XSIZE'], df['YSIZE']]:
-                if not validate_sizes(size_col):
-                    status = STATUS_ERROR,
-                    msg = 'The max value for xsize and ysize is {} arcminutes.'.format(MAX_SIZE_IN_ARCMINUTES)
-                    return position_type, processed_csv_text, status, msg
-            df.to_csv(temp_csv_file, index=False, float_format='%.2f')
-        elif 'COADD_OBJECT_ID' in parsedData:
-            position_type = "id"
-            df = DataFrame(parsedData, columns=['COADD_OBJECT_ID'])
-            df.to_csv(temp_csv_file, index=False, float_format='%.2f')
-        else:
-            logger.info('CSV header must have RA/DEC or COADD_OBJECT_ID')
-            status = STATUS_ERROR,
-            msg = 'CSV header must have RA/DEC or COADD_OBJECT_ID'
-            return position_type, processed_csv_text, status, msg
-
-        with open(temp_csv_file) as f:
-            processed_csv_text = f.read()
-        os.remove(temp_csv_file)
-    except Exception as e:
-        logger.error(str(e).strip())
-        status = STATUS_ERROR,
-        msg = str(e).strip()
-    return position_type, processed_csv_text, status, msg
-
 class JobsDb:
     def __init__(self, mysql_host, mysql_user, mysql_password, mysql_database):
         self.host = mysql_host
@@ -140,7 +73,7 @@ class JobsDb:
         self.database = mysql_database
         self.cur = None
         self.cnx = None
-        self.db_schema_version = 16
+        self.db_schema_version = 17
         self.table_names = [
             'job',
             'query',
@@ -333,7 +266,7 @@ class JobsDb:
                 uuid_criterion_sql = ' AND j.uuid = %s '
                 sql_values = (username, job_id)
             sql = '''
-            SELECT j.type, j.name, j.uuid, j.status, j.msg, j.time_start, j.time_complete, j.time_submitted, q.data, q.query, q.files, c.file_list, c.positions, r.renewal_token, r.expiration_date
+            SELECT j.type, j.name, j.uuid, j.status, j.msg, j.time_start, j.time_complete, j.time_submitted, q.data, q.query, q.files, c.file_list, c.summary as cutout_summary, c.positions, r.renewal_token, r.expiration_date
             FROM `job` j 
             LEFT JOIN `query` q 
             ON j.id = q.job_id 
@@ -345,7 +278,7 @@ class JobsDb:
             '''.format(uuid_criterion_sql)
             self.cur.execute(sql, sql_values)
             job_info = None
-            for (type, name, uuid, status, msg, time_start, time_complete, time_submitted, data, query, files, file_list, positions, renewal_token, expiration_date) in self.cur:
+            for (type, name, uuid, status, msg, time_start, time_complete, time_submitted, data, query, files, file_list, cutout_summary, positions, renewal_token, expiration_date) in self.cur:
                 job_info = {}
                 job_info["job_type"] = type
                 job_info["job_name"] = name
@@ -359,6 +292,7 @@ class JobsDb:
                 job_info["query"] = query
                 job_info["query_files"] = [] if files is None else json.loads(files)
                 job_info["cutout_files"] = [] if file_list is None else json.loads(file_list)
+                job_info["cutout_summary"] = {} if cutout_summary is None else json.loads(cutout_summary)
                 job_info["cutout_positions"] = "" if positions is None else positions
                 job_info["renewal_token"] = "" if renewal_token is None else renewal_token
                 job_info["expiration_date"] = "" if expiration_date is None else expiration_date
@@ -386,12 +320,12 @@ class JobsDb:
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
         )
         newJobInfo = (
-            conf["configjob"]["metadata"]["username"],
-            conf["configjob"]["kind"],
-            conf["configjob"]["metadata"]["job_name"],
-            conf["configjob"]["metadata"]["jobId"],
+            conf['configjob']["metadata"]["username"],
+            conf['configjob']["kind"],
+            conf['configjob']["metadata"]["job_name"],
+            conf['configjob']["metadata"]["jobId"],
             'init',
-            conf["configjob"]["metadata"]["apiToken"],
+            conf['configjob']["metadata"]["apiToken"],
             conf["user_agent"],
             email,
             '',
@@ -399,7 +333,7 @@ class JobsDb:
         )
         self.cur.execute(newJobSql, newJobInfo)
         if self.cur.lastrowid:
-            if conf["configjob"]["kind"] == 'query':
+            if conf['configjob']["kind"] == 'query':
                 newQuerySql = (
                     "INSERT INTO `query` "
                     "(job_id, query, files, sizes, data) "
@@ -407,49 +341,73 @@ class JobsDb:
                 )
                 newQueryInfo = (
                     self.cur.lastrowid,
-                    conf["configjob"]["spec"]["inputs"]["queryString"],
+                    conf['configjob']['spec']["inputs"]["queryString"],
                     '[]',
                     '[]',
                     '{}',
                 )
                 self.cur.execute(newQuerySql, newQueryInfo)
-            elif conf["configjob"]["kind"] == 'test':
+            elif conf['configjob']["kind"] == 'test':
                 # TODO: Add test table row associated with test task
                 logger.info('Created new job of type "test"')
-            elif conf["configjob"]["kind"] == 'cutout':
+            elif conf['configjob']["kind"] == 'cutout':
                 opt_vals = {}
-                for key in ['ra', 'dec', 'coadd', 'positions', 'xsize', 'ysize', 'rgb_minimum', 'rgb_stretch', 'rgb_asinh']:
-                    if key in conf["configjob"]["spec"]:
-                        opt_vals[key] = conf["configjob"]["spec"][key]
+                opt_params = [
+                    'positions', 
+                    'make_fits', 
+                    'make_rgb_stiff', 
+                    'make_rgb_lupton', 
+                    'xsize', 
+                    'ysize', 
+                    'colors_fits', 
+                    'rgb_stiff_colors', 
+                    'rgb_lupton_colors', 
+                    'rgb_minimum', 
+                    'rgb_stretch', 
+                    'rgb_asinh',
+                ]
+                for key in opt_params:
+                    if key in conf['configjob']['spec']:
+                        opt_vals[key] = conf['configjob']['spec'][key]
                     else:
                         opt_vals[key] = None
                 self.cur.execute(
                     (
-                        "INSERT INTO `cutout` "
-                        "(`job_id`, `db`, `release`, `ra`, `dec`, `coadd`, `positions`, `make_tiffs`, "
-                        "make_fits, make_pngs, make_rgb_lupton, make_rgb_stiff, "
-                        "return_list, xsize, ysize, colors_rgb, colors_fits, "
-                        "rgb_minimum, rgb_stretch, rgb_asinh) "
-                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+                        '''
+                        INSERT INTO `cutout` 
+                        (
+                            `job_id`, 
+                            `db`, 
+                            `release`, 
+                            `positions`, 
+                            `make_fits`,
+                            `make_rgb_stiff`,
+                            `make_rgb_lupton`,
+                            `xsize`, 
+                            `ysize`, 
+                            `colors_fits`, 
+                            `rgb_stiff_colors`, 
+                            `rgb_lupton_colors`, 
+                            `rgb_minimum`, 
+                            `rgb_stretch`, 
+                            `rgb_asinh`
+                        ) 
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        '''
                     ),
                     (
                         self.cur.lastrowid,
-                        conf["configjob"]["spec"]["db"],
-                        conf["configjob"]["spec"]["release"],
-                        opt_vals['ra'],
-                        opt_vals['dec'],
-                        opt_vals['coadd'],
-                        opt_vals['positions'],
-                        conf["configjob"]["spec"]["make_tiffs"],
-                        conf["configjob"]["spec"]["make_fits"],
-                        conf["configjob"]["spec"]["make_pngs"],
-                        conf["configjob"]["spec"]["make_rgb_lupton"],
-                        conf["configjob"]["spec"]["make_rgb_stiff"],
-                        conf["configjob"]["spec"]["return_list"],
-                        conf["configjob"]["spec"]["xsize"],
-                        conf["configjob"]["spec"]["ysize"],
-                        conf["configjob"]["spec"]["colors_rgb"],
-                        conf["configjob"]["spec"]["colors_fits"],
+                        conf['configjob']['spec']['db'],
+                        conf['configjob']['spec']['release'],
+                        conf['configjob']['spec']['positions'],
+                        opt_vals['make_fits'],
+                        opt_vals['make_rgb_stiff'],
+                        opt_vals['make_rgb_lupton'],
+                        opt_vals['xsize'],
+                        opt_vals['ysize'],
+                        opt_vals['colors_fits'],
+                        opt_vals['rgb_stiff_colors'],
+                        opt_vals['rgb_lupton_colors'],
                         opt_vals['rgb_minimum'],
                         opt_vals['rgb_stretch'],
                         opt_vals['rgb_asinh'],
@@ -509,17 +467,6 @@ class JobsDb:
 
     def update_job_complete(self, apitoken, response):
         error_msg = None
-        try:
-            if response['config']['kind'] == 'utility':
-                conf = {"job": response['config']['kind']}
-                conf['namespace'] = get_namespace()
-                conf["job_name"] = response['config']['metadata']['job_name']
-                conf["job_id"] = response['config']['metadata']['jobId']
-                conf["cm_name"] = get_job_configmap_name(response['config']['kind'], response['config']['metadata']['jobId'], response['config']['metadata']['username'])
-                kubejob.delete_job(conf)
-                return error_msg
-        except:
-            pass
         rowId = self.validate_apitoken(apitoken)
         if not isinstance(rowId, int):
             error_msg = 'Invalid apitoken'
@@ -572,7 +519,8 @@ class JobsDb:
                 conf["job_name"] = job_name
                 conf["job_id"] = job_id
                 conf["cm_name"] = get_job_configmap_name(type, job_id, user)
-                kubejob.delete_job(conf)
+                if 'synchronous' not in response or response['synchronous'] != True:
+                    kubejob.delete_job(conf)
                 if type == 'test':
                     updateQuerySql = (
                         "UPDATE `job` "
@@ -601,13 +549,14 @@ class JobsDb:
                     self.cur.execute(
                         (
                             "UPDATE `cutout` "
-                            "SET file_list=%s, file_size=%s, file_number=%s "
+                            "SET file_list=%s, file_size=%s, file_number=%s , summary=%s "
                             "WHERE job_id=%s"
                         ),
                         (
                             json.dumps(response["files"]),
                             str(response["sizes"]),
                             len(response["files"]),
+                            json.dumps(response["summary"]),
                             rowId
                         )
                     )
@@ -1507,6 +1456,7 @@ class JobsDb:
                 )
             )
             rowId = None
+            preferences = {}
             for (id, preferences,) in self.cur:
                 rowId = id
                 preferences = {} if preferences is None else json.loads(preferences)
@@ -1693,7 +1643,7 @@ def get_job_template(job_type):
     # Import task config template file
     jobConfigTemplateFile = os.path.join(
         os.path.dirname(__file__),
-        "des-tasks",
+        "des_tasks",
         job_type,
         'worker',
         "jobconfig_spec.tpl.yaml"
@@ -1704,27 +1654,18 @@ def get_job_template(job_type):
 
 
 def submit_job(params):
-
-    def filter_and_order_colors(colorString):
-        # Returns a comma-separated string of color characters ordered by wavelength
-        if isinstance(colorString, str):
-            # Discard all invalid characters and delete redundancies
-            color_list_filtered_deduplicated = list(set(re.sub(r'([^grizy])', '', colorString.lower())))
-            ordered_colors = []
-            # Order the colors from long to short wavelength
-            for color in list('yzirg'):
-                if color in color_list_filtered_deduplicated:
-                    ordered_colors.append(color)
-            return ','.join(ordered_colors)
-
     status = STATUS_OK
     msg = ''
     try:
         # Common configurations to all tasks types:
         username = params["username"].lower()
         password = JOBSDB.get_password(username)
-        job_type = params["job"]
         job_id = generate_uuid()
+        job_type = params["job"]
+        if job_type not in ['test', 'query', 'cutout']:
+            status = STATUS_ERROR
+            msg = 'Job type "{}" is not valid'.format(job_type)
+            return status,msg,job_id
         conf = {}
         conf["job"] = job_type
         conf["db"] = params['db']
@@ -1772,7 +1713,7 @@ def submit_job(params):
     logFilePath = "./output/{}/{}.log".format(conf["job"], job_id)
 
     # Render the base YAML template for the job configuration data structure
-    conf["configjob"] = yaml.safe_load(base_template.render(
+    conf['configjob'] = yaml.safe_load(base_template.render(
         taskType=conf["job"],
         jobName=job_id,
         job_name=conf['job_name'],
@@ -1786,11 +1727,27 @@ def submit_job(params):
         persistentVolumeClaim=envvars.PVC_NAME_BASE,
         debug=envvars.DEBUG_JOB
     ))
-    conf["configjob"]["spec"] = {}
+    conf['configjob']['spec'] = {}
 
     # TODO: Variate the resource requests/limits between the task types
     conf["resource_limit_cpu"] = 1
     conf["resource_request_cpu"] = 1
+
+
+    # Should the job be executed synchronously or in an independent container (Kubernetes Job)
+    # Currently only the cutout job type can be run synchronously
+    synchronous_job = job_type == 'cutout' and 'synchronous' in params and str(params['synchronous']).lower() == 'true'
+
+    # Set the output directories
+    if synchronous_job:
+        logger.info('Synchronous job selected.')
+        # When run synchronously, the specific user directory must be explicitly defined
+        user_dir = os.path.join('/jobfiles', username)
+    else:
+        # When run as a k8s Job, the specific user directory is mounted via the Pod spec configuration
+        user_dir = '/home/worker/output'
+    # Output files 
+    outdir = os.path.join(user_dir, 'cutout', job_id)
 
     # Custom configurations depending on the task type:
 
@@ -1800,40 +1757,9 @@ def submit_job(params):
     if job_type == 'test':
         conf["image"] = envvars.DOCKER_IMAGE_TASK_TEST
         conf["command"] = ["python", "task.py"]
-        conf["configjob"]["spec"] = yaml.safe_load(template.render(
+        conf['configjob']['spec'] = yaml.safe_load(template.render(
             taskDuration=int(params["time"])
         ))
-
-    # ############################################################################
-    # # task type: utility
-    # ############################################################################
-    # elif job_type == 'utility':
-    #     conf["image"] = envvars.DOCKER_IMAGE_TASK_UTILITY
-    #     try:
-    #         action = params['action']
-    #         delete_path = ''
-    #         conf["command"] = ["python", "task.py"]
-    #         if action == 'delete_job_files':
-    #             # Get the type of job in order to construct the path to be deleted
-    #             job_info_list, request_status, status_msg = JOBSDB.job_status(username, params['job-id'])
-    #             if request_status == STATUS_ERROR:
-    #                 status = STATUS_ERROR
-    #                 msg = status_msg
-    #             else:
-    #                 delete_path = os.path.join('/home/worker/output', job_info_list[0]['job_type'], params['job-id'])
-    #                 conf["configjob"]["spec"] = yaml.safe_load(template.render(
-    #                     action=action,
-    #                     delete_paths=[delete_path]
-    #                 ))
-    #         else:
-    #             status = STATUS_ERROR
-    #             msg = 'Supported actions include "delete_job_files"'
-    #             return status,msg,job_id
-
-    #     except:
-    #         status = STATUS_ERROR
-    #         msg = 'Invalid options for utility job type'
-    #         return status,msg,job_id
 
     ############################################################################
     # task type: query
@@ -1854,7 +1780,7 @@ def submit_job(params):
         except:
             pass
         try:
-            conf["configjob"]["spec"] = yaml.safe_load(template.render(
+            conf['configjob']['spec'] = yaml.safe_load(template.render(
                 queryString=params["query"],
                 fileName=params["filename"],
                 quickQuery=quickQuery,
@@ -1875,112 +1801,82 @@ def submit_job(params):
 
         # Process job configuration parameters
         #########################################
-        # Initialize the job spec object
-        spec = {
-        'jobid': job_id,
-        'usernm': username,
-        'passwd': password,
-        'tiledir': 'auto',
-        'outdir': os.path.join('/home/worker/output/cutout', job_id),
-        }
 
-        # If RA/DEC are present in request parameters, ignore coadd if present.
-        # If RA/DEC are not both present, assume
-        if all(k in params for k in ("ra", "dec")):
-            spec['ra'] = params["ra"]
-            spec['dec'] = params["dec"]
-        elif "coadd" in params:
-            spec['coadd'] = params["coadd"]
-        elif "positions" in params:
+        # Set basic user and job info
+        spec = {}
+        spec['jobid'] = job_id
+        spec['username'] = username
+        spec['password'] = password
+        spec['outdir'] = outdir
+
+        # TODO: Remove these unnecessary parameters from the `cutout` table
+        # spec['return_list'] = params['return_list']
+        # spec['ra'] = 0.0
+        # spec['dec'] = 0.0
+        # spec['coadd'] = ''
+        # spec['rgb_minimum'] = 0.0
+        # spec['rgb_stretch'] = 0.0
+        # spec['rgb_asinh'] = 0.0
+
+        # Add all user-defined default values to the user-defined defaults
+        cutout_config_string_params = [
+            'db',
+            'release',
+            'colors_fits',
+            'rgb_stiff_colors',
+            'rgb_lupton_colors',
+        ]
+        cutout_config_numeric_params = [
+            'xsize',
+            'ysize',
+            'rgb_minimum',
+            'rgb_stretch',
+            'rgb_asinh',
+        ]
+        cutout_config_bool_params = [
+            'make_fits',
+            'make_rgb_lupton',
+            'make_rgb_stiff',
+        ]
+        for param in cutout_config_string_params:
+            if param in params:
+                spec[param] = params[param]
+        for param in cutout_config_numeric_params:
+            if param in params:
+                spec[param] = float(params[param])
+        for param in cutout_config_bool_params:
+            if param in params:
+                spec[param] = str(params[param]).lower() == 'true'
+        valid, msg = validate_cutout_user_defaults(spec)
+        if not valid:
+            status = STATUS_ERROR
+            return status,msg,job_id
+
+        # # TODO: Revise the structure of the `cutout` table to reflect
+        # # the new input data structure. In the meantime, record both
+        # # Lupton and STIFF color set information
+        # colors_rgb = ''
+        # if 'rgb_stiff_colors' in spec:
+        #     colors_rgb += 'rgb_stiff_colors:' + spec['rgb_stiff_colors']
+        # if 'rgb_lupton_colors' in spec:
+        #     colors_rgb += 'rgb_lupton_colors:' + spec['rgb_lupton_colors']
+        # spec['rgb_stiff_colors'] = params['rgb_stiff_colors']
+        # spec['rgb_lupton_colors'] = params['rgb_lupton_colors']
+        # spec['colors_fits'] = params['colors_fits']
+
+        # RA/DEC and COADD IDs are now ignored. The position information must be included in the
+        # CSV-formatted "positions" parameter value.
+        if "positions" in params and isinstance(params["positions"], str):
             spec['positions'] = params["positions"].encode('utf-8').decode('unicode-escape')
-            position_type, processed_csv_text, status, msg = validate_cutout_csv(spec['positions'])
-            if status == STATUS_OK:
-                spec['positions'] = processed_csv_text.encode('utf-8').decode('unicode-escape')
-            else:
+            valid, msg = validate_cutout_positions_table(spec['positions'])
+            if not valid:
                 status = STATUS_ERROR
                 return status,msg,job_id
         else:
             status = STATUS_ERROR
-            msg = 'Cutout job requires RA/DEC coordinates or Coadd IDs.'
-            return status,msg,job_id
-        if 'db' in params and params["db"].upper() in ['DESDR','DESSCI']:
-            spec['db'] = params["db"].upper()
-        else:
-            status = STATUS_ERROR
-            msg = 'Valid databases are DESDR and DESSCI'
+            msg = 'Cutout job requires at least one cutout request in a CSV-formatted table.'
             return status,msg,job_id
 
-        if 'release' in params and params["release"].upper() in ['Y1A1','Y6A1','Y3A2','SVA1','DR1','DR2']:
-            spec['release'] = params["release"].upper()
-        else:
-            status = STATUS_ERROR
-            msg = "Valid releases are Y6A1,Y3A2,Y1A1,SVA1,DR1,DR2"
-            return status,msg,job_id
-        try:
-            if "xsize" in params:
-                spec['xsize'] = float("{:.2f}".format(float(params["xsize"])))
-            if "ysize" in params:
-                spec['ysize'] = float("{:.2f}".format(float(params["ysize"])))
-        except:
-            status = STATUS_ERROR
-            msg = 'xsize and ysize must be numerical values'
-            return status,msg,job_id
-        if spec['xsize'] > MAX_SIZE_IN_ARCMINUTES or spec['ysize'] > MAX_SIZE_IN_ARCMINUTES:
-            status = STATUS_ERROR
-            msg = 'The max value for xsize and ysize is {} arcminutes.'.format(MAX_SIZE_IN_ARCMINUTES)
-            return status,msg,job_id
-        # Set color strings from request parameters
-        search_args = ['colors_rgb', 'colors_fits']
-        for string_param in search_args:
-            spec[string_param] = ''
-        for string_param in list(set(search_args).intersection(set(params))):
-            if isinstance(params[string_param], str) and len(params[string_param]) > 0:
-                spec[string_param] = params[string_param]
-        # Set default value if string is empty
-        if len(spec['colors_fits']) < 1:
-            spec['colors_fits'] = 'i'
-        # Set boolean arguments from request parameters
-        bool_param_found = False
-        search_args = ['make_tiffs', 'make_fits', 'make_pngs', 'make_rgb_lupton', 'make_rgb_stiff', 'return_list']
-        for bool_param in search_args:
-            spec[bool_param] = False
-        for bool_param in list(set(search_args).intersection(set(params))):
-            spec[bool_param] = params[bool_param] == 'true' or str(params[bool_param]) == 'True'
-            if spec[bool_param]:
-                bool_param_found = True
-        # If no booleans were set then no information was actually requested
-        if not bool_param_found:
-            status = STATUS_ERROR
-            msg = 'No information requested.'
-            return status,msg,job_id
-        # If color images were requested, colors must be specified
-        elif (spec['make_rgb_stiff'] or spec['make_rgb_lupton']) and len(spec['colors_rgb']) < 1:
-            status = STATUS_ERROR
-            msg = 'colors_rgb is required when requesting make_rgb_stiff or make_rgb_lupton'
-            return status,msg,job_id
-        # Filter and order color strings
-        for string_param in ['colors_rgb', 'colors_fits']:
-            if len(spec[string_param]) > 0:
-                spec[string_param] = filter_and_order_colors(spec[string_param])
-                # Error and return if no valid colors are specified
-                if not spec[string_param]:
-                    status = STATUS_ERROR
-                    msg = 'Valid colors are y,z,i,r,g'
-                    return status,msg,job_id
-                elif string_param == 'colors_rgb' and len(spec[string_param].split(',')) != 3:
-                    status = STATUS_ERROR
-                    msg = 'Exactly three colors must be specified for colors_rgb'
-                    return status,msg,job_id
-        # Process Lupton RGB options
-        search_args = ['rgb_minimum', 'rgb_stretch', 'rgb_asinh']
-        for rgb_param in list(set(search_args).intersection(set(params))):
-            try:
-                spec[rgb_param] = float(params[rgb_param])
-            except:
-                status = STATUS_ERROR
-                msg = 'rgb_minimum, rgb_stretch, rgb_asinh must be numerical values'
-                return status,msg,job_id
-        
         # Provide the Oracle database service account information
         if spec['db'] == 'DESDR':
             spec['oracle_service_account_db'] = envvars.SERVICE_ACCOUNT_DB
@@ -1988,59 +1884,109 @@ def submit_job(params):
             spec['oracle_service_account_pass'] = envvars.SERVICE_ACCOUNT_PASS
 
         # Complete the job configuration by defining the `spec` node
-        conf["configjob"]["spec"] = spec
+        conf['configjob']['spec'] = spec
 
         # Count the number of positions in the requested job.
-        logger.info(spec['positions'])
-        cutout_positions = read_csv(StringIO(spec['positions']), dtype={
-            'RA': float,
-            'DEC': float,
-            'COADD_OBJECT_ID': int,
-            'XSIZE': float,
-            'YSIZE': float
-        })
-        logger.info(cutout_positions)
-        if params['limits']['cutout']['cutouts_per_job'] > 0 and len(cutout_positions) > params['limits']['cutout']['cutouts_per_job']:
+        # logger.info('\n{}'.format(spec['positions']))
+        num_cutouts = spec['positions'].count('\n')
+        if params['limits']['cutout']['cutouts_per_job'] > 0 and num_cutouts > params['limits']['cutout']['cutouts_per_job']:
             status = STATUS_ERROR
-            msg = 'Number of requested cutouts ({}) exceeds the maximum allowed per job request ({}).'.format(len(cutout_positions), params['limits']['cutout']['cutouts_per_job'])
+            msg = 'Number of requested cutouts ({}) exceeds the maximum allowed per job request ({}).'.format(num_cutouts, params['limits']['cutout']['cutouts_per_job'])
             return status,msg,job_id
+        spec['num_cpus'] = 1
+        # TODO: Determine the number of CPUs to use in parallel to minimize job execution time
+        # if num_cutouts > 1000:
+        #     spec['num_cpus'] = 4
+        # elif num_cutouts > 100:
+        #     spec['num_cpus'] = 3
+        # elif num_cutouts > 10:
+        #     spec['num_cpus'] = 2
 
         # Count the number of jobs currently pending for the submitting user.
-        if params['limits']['cutout']['concurrent_jobs'] > 0:
+        if not synchronous_job and params['limits']['cutout']['concurrent_jobs'] > 0:
             num_pending_jobs = JOBSDB.count_pending_jobs(username)
-            logger.info('num_pending_jobs: {}'.format(num_pending_jobs))
             if num_pending_jobs > params['limits']['cutout']['concurrent_jobs']:
                 status = STATUS_ERROR
                 msg = 'Number of requested jobs ({}) exceeds the maximum allowed concurrent jobs ({}).'.format(num_pending_jobs, params['limits']['cutout']['concurrent_jobs'])
                 return status,msg,job_id
+        
+        # Limit how long a Kubernetes Job can run before being forcibly terminated
+        conf['activeDeadlineSeconds'] = 60*60*envvars.LIMIT_MAX_JOB_DURATION_HOURS
 
-    else:
-        # Invalid job type
-        job_id=''
-
-    if job_id == '':
-        status = STATUS_ERROR
-        msg = 'Job type "{}" is not defined'.format(job_type)
-        return status,msg,job_id
-    else:
-        msg = "Job:{} id:{} by:{}".format(job_type, job_id, username)
     try:
-        kubejob.create_configmap(conf)
-        kubejob_status, kubejob_msg = kubejob.create_job(conf)
-        if kubejob_status == STATUS_ERROR:
-            status = STATUS_ERROR
-            msg = kubejob_msg
-            return status,msg,job_id
+        # If this is a synchronous run, do not create a Kubernetes Job
+        if synchronous_job:
+            logger.info('Running synchronously via JobHandler')
+            # Register the job in the database
+            JOBSDB.register_job(conf)
+
+            # Transcribe the task.py script to run here because the self-HTTP-requests to API endpoints for starting 
+            # and stopping the job cannot complete synchronously.
+            #
+            # Instead of taking the config data and (1) converting to a ConfigMap definition, which is then (2) mounted as
+            # a file in the task Job container, which is then (3) imported as a Python dict object, we pass it here directly.
+            config = conf['configjob']
+            # Make the cutout subdirectory if it does not already exist.
+            cutout_dir = os.path.join(user_dir, 'cutout')
+            os.makedirs(cutout_dir, exist_ok=True)
+            config['cutout_dir'] = cutout_dir
+            os.makedirs(config['spec']['outdir'], exist_ok=True)
+            # Record task has begun
+            JOBSDB.update_job_start(config['metadata']['apiToken'])
+            #
+            # Execute task
+            #
+            response = {
+                'status': STATUS_OK,
+                'msg': ''
+            }
+            # Dump cutout config to YAML file in working directory
+            cutout_config_file = 'cutout_config.yaml'
+            with open(cutout_config_file, 'w') as file:
+                yaml.dump(config['spec'], file)
+
+            import subprocess
+            num_cpus = config['spec']['num_cpus'] if 'num_cpus' in config['spec'] and isinstance(config['spec']['num_cpus'], int) else 1
+            args = 'mpirun -n {} python3 des_tasks/cutout/worker/bulkthumbs.py --config {}'.format(num_cpus, cutout_config_file)
+            try:
+                run_output = subprocess.check_output([args], shell=True)
+            except subprocess.CalledProcessError as e:
+                logging.error(e.output)
+                response['status'] = STATUS_ERROR
+                response['msg'] = e.output
+            #
+            # Task complete
+            #
+            import glob
+            # Report that work has completed
+            # If no errors have occurred already, parse the job summary file for file info
+            path = config['spec']['outdir']
+            files = glob.glob(os.path.join(path, '*/*/*'))
+            relpaths = []
+            total_size = 0.0
+            for file in files:
+                relpaths.append(os.path.relpath(file, start=config['cutout_dir']))
+                total_size += os.path.getsize(file)
+            response['files'] = relpaths
+            response['sizes'] = total_size
+            # Hack to avoid kubejob.delete in job completion
+            response['synchronous'] = True
+            JOBSDB.update_job_complete(config['metadata']['apiToken'], response)
+        else:
+            kubejob.create_configmap(conf)
+            kubejob_status, kubejob_msg = kubejob.create_job(conf)
+            if kubejob_status == STATUS_ERROR:
+                status = STATUS_ERROR
+                msg = kubejob_msg
+                return status,msg,job_id
+            # Register the job in the database
+            JOBSDB.register_job(conf)
     except Exception as e:
         status = STATUS_ERROR
         msg = str(e).strip()
         logger.error(msg)
         return status,msg,job_id
-    try:
-        # Register the job in the database unless it is a utility job
-        if job_type != 'utility':
-            JOBSDB.register_job(conf)
-    except Exception as e:
-        status = STATUS_ERROR
-        msg = str(e).strip()
+    msg = "Job:{} id:{} by:{}".format(job_type, job_id, username)
     return status,msg,job_id
+
+

@@ -145,7 +145,7 @@ def create_deployment(apps_v1_api, username, token, gpu):
         api_response = apps_v1_api.create_namespaced_deployment(
             namespace=namespace, body=deployment
         )
-        logger.info('Deployment created:\n{}'.format(api_response))
+        # logger.info('Deployment created:\n{}'.format(api_response))
     except ApiException as e:
         error_msg = str(e).strip()
         logger.error(error_msg)
@@ -227,7 +227,7 @@ def delete_deployment(api_instance, username):
             body=client.V1DeleteOptions(
                 propagation_policy='Foreground',
                 grace_period_seconds=5))
-        logger.info("Deployment deleted. status='%s'" % str(api_response.status))
+        # logger.info("Deployment deleted. status='%s'" % str(api_response.status))
     except ApiException as e:
         error_msg = str(e).strip()
         logger.error(error_msg)
@@ -241,7 +241,7 @@ def delete_service(api_instance, username):
             namespace=namespace,
             body={}
         )
-        logger.info("Service deleted. status='%s'" % str(api_response.status))
+        # logger.info("Service deleted. status='%s'" % str(api_response.status))
     except ApiException as e:
         error_msg = str(e).strip()
         logger.error(error_msg)
@@ -255,7 +255,7 @@ def delete_ingress(api_instance, username):
             namespace=namespace,
             body={}
         )
-        logger.info("Ingress deleted. status='%s'" % str(api_response.status))
+        # logger.info("Ingress deleted. status='%s'" % str(api_response.status))
     except ApiException as e:
         error_msg = str(e).strip()
         logger.error(error_msg)
@@ -268,7 +268,7 @@ def delete_config_map(api_instance, username):
             namespace=namespace,
             body={}
         )
-        logger.info("Ingress deleted. status='%s'" % str(api_response.status))
+        # logger.info("Ingress deleted. status='%s'" % str(api_response.status))
     except ApiException as e:
         error_msg = str(e).strip()
         logger.error(error_msg)
@@ -294,7 +294,7 @@ c.NotebookApp.base_url = '{}'
             namespace=namespace, 
             body=body
         )
-        logger.info("ConfigMap created")
+        # logger.info("ConfigMap created")
     except ApiException as e:
         error_msg = str(e).strip()
         logger.error(error_msg)
@@ -326,10 +326,10 @@ def deploy(username, base_path, token, gpu):
     return error_msg
 
 def create(username, base_path, token, gpu):
-    logger.info('Deleting existing Kubernetes resources...')
+    # logger.info('Deleting existing Kubernetes resources...')
     error_msg = delete(username)
     if error_msg == '':
-        logger.info('Deploying new Kubernetes resources...')
+        # logger.info('Deploying new Kubernetes resources...')
         error_msg = deploy(username, base_path, token, gpu)
     return error_msg
 
