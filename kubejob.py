@@ -38,7 +38,7 @@ def job(input):
         namespace=input["namespace"],
         backoffLimit=2,
         hostNetwork=input["host_network"],
-        activeDeadlineSeconds=24*60*60, # No Job is allowed to run beyond 24 hours.
+        activeDeadlineSeconds=input['activeDeadlineSeconds'], # No Job is allowed to run beyond 24 hours.
         ttlSecondsAfterFinished=0, # ttlSecondsAfterFinished requires a feature gate flag in kubelet to function
         container_name=input["job"],
         image=input["image"],
@@ -76,7 +76,7 @@ def delete_job(input):
                 propagation_policy="Foreground", grace_period_seconds=5
             ),
         )
-        logger.info("Job {} deleted".format(input["job_id"]))
+        # logger.info("Job {} deleted".format(input["job_id"]))
     except ApiException as e:
         logger.error(
             "Exception when calling BatchV1Api->delete_namespaced_job: {}\n".format(e)
@@ -89,7 +89,7 @@ def delete_job(input):
                 propagation_policy="Foreground", grace_period_seconds=5
             ),
         )
-        logger.info("Config Map {} deleted".format(input["cm_name"]))
+        # logger.info("Config Map {} deleted".format(input["cm_name"]))
     except ApiException as e:
         logger.error(
             "Exception when calling V1Api->delete_namespaced_configmap: {}\n".format(e)
@@ -105,7 +105,7 @@ def create_job(input):
         api_response = api_batch_v1.create_namespaced_job(
             namespace=input["namespace"], body=job(input)
         )
-        logger.info("Job {} created".format(input["configjob"]["metadata"]["jobId"]))
+        # logger.info("Job {} created".format(input["configjob"]["metadata"]["jobId"]))
     except ApiException as e:
         logger.error(
             "Exception when calling BatchV1Api->create_namespaced_job: {}\n".format(e)
@@ -138,7 +138,7 @@ def create_configmap(input):
         api_response = api_v1.create_namespaced_config_map(
             namespace=input["namespace"], body=config_map(input)
         )
-        logger.info("ConfigMap {} created".format(input["cm_name"]))
+        # logger.info("ConfigMap {} created".format(input["cm_name"]))
 
     except ApiException as e:
         logger.error(
