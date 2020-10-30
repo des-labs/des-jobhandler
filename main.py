@@ -24,6 +24,7 @@ import jlab
 import uuid
 import shutil
 import re
+from des_tasks.cutout.worker.bulkthumbs import validate_positions_table as validate_cutout_positions_table
 
 STATUS_OK = 'ok'
 STATUS_ERROR = 'error'
@@ -701,7 +702,7 @@ class JobHandler(BaseHandler):
         else:
             params['job'] = self.getarg('job')
 
-        params['return_list'] = True
+        # params['return_list'] = True
 
         params = add_request_params_if_supplied(params, 
             [ 
@@ -712,29 +713,24 @@ class JobHandler(BaseHandler):
                 'check',
                 'compression',
                 'filename',
-                'ra',
-                'dec',
-                'coadd',
                 'positions',
                 'release',
                 'xsize',
                 'ysize',
-                'colors_rgb',
+                'rgb_stiff_colors',
+                'rgb_lupton_colors',
                 'colors_fits',
-                # 'make_tiffs',
                 'make_fits',
-                # 'make_pngs',
                 'make_rgb_lupton',
                 'make_rgb_stiff',
                 'rgb_minimum',
                 'rgb_stretch',
                 'rgb_asinh',
-                # TODO: Remove dev option
-                'dev',
-                # 'return_list',
+                # synchronous option disabled in production
+                # 'synchronous',
             ]
         )
-        logger.info(json.dumps(params, indent=2))
+        # logger.info(json.dumps(params, indent=2))
 
         # Enforce job request limits
         if any(role in self._token_decoded["roles"] for role in ['admin', 'unlimited']):
@@ -817,8 +813,11 @@ class JobHandler(BaseHandler):
                 conf["job_name"] = jobutils.get_job_name(job_type, job_id, username)
                 conf["job_id"] = job_id
                 conf["cm_name"] = jobutils.get_job_configmap_name(job_type, job_id, username)
-                # Delete the k8s Job if it is still running
-                kubejob.delete_job(conf)
+                try:
+                    # Delete the k8s Job if it is still running
+                    kubejob.delete_job(conf)
+                except:
+                    pass
                 # Delete the job files on disk
                 status, message = JOBSDB.delete_job_files(job_id, username)
                 # Mark the job deleted in the JobHandler database
@@ -857,7 +856,7 @@ class JobStart(BaseHandler):
     def post(self):
         try:
             data = json.loads(self.request.body.decode('utf-8'))
-            logger.info('/job/start data: {}'.format(json.dumps(data)))
+            # logger.info('/job/start data: {}'.format(json.dumps(data)))
         except:
             logger.info('Error decoding JSON data')
             self.write({
@@ -876,7 +875,7 @@ class JobComplete(BaseHandler):
     def post(self):
         try:
             data = json.loads(self.request.body.decode('utf-8'))
-            logger.info('/job/complete data: {}'.format(json.dumps(data)))
+            # logger.info('/job/complete data: {}'.format(json.dumps(data)))
         except:
             logger.info('Error decoding JSON data')
             self.write({
@@ -975,18 +974,20 @@ class ValidateCsvHandler(BaseHandler):
     def post(self):
         csv_text = self.getarg('csvText')
         try:
-            position_type, processed_csv_text, status, msg = jobutils.validate_cutout_csv(csv_text)
+            valid, msg = validate_cutout_positions_table(csv_text)
             self.write({
-                "status": status,
+                "status": STATUS_OK,
+                "valid": valid,
                 "msg": msg,
-                "csv": processed_csv_text,
-                "type": position_type
+                "csv": csv_text,
+                # "type": position_type
             })
         except Exception as e:
             logger.error(str(e).strip())
             self.write({
                 "status": STATUS_ERROR,
-                "msg": str(e).strip()
+                "msg": str(e).strip(),
+                "csv": csv_text,
             })
 
 
@@ -1062,9 +1063,11 @@ class GetTileLinks(BaseHandler):
                 '''.format(tilename=name)
         elif coords_or_name == 'coords':
             # Ignore accidental whitespace around input string
-            coords = self.getarg('coords').strip().split(',')
-            ra = float(coords[0])
-            dec = float(coords[1])
+            coords = self.getarg('coords').strip()
+            coords = re.sub(r'[\(\)]', '', coords)
+            coords = coords.split(',')
+            ra = float(coords[0].strip())
+            dec = float(coords[1].strip())
             if ra > 180:
                 ra_adjusted = 360-ra
             else:
@@ -1592,7 +1595,6 @@ class UserResetPasswordRequestHandler(BaseHandler):
                 self.write(response)
                 return
             msg = email_utils.send_reset(username, [email], token)
-            logger.info(msg)
         except Exception as e:
             response['status'] = STATUS_ERROR
             response['msg'] = str(e).strip()
@@ -1817,7 +1819,6 @@ class UserRegisterHandler(BaseHandler):
             # Send the activation email
             try:
                 msg = email_utils.send_activation(firstname, lastname, username, email, url)
-                logger.info(msg)
             except Exception as e:
                 response['status'] = STATUS_ERROR
                 response['msg'] = str(e).strip()
@@ -1826,19 +1827,11 @@ class UserRegisterHandler(BaseHandler):
             # Notify DESaccess admins
             try:
                 msg = email_utils.email_notify_admins_new_user(firstname, lastname, username, envvars.DESACCESS_ADMIN_EMAILS, url)
-                logger.info(msg)
             except Exception as e:
                 response['status'] = STATUS_ERROR
                 response['msg'] = str(e).strip()
                 self.write(response)
                 return
-
-            # # Check that URL is valid
-            # valid, status, msg = USER_DB_MANAGER.valid_url(url)
-            # if valid:
-            #     logger.info('URL {} is valid'.format(url))
-            # else:
-            #     logger.info('URL {} is NOT valid'.format(url))
 
         except Exception as e:
             response['status'] = STATUS_ERROR
@@ -2197,8 +2190,8 @@ def make_app(basePath=''):
             (r"{}/page/cutout/csv/validate/?".format(basePath), ValidateCsvHandler),
             (r"{}/page/db-access/check/?".format(basePath), CheckQuerySyntaxHandler),
             (r"{}/page/help/form/?".format(basePath), HelpFormHandler),
-            (r"{}/data/coadd/(.*)?".format(basePath),      TileDataHandler, {'path': '/tiles/coadd'}),
-            (r"{}/data/desarchive/(.*)?".format(basePath), TileDataHandler, {'path': '/tiles/desarchive'}),
+            (r"{}/data/coadd/(.*)?".format(basePath),      TileDataHandler, {'path': '/des004/coadd'}),
+            (r"{}/data/desarchive/(.*)?".format(basePath), TileDataHandler, {'path': '/des003/desarchive'}),
             (r"{}/data/dr1/(.*)?".format(basePath), TileDataHandler, {'path': '/tiles/dr1'}),
             (r"{}/dev/debug/trigger?".format(basePath), DebugTrigger),
             (r"{}/dev/db/wipe?".format(basePath), DbWipe),
