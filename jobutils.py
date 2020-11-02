@@ -1880,10 +1880,14 @@ def submit_job(params):
             return status,msg,job_id
 
         # Provide the Oracle database service account information
-        if spec['db'] == 'DESDR':
+        if spec['db'].upper() == 'DESDR':
             spec['oracle_service_account_db'] = envvars.SERVICE_ACCOUNT_DB
             spec['oracle_service_account_user'] = envvars.SERVICE_ACCOUNT_USER
             spec['oracle_service_account_pass'] = envvars.SERVICE_ACCOUNT_PASS
+        else:
+            spec['oracle_service_account_db']   = ''
+            spec['oracle_service_account_user'] = ''
+            spec['oracle_service_account_pass'] = ''
 
         # Complete the job configuration by defining the `spec` node
         conf['configjob']['spec'] = spec
