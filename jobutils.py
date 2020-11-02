@@ -1671,7 +1671,9 @@ def submit_job(params):
         conf["db"] = params['db']
         conf["namespace"] = get_namespace()
         conf["cm_name"] = get_job_configmap_name(job_type, job_id, username)
-        conf["host_network"] = envvars.HOST_NETWORK
+        conf["host_network"] = envvars.HOST_NETWORK        
+        # Limit how long a Kubernetes Job can run before being forcibly terminated
+        conf['activeDeadlineSeconds'] = 60*60*envvars.LIMIT_MAX_JOB_DURATION_HOURS
         conf["user_agent"] = params["user_agent"]
         if 'job_name' in params and isinstance(params['job_name'], str):
             if len(params['job_name']) > 128 or len(params['job_name']) == 0:
@@ -1909,9 +1911,6 @@ def submit_job(params):
                 status = STATUS_ERROR
                 msg = 'Number of requested jobs ({}) exceeds the maximum allowed concurrent jobs ({}).'.format(num_pending_jobs, params['limits']['cutout']['concurrent_jobs'])
                 return status,msg,job_id
-        
-        # Limit how long a Kubernetes Job can run before being forcibly terminated
-        conf['activeDeadlineSeconds'] = 60*60*envvars.LIMIT_MAX_JOB_DURATION_HOURS
 
     try:
         # If this is a synchronous run, do not create a Kubernetes Job
