@@ -1,0 +1,7 @@
+RA,DEC,COADD_OBJECT_ID,XSIZE,YSIZE,FITS_COLORS,RGB_STIFF_COLORS,RGB_LUPTON_COLORS,RGB_MINIMUM,RGB_STRETCH,RGB_ASINH,MAKE_FITS,MAKE_RGB_STIFF,MAKE_RGB_LUPTON
+21.58813,3.48611,,,,g,gry;riy,gry,,,,false,false,false
+21.57213,3.78611,,0.90,1.30,rg,gry;riy,gry,,,,false,true,false
+,,61407409,1.1,0.8,g,gry;riy,gry;rgz,,,,false,false,false
+36.66840,-15.68889,,0.90,1.30,iz,gri,riy,,,,false,false,false
+36.67840,-15.65889,,,,g,gry;riy,gry;rgz,,,,false,false,false
+46.29566,-34.25600,,0.90,1.30,iz,gry;riy,gry,1.1,60.0003,11.12,true,false,false

@@ -1,0 +1,15 @@
+RA,DEC,COADD_OBJECT_ID,XSIZE,YSIZE,FITS_COLORS,RGB_STIFF_COLORS,RGB_LUPTON_COLORS,RGB_MINIMUM,RGB_STRETCH,RGB_ASINH,MAKE_FITS,MAKE_RGB_STIFF,MAKE_RGB_LUPTON
+21.58813,3.48611,,0.90,1.30,g,grz;riy,grz;riy,1.0,50.0,10.0,false,false,false
+21.59813,3.58611,,0.90,1.30,i,grz;riy,grz;riy,1.0,50.0,10.0,false,true,true
+21.57813,3.68611,,0.70,1.10,gri,grz;riy,grz;riy,1.0,50.0,10.0,true,true,true
+21.57213,3.78611,,0.90,1.30,rg,grz;riy,grz;riy,1.0,50.0,10.0,false,true,true
+,,61407409,1.1,0.8,g,grz;riy,grz;riy,1.0,50.0,10.0,false,false,false
+36.63840,-15.66889,,0.90,1.30,iz,grz;riy,grz;riy,1.0,50.0,10.0,true,false,false
+36.60840,-15.68889,,0.90,1.30,g,grz;riy,grz;riy,1.0,50.0,10.0,false,false,false
+36.66840,-15.68889,,0.90,1.30,iz,grz;riy,grz;riy,1.0,50.0,10.0,true,false,false
+36.67840,-15.65889,,0.90,1.30,g,grz;riy,grz;riy,1.0,50.0,10.0,true,false,false
+,,61407410,1.1,0.8,i,grz;riy,grz;riy,1.0,50.0,10.0,true,true,true
+46.27566,-34.25000,,0.90,1.30,iz,grz;riy,grz;riy,1.0,50.0,10.0,false,false,false
+46.28566,-34.25500,,0.90,1.30,g,grz;riy,grz;riy,1.0,50.0,10.0,false,false,false
+46.29566,-34.25600,,0.90,1.30,iz,grz;riy,grz;riy,1.0,50.0,10.0,true,false,false
+46.27566,-34.2590,,0.90,1.30,g,grz;riy,grz;riy,1.0,50.0,10.0,false,false,false
