@@ -296,7 +296,8 @@ class JobsDb:
                 job_info["cutout_positions"] = "" if positions is None else positions
                 job_info["renewal_token"] = "" if renewal_token is None else renewal_token
                 job_info["expiration_date"] = "" if expiration_date is None else expiration_date
-                job_info_list.append(job_info)
+                if job_id != "all" or job_info["job_type"] != 'query' or (isinstance(data, str) and data == '{}'):
+                    job_info_list.append(job_info)
             if job_id != "all" and not job_info_list:
                 request_status = STATUS_ERROR
                 msg = 'Error retrieving job status for user {}, specific job_id {}'.format(username, job_id)
@@ -304,6 +305,43 @@ class JobsDb:
         except:
             request_status = STATUS_ERROR
             msg = 'Error retrieving job status for user {}, job_id {}'.format(username, job_id)
+            logger.error(msg)
+        self.close_db_connection()
+        return [job_info_list, request_status, msg]
+
+    def job_list(self, username):
+        self.open_db_connection()
+        request_status = STATUS_OK
+        msg = ''
+        job_info_list = []
+        try:
+            # SELECT uuid as job_id, status as job_status, type as job_type, name as job_name
+            # FROM `job`
+            # WHERE `user` = %s AND `deleted` = 0 AND (data IS NULL and 
+            # ORDER BY `time_start` DESC 
+            sql = '''
+            SELECT j.uuid as job_id, j.status as job_status, j.type as job_type, j.name as job_name, q.data
+            FROM `job` j 
+            LEFT JOIN `query` q 
+            ON j.id = q.job_id 
+            WHERE j.user = %s AND j.deleted = 0 ORDER BY j.time_start DESC 
+            '''
+            self.cur.execute(sql, (username,))
+            job_info = None
+            for (job_id, job_status, job_type, job_name, data) in self.cur:
+                job_info = {}
+                job_info["job_id"] = job_id
+                job_info["job_status"] = job_status
+                job_info["job_type"] = job_type
+                job_info["job_name"] = job_name
+                if job_type != 'query' or (isinstance(data, str) and data == '{}'):
+                    job_info_list.append(job_info)
+                    # logger.info('Including(data type: {}) {}'.format(type(data), job_info))
+                # else:
+                #     logger.info('Skipping (data type: {}) {}\nData: {}'.format(type(data), job_info, data))
+        except:
+            request_status = STATUS_ERROR
+            msg = 'Error retrieving job list for user {}'.format(username)
             logger.error(msg)
         self.close_db_connection()
         return [job_info_list, request_status, msg]

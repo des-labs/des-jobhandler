@@ -851,6 +851,38 @@ class JobStatusHandler(BaseHandler):
         self.write(json.dumps(out, indent=4, default = json_converter))
 
 
+# @authenticated
+# @allowed_roles(ALLOWED_ROLE_LIST)
+# class JobGetHandler(BaseHandler):
+#     # API endpoint: /job/[job_id]
+#     def get(self, job_id):
+#         username = self.get_username_parameter()
+#         job_info_list, status, message = JOBSDB.job_status(username, job_id)
+#         out = {
+#             'status': status,
+#             'message': message,
+#             'jobs': job_info_list,
+#             'new_token': self._token_encoded
+#         }
+#         self.write(json.dumps(out, indent=4, default = json_converter))
+
+
+@authenticated
+@allowed_roles(ALLOWED_ROLE_LIST)
+class JobListHandler(BaseHandler):
+    # API endpoint: /job/list
+    def get(self):
+        username = self.get_username_parameter()
+        job_info_list, status, message = JOBSDB.job_list(username)
+        out = {
+            'status': status,
+            'message': message,
+            'jobs': job_info_list,
+            'new_token': self._token_encoded
+        }
+        self.write(json.dumps(out, indent=4, default = json_converter))
+
+
 class JobStart(BaseHandler):
     # API endpoint: /job/start
     def post(self):
@@ -2150,6 +2182,8 @@ def make_app(basePath=''):
     return tornado.web.Application(
         [
             (r"{}/job/status?".format(basePath), JobStatusHandler),
+            # (r"{}/job/(.*)?".format(basePath), JobGetHandler),
+            (r"{}/job/list?".format(basePath), JobListHandler),
             (r"{}/job/delete?".format(basePath), JobHandler),
             (r"{}/job/submit?".format(basePath), JobHandler),
             (r"{}/job/cutout?".format(basePath), JobHandler),
