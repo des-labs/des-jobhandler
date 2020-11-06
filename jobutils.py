@@ -1820,13 +1820,17 @@ def submit_job(params):
         except:
             pass
         try:
+            queryString = params["query"].encode('utf-8').decode('unicode-escape')
             conf['configjob']['spec'] = yaml.safe_load(template.render(
-                queryString=params["query"],
+                queryString='',
                 fileName=params["filename"],
                 quickQuery=quickQuery,
                 checkQuery=checkQuery,
                 compression=compression
             ))
+            # TODO: This is a hack to get around some problem rendering the inputs template when the query
+            # has newlines.
+            conf['configjob']['spec']['inputs']['queryString'] = queryString
         except:
             status = STATUS_ERROR
             msg = 'query and filename are required'
