@@ -1,0 +1,1 @@
+ALTER TABLE `cutout` ADD `discard_fits_files` BOOLEAN DEFAULT 0

@@ -73,7 +73,7 @@ class JobsDb:
         self.database = mysql_database
         self.cur = None
         self.cnx = None
-        self.db_schema_version = 17
+        self.db_schema_version = 18
         self.table_names = [
             'job',
             'query',
@@ -403,6 +403,7 @@ class JobsDb:
                     'rgb_minimum', 
                     'rgb_stretch', 
                     'rgb_asinh',
+                    'discard_fits_files',
                 ]
                 for key in opt_params:
                     if key in conf['configjob']['spec']:
@@ -428,9 +429,10 @@ class JobsDb:
                             `rgb_lupton_colors`, 
                             `rgb_minimum`, 
                             `rgb_stretch`, 
-                            `rgb_asinh`
+                            `rgb_asinh`,
+                            `discard_fits_files`
                         ) 
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         '''
                     ),
                     (
@@ -449,6 +451,7 @@ class JobsDb:
                         opt_vals['rgb_minimum'],
                         opt_vals['rgb_stretch'],
                         opt_vals['rgb_asinh'],
+                        opt_vals['discard_fits_files'],
                     )
                 )
         else:
@@ -1881,6 +1884,7 @@ def submit_job(params):
             'make_fits',
             'make_rgb_lupton',
             'make_rgb_stiff',
+            'discard_fits_files',
         ]
         for param in cutout_config_string_params:
             if param in params:
