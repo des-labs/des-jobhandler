@@ -16,6 +16,10 @@ def query_pod_logs(api_v1=api_v1, cluster='pub'):
     elif cluster == 'prod':
         release='nginx-ingress-class-deslabs'
         namespace="nginx-ingress"
+    else:
+        cluster='dev'
+        release='nginx-ingress-trans'
+        namespace='desapps'
 
     # Getting pod name based on public or private infrastructure
     pods = api_v1.list_namespaced_pod(namespace, watch = False,
