@@ -494,7 +494,7 @@ class ProfileHandler(BaseHandler):
 
 
 @authenticated
-@allowed_roles(['default','serviceaccount'])
+@allowed_roles(['monitor'])
 class UserStatisticsHandler(BaseHandler):
     # API endpoint: /statistics/users
     def get(self):
@@ -510,7 +510,7 @@ class UserStatisticsHandler(BaseHandler):
         self.write(response)
 
 @authenticated
-@allowed_roles(['serviceaccount','default'])
+@allowed_roles(['monitor'])
 class EndpointStatisticsHandler(BaseHandler):
     # API endpoint: /statistics/endpoints
     def get(self):
@@ -526,7 +526,7 @@ class EndpointStatisticsHandler(BaseHandler):
         self.write(response)
 
 @authenticated
-@allowed_roles(['serviceaccount','default'])
+@allowed_roles(['monitor'])
 class CutoutStatisticsHandler(BaseHandler):
     # API endpoint: /statistics/cutout
     def get(self):
@@ -542,7 +542,7 @@ class CutoutStatisticsHandler(BaseHandler):
         self.write(response)
 
 @authenticated
-@allowed_roles(['serviceaccount','default'])
+@allowed_roles(['monitor'])
 class QueryStatisticsHandler(BaseHandler):
     # API endpoint: /statistics/query
     def get(self):
@@ -558,7 +558,7 @@ class QueryStatisticsHandler(BaseHandler):
         self.write(json.dumps(response))
 
 @authenticated
-@allowed_roles(['serviceaccount','default'])
+@allowed_roles(['monitor'])
 class IPStatisticsHandler(BaseHandler):
     # API endpoint: /statistics/ips
     def get(self):
