@@ -21,6 +21,7 @@ import base64
 from jinja2 import Template
 import email_utils
 import jlab
+import ip
 import uuid
 import shutil
 import re
@@ -493,6 +494,88 @@ class ProfileHandler(BaseHandler):
 
 
 @authenticated
+@allowed_roles(['default','serviceaccount'])
+class UserStatisticsHandler(BaseHandler):
+    # API endpoint: /statistics/users
+    def get(self):
+        response = {}
+        try:
+            num_users = JOBSDB.get_statistics_session()
+            response['status'] = STATUS_OK
+            response['message'] = ''
+            response['results'] = num_users[0]
+        except Exception as e:
+            response['message'] = str(e).strip()
+            response['status'] = STATUS_ERROR
+        self.write(response)
+
+@authenticated
+@allowed_roles(['serviceaccount','default'])
+class EndpointStatisticsHandler(BaseHandler):
+    # API endpoint: /statistics/endpoints
+    def get(self):
+        response = {}
+        try:
+            endpts = JOBSDB.get_statistics_analytics()
+            response['status'] = STATUS_OK
+            response['message'] = ''
+            response['results'] = endpts[0]
+        except Exception as e:
+            response['message'] = str(e).strip()
+            response['status'] = STATUS_ERROR
+        self.write(response)
+
+@authenticated
+@allowed_roles(['serviceaccount','default'])
+class CutoutStatisticsHandler(BaseHandler):
+    # API endpoint: /statistics/cutout
+    def get(self):
+        response = {}
+        try:
+            cutout_file_size = JOBSDB.get_statistics_cutout()
+            response['status'] = STATUS_OK
+            response['message'] = ''
+            response['results'] = cutout_file_size[0]
+        except Exception as e:
+            response['message'] = str(e).strip()
+            response['status'] = STATUS_ERROR
+        self.write(response)
+
+@authenticated
+@allowed_roles(['serviceaccount','default'])
+class QueryStatisticsHandler(BaseHandler):
+    # API endpoint: /statistics/query
+    def get(self):
+        response = {}
+        try:
+            query_file_size = JOBSDB.get_statistics_query()
+            response['status'] = STATUS_OK
+            response['message'] = ''
+            response['results'] = query_file_size[0]
+        except Exception as e:
+            response['message'] = str(e).strip()
+            response['status'] = STATUS_ERROR
+        self.write(json.dumps(response))
+
+@authenticated
+@allowed_roles(['serviceaccount','default'])
+class IPStatisticsHandler(BaseHandler):
+    # API endpoint: /statistics/ips
+    def get(self):
+        response = {}
+        response['results'] = {}
+        for cluster in ['dev']: #['pub','prod']:
+            try:
+                ip_list = ip.query_pod_logs(cluster = cluster)
+                response['status'] = STATUS_OK
+                response['message'] = ''
+                response['results'][cluster] = ip_list
+            except Exception as e:
+                response['message'] = str(e).strip()
+                response['status'] = STATUS_ERROR
+        self.write(response)
+
+@authenticated
 @allowed_roles(ALLOWED_ROLE_LIST)
 @analytics
 class ProfileUpdateHandler(BaseHandler):
@@ -726,7 +809,6 @@ class JobHandler(BaseHandler):
                 'rgb_minimum',
                 'rgb_stretch',
                 'rgb_asinh',
-                'discard_fits_files',
                 # synchronous option disabled in production
                 # 'synchronous',
             ]
@@ -2236,6 +2318,11 @@ def make_app(basePath=''):
             (r"{}/tables/list/all?".format(basePath), TablesListAllHandler),
             (r"{}/tables/list/mine?".format(basePath), TablesListMineHandler),
             (r"{}/tables/describe?".format(basePath), TablesDescribeTableHandler),
+            (r"{}/statistics/users?".format(basePath), UserStatisticsHandler),
+            (r"{}/statistics/endpoints?".format(basePath), EndpointStatisticsHandler),
+            (r"{}/statistics/ips?".format(basePath), IPStatisticsHandler),
+            (r"{}/statistics/query?".format(basePath), QueryStatisticsHandler),
+            (r"{}/statistics/cutout?".format(basePath), CutoutStatisticsHandler),
         ],
         **settings
     )

@@ -73,7 +73,7 @@ class JobsDb:
         self.database = mysql_database
         self.cur = None
         self.cnx = None
-        self.db_schema_version = 18
+        self.db_schema_version = 17
         self.table_names = [
             'job',
             'query',
@@ -403,7 +403,6 @@ class JobsDb:
                     'rgb_minimum', 
                     'rgb_stretch', 
                     'rgb_asinh',
-                    'discard_fits_files',
                 ]
                 for key in opt_params:
                     if key in conf['configjob']['spec']:
@@ -429,10 +428,9 @@ class JobsDb:
                             `rgb_lupton_colors`, 
                             `rgb_minimum`, 
                             `rgb_stretch`, 
-                            `rgb_asinh`,
-                            `discard_fits_files`
+                            `rgb_asinh`
                         ) 
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         '''
                     ),
                     (
@@ -451,7 +449,6 @@ class JobsDb:
                         opt_vals['rgb_minimum'],
                         opt_vals['rgb_stretch'],
                         opt_vals['rgb_asinh'],
-                        opt_vals['discard_fits_files'],
                     )
                 )
         else:
@@ -1633,6 +1630,103 @@ class JobsDb:
         self.close_db_connection()
         return status, error_msg
 
+    def get_statistics_analytics(self):
+        self.open_db_connection()
+        try:
+            self.cur.execute(
+                (
+                    "select distinct request_path,count(*) from `analytics` group by request_path" 
+                )
+            )
+            summary = self.cur.fetchall()
+            error_msg = ""
+
+        except Exception as e:
+            error_msg = str(e).strip()
+            logger.error(error_msg)
+            
+        self.close_db_connection()
+        return summary, error_msg
+
+    def get_statistics_session(self):
+        self.open_db_connection()
+        try:
+            self.cur.execute(
+                (
+                    "select count(distinct username) from `session`" 
+                )
+            )
+            summary = self.cur.fetchone()[0]
+            error_msg = ""
+
+        except Exception as e:
+            error_msg = str(e).strip()
+            logger.error(error_msg)
+            
+        self.close_db_connection()
+        return summary, error_msg
+
+    def get_statistics_cutout(self):
+        self.open_db_connection()
+        try:
+            self.cur.execute(
+                (
+                    "select file_size from `cutout`" 
+                )
+            )
+            summary = sum([size for (size,) in self.cur.fetchall()])
+            error_msg = ""
+
+        except Exception as e:
+            error_msg = str(e).strip()
+            logger.error(error_msg)
+            
+        self.close_db_connection()
+        return summary, error_msg
+            
+    def get_statistics_query(self):
+        self.open_db_connection()
+        try:
+            self.cur.execute(
+               (
+                    "select sizes from `query`" 
+               )
+            )
+            totals = []
+            for (sizes,) in self.cur:
+                size = reformat_query_size(sizes)
+                totals.append(size)
+            error_msg = ""
+
+        except Exception as e:
+            error_msg = str(e).strip()
+            logger.error(error_msg)
+            
+        self.close_db_connection()
+        return sum(totals), error_msg
+
+def reformat_query_size(string):
+    bad_chars = ['[',']','"']
+
+    for i in bad_chars:
+        string = string.replace(i,'')
+
+    if string:
+        string_split = string.split(' ')
+        string = string_split[0]
+        unit = string_split[1]
+    else:
+        string = 0
+        unit = ''
+
+    if 'KB' in unit:
+        string = float(string) * 1000
+    if 'MB' in unit:
+        string = float(string) * 1e6
+    if 'GB' in unit:
+        string = float(string) * 1e9
+
+    return float(string)
 
 # Get global instance of the job handler database interface
 JOBSDB = JobsDb(
@@ -1641,7 +1735,7 @@ JOBSDB = JobsDb(
     mysql_password=envvars.MYSQL_PASSWORD,
     mysql_database=envvars.MYSQL_DATABASE
 )
-
+    
 def get_namespace():
     # When running in a pod, the namespace should be determined automatically,
     # otherwise we assume the local development is in the default namespace
@@ -1884,7 +1978,6 @@ def submit_job(params):
             'make_fits',
             'make_rgb_lupton',
             'make_rgb_stiff',
-            'discard_fits_files',
         ]
         for param in cutout_config_string_params:
             if param in params:
