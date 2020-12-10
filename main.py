@@ -564,7 +564,7 @@ class IPStatisticsHandler(BaseHandler):
     def get(self):
         response = {}
         response['results'] = {}
-        for cluster in ['dev']: #['pub','prod']:
+        for cluster in ['pub','prod']:
             try:
                 ip_list = ip.query_pod_logs(cluster = cluster)
                 response['status'] = STATUS_OK
