@@ -809,6 +809,7 @@ class JobHandler(BaseHandler):
                 'rgb_minimum',
                 'rgb_stretch',
                 'rgb_asinh',
+                'discard_fits_files',
                 # synchronous option disabled in production
                 # 'synchronous',
             ]
