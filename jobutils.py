@@ -33,24 +33,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Initialize global Jira API object
-#
-# Obtain the Jira API auth credentials from the mounted secret
-jira_access_file = os.path.join(
-    os.path.dirname(__file__),
-    "jira_access.yaml"
-)
-with open(jira_access_file, 'r') as cfile:
-    conf = yaml.load(cfile, Loader=yaml.FullLoader)['jira']
-# Initialize Jira API object
-JIRA_API = jira.client.JIRA(
-    options={'server': 'https://opensource.ncsa.illinois.edu/jira'},
-    basic_auth=(
-        base64.b64decode(conf['uu']).decode().strip(),
-        base64.b64decode(conf['pp']).decode().strip()
+try:
+    # Initialize global Jira API object
+    #
+    # Obtain the Jira API auth credentials from the mounted secret
+    jira_access_file = os.path.join(
+        os.path.dirname(__file__),
+        "jira_access.yaml"
     )
-)
-
+    with open(jira_access_file, 'r') as cfile:
+        conf = yaml.load(cfile, Loader=yaml.FullLoader)['jira']
+    # Initialize Jira API object
+    JIRA_API = jira.client.JIRA(
+        options={'server': 'https://opensource.ncsa.illinois.edu/jira'},
+        basic_auth=(
+            base64.b64decode(conf['uu']).decode().strip(),
+            base64.b64decode(conf['pp']).decode().strip()
+        )
+    )
+except:
+    JIRA_API = None
 
 def password_encrypt(password):
     secret = envvars.JWT_HS256_SECRET
