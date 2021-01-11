@@ -432,7 +432,7 @@ class JobsDb:
                             `rgb_minimum`, 
                             `rgb_stretch`, 
                             `rgb_asinh`,
-                            `discard_fits_files`,
+                            `discard_fits_files`
                         ) 
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         '''
