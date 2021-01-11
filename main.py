@@ -1194,7 +1194,7 @@ class GetTileLinks(BaseHandler):
             public_query_select[release] = '''
                 {release_custom}
                 '{release}' as release,
-                tilename,
+                g.tilename,
                 racmin,
                 racmax,
                 deccmin,
@@ -1235,7 +1235,7 @@ class GetTileLinks(BaseHandler):
             private_query_select[release] = '''
                 {release_custom}
                 '{release}' as release,
-                o.tilename,
+                m.tilename,
                 RACMIN,
                 RACMAX,
                 DECCMIN,
@@ -1255,24 +1255,28 @@ class GetTileLinks(BaseHandler):
                 0 as nobjects 
             '''.format(release_custom=private_query_select_custom[release],release=release)
 
+        public_query_from = {
+            'dr1': '''
+                dr1_tile_info g
+            ''',
+            'dr2': '''
+                dr2_tile_info g
+            ''',
+        }
         private_query_from = {
             'sva1': '''
-                sva1_coadd_objects o,
                 mcarras2.sva1_tile_info m,
                 y3a2_coaddtile_geom g 
             ''',
             'y1a1': '''
-                y1a1_coadd_objects o,
                 mcarras2.y1a1_tile_info m,
                 y3a2_coaddtile_geom g 
             ''',
             'y3a2': '''
-                y3a2_coadd_object_summary o,
                 mcarras2.y3a2_tile_info m,
                 y3a2_coaddtile_geom g 
             ''',
             'y6a2': '''
-                y6a2_coadd_object_summary o,
                 mcarras2.y6a2_tile_info m,
                 y6a1_coaddtile_geom g 
             ''',
@@ -1289,8 +1293,6 @@ class GetTileLinks(BaseHandler):
             '''.format(tilename=name)
 
             private_query_where = '''
-                m.tilename=o.tilename AND 
-                g.tilename=o.tilename AND 
                 m.tilename=g.tilename AND
                 m.tilename='{tilename}'
             '''.format(tilename=name)
@@ -1320,6 +1322,12 @@ class GetTileLinks(BaseHandler):
                 ) 
             '''.format(ra=ra, dec=dec, ra_adjusted=ra_adjusted)
 
+            # The DESDR tile_info tables include the geometry information but the 
+            # DESSCI tables do not
+            private_query_where += '''
+                AND m.tilename=g.tilename
+            '''
+
         else:
             response['status'] = STATUS_ERROR
             response['msg'] = 'Only coords or name supported. This error should never occur.'
@@ -1330,11 +1338,11 @@ class GetTileLinks(BaseHandler):
         for release in public_releases:
             public_query += '''
             SELECT {select_criteria}
-            FROM {release}_tile_info g 
+            FROM {from_criteria}
             WHERE {where_criteria}
             '''.format(
                 select_criteria=public_query_select[release],
-                release=release,
+                from_criteria=public_query_from[release], 
                 where_criteria=public_query_where,
             )
             # Insert UNION ALL between release query blocks
@@ -1362,7 +1370,7 @@ class GetTileLinks(BaseHandler):
             query = private_query
 
         try:
-            logger.info(query)
+            # logger.info(query)
             connection = ea.connect(db, user=username, passwd=password)
             cursor = connection.cursor()
             df = connection.query_to_pandas(query)
