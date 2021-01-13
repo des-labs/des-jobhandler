@@ -30,7 +30,7 @@ def create_deployment(apps_v1_api, username, token, gpu):
             image="ubuntu:18.04",
             image_pull_policy="IfNotPresent",
             command=["/bin/sh"],
-            args=["-c", "chown -R 1001:1001 /persistent_volume"],
+            args=["-c", "chown 1001:1001 /persistent_volume"],
             volume_mounts=[
                 client.V1VolumeMount(
                     name='persistent-volume',
