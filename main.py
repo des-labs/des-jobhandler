@@ -66,23 +66,26 @@ logging.getLogger("tornado.access").addFilter(TornadoLogFilter())
 logger = logging.getLogger("main")
 logger.setLevel(logging.INFO)
 
-# Initialize global Jira API object
-#
-# Obtain the Jira API auth credentials from the mounted secret
-jira_access_file = os.path.join(
-    os.path.dirname(__file__),
-    "jira_access.yaml"
-)
-with open(jira_access_file, 'r') as cfile:
-    conf = yaml.load(cfile, Loader=yaml.FullLoader)['jira']
-# Initialize Jira API object
-JIRA_API = jira.client.JIRA(
-    options={'server': 'https://opensource.ncsa.illinois.edu/jira'},
-    basic_auth=(
-        base64.b64decode(conf['uu']).decode().strip(),
-        base64.b64decode(conf['pp']).decode().strip()
+try:
+    # Initialize global Jira API object
+    #
+    # Obtain the Jira API auth credentials from the mounted secret
+    jira_access_file = os.path.join(
+        os.path.dirname(__file__),
+        "jira_access.yaml"
     )
-)
+    with open(jira_access_file, 'r') as cfile:
+        conf = yaml.load(cfile, Loader=yaml.FullLoader)['jira']
+    # Initialize Jira API object
+    JIRA_API = jira.client.JIRA(
+        options={'server': 'https://opensource.ncsa.illinois.edu/jira'},
+        basic_auth=(
+            base64.b64decode(conf['uu']).decode().strip(),
+            base64.b64decode(conf['pp']).decode().strip()
+        )
+    )
+except:
+    JIRA_API = None
 
 # Initialize the Oracle database user manager and set email list address
 if envvars.DESACCESS_INTERFACE == 'public':
@@ -1164,19 +1167,136 @@ class GetTileLinks(BaseHandler):
         db = self._token_decoded["db"]
         password = JOBSDB.get_password(username)
 
+        public_releases = ['dr1', 'dr2']
+        private_releases = ['sva1', 'y1a1', 'y3a2', 'y6a2']
+
+        public_query_select_custom = {
+            'dr1': '''
+                '' as fits_image_nobkg_g,
+                '' as fits_image_nobkg_r,
+                '' as fits_image_nobkg_i,
+                '' as fits_image_nobkg_z,
+                '' as fits_image_nobkg_y,
+                '' as tiff_color_image_nobkg,
+            ''',
+            'dr2': '''
+                fits_image_nobkg_g,
+                fits_image_nobkg_r,
+                fits_image_nobkg_i,
+                fits_image_nobkg_z,
+                fits_image_nobkg_y,
+                tiff_color_image_nobkg,
+            ''',
+        }
+
+        public_query_select = {}
+        for release in public_releases:
+            public_query_select[release] = '''
+                {release_custom}
+                '{release}' as release,
+                g.tilename,
+                racmin,
+                racmax,
+                deccmin,
+                deccmax,
+                ra_cent,
+                dec_cent,
+                fits_image_g,
+                fits_image_r,
+                fits_image_i,
+                fits_image_z,
+                fits_image_y,
+                fits_image_det,
+                fits_{release}_main,
+                fits_{release}_magnitude,
+                fits_{release}_flux,
+                tiff_color_image,
+                count as nobjects 
+            '''.format(release_custom=public_query_select_custom[release],release=release)
+
+
+        private_query_select_custom = {
+            'sva1': '''
+                '' as tiff_color_image,
+            ''', 
+            'y1a1': '''
+                '' as tiff_color_image,
+            ''',  
+            'y3a2': '''
+                tiff_color_image,
+            ''',  
+            'y6a2': '''
+                tiff_color_image,
+            ''', 
+        }
+
+        private_query_select = {}
+        for release in private_releases:
+            private_query_select[release] = '''
+                {release_custom}
+                '{release}' as release,
+                m.tilename,
+                RACMIN,
+                RACMAX,
+                DECCMIN,
+                DECCMAX,
+                RA_CENT,
+                DEC_CENT,
+                fits_image_g,
+                fits_catalog_g,
+                fits_image_r,
+                fits_catalog_r,
+                fits_image_i,
+                fits_catalog_i,
+                fits_image_z,
+                fits_catalog_z,
+                fits_image_y,
+                fits_catalog_y,
+                0 as nobjects 
+            '''.format(release_custom=private_query_select_custom[release],release=release)
+
+        public_query_from = {
+            'dr1': '''
+                dr1_tile_info g
+            ''',
+            'dr2': '''
+                dr2_tile_info g
+            ''',
+        }
+        private_query_from = {
+            'sva1': '''
+                mcarras2.sva1_tile_info m,
+                y3a2_coaddtile_geom g 
+            ''',
+            'y1a1': '''
+                mcarras2.y1a1_tile_info m,
+                y3a2_coaddtile_geom g 
+            ''',
+            'y3a2': '''
+                mcarras2.y3a2_tile_info m,
+                y3a2_coaddtile_geom g 
+            ''',
+            'y6a2': '''
+                mcarras2.y6a2_tile_info m,
+                y6a1_coaddtile_geom g 
+            ''',
+        }
+
         coords_or_name = self.request.path.split('/')[-1]
+
         if coords_or_name == 'name':
             # Ignore accidental whitespace around input string
             name = self.getarg('name').strip()
 
-            if envvars.DESACCESS_INTERFACE == 'public':
-                query = '''
-                select o.tilename,RACMIN,RACMAX,DECCMIN,DECCMAX,RA_CENT,DEC_CENT,'dr1' as release,fits_image_g,fits_image_r,fits_image_i,fits_image_z,fits_image_y, fits_image_det,fits_dr1_main,fits_dr1_magnitude,fits_dr1_flux, count(o.tilename) as nobjects from dr1_main o,dr1_tile_info m where m.tilename=o.tilename and m.tilename='{tilename}' group by o.tilename,racmin,racmax,deccmin,deccmax,ra_cent,dec_cent,'dr1',fits_image_g,fits_image_r,fits_image_i,fits_image_z,fits_image_y, fits_image_det,fits_dr1_main,fits_dr1_magnitude,fits_dr1_flux;
-                '''.format(tilename=name)
-            else:
-                query = '''
-                select o.tilename,RACMIN,RACMAX,DECCMIN,DECCMAX,RA_CENT,DEC_CENT,'sva1' as release,fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y, count(o.tilename) as nobjects from sva1_coadd_objects o,mcarras2.sva1_tile_info m,y3a2_coaddtile_geom g where m.tilename=o.tilename and g.tilename=o.tilename and m.tilename='{tilename}' and m.tilename=g.tilename group by o.tilename,racmin,racmax,deccmin,deccmax,ra_cent,dec_cent,'sva1',fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y UNION ALL select o.tilename,RACMIN,RACMAX,DECCMIN,DECCMAX,RA_CENT,DEC_CENT,'y1a1' as release,fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y,count(o.tilename) as nobjects from y1a1_coadd_objects o, mcarras2.y1a1_tile_info m,y3a2_coaddtile_geom g where m.tilename=o.tilename and g.tilename=o.tilename and m.tilename='{tilename}' and m.tilename=g.tilename group by o.tilename,racmin,racmax,deccmin,deccmax,ra_cent,dec_cent,'y1a1',fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y UNION ALL select o.tilename,RACMIN,RACMAX,DECCMIN,DECCMAX,RA_CENT,DEC_CENT,'y3a2' as release,fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y,count(o.tilename) as nobjects from y3a2_coadd_object_summary o,mcarras2.y3a2_tile_info m,y3a2_coaddtile_geom g where m.tilename=o.tilename and g.tilename=o.tilename and m.tilename='{tilename}' and m.tilename=g.tilename group by o.tilename,racmin,racmax,deccmin,deccmax,ra_cent,dec_cent,'y3a2',fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y UNION ALL select o.tilename,RACMIN,RACMAX,DECCMIN,DECCMAX,RA_CENT,DEC_CENT,'y6a1' as release,fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y,count(o.tilename) as nobjects from y6a1_coadd_object_summary o,mcarras2.y6a1_tile_info m,y3a2_coaddtile_geom g where m.tilename=o.tilename and g.tilename=o.tilename and m.tilename='{tilename}' and m.tilename=g.tilename group by o.tilename,racmin,racmax,deccmin,deccmax,ra_cent,dec_cent,'y6a1',fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y
-                '''.format(tilename=name)
+            public_query_where = '''
+                g.tilename='{tilename}'
+            '''.format(tilename=name)
+
+            private_query_where = '''
+                m.tilename=g.tilename AND
+                m.tilename='{tilename}'
+            '''.format(tilename=name)
+
         elif coords_or_name == 'coords':
             # Ignore accidental whitespace around input string
             coords = self.getarg('coords').strip()
@@ -1188,20 +1308,69 @@ class GetTileLinks(BaseHandler):
                 ra_adjusted = 360-ra
             else:
                 ra_adjusted = ra
-            if envvars.DESACCESS_INTERFACE == 'public':
-                query = '''
-                select o.tilename,RACMIN,RACMAX,DECCMIN,DECCMAX,RA_CENT,DEC_CENT,'dr1' as release,fits_image_g,fits_image_r,fits_image_i,fits_image_z,fits_image_y,fits_image_det,fits_dr1_main,fits_dr1_magnitude,fits_dr1_flux,count(o.tilename) as nobjects from dr1_main o, dr1_tile_info m where o.tilename=m.tilename and ({dec} between m.UDECMIN and m.UDECMAX) and ((m.CROSSRA0='N' and ({ra} between m.URAMIN and m.URAMAX)) or (m.CROSSRA0='Y' and ({ra_adjusted} between m.URAMIN-360 and m.URAMAX))) group by o.tilename,racmin,racmax,deccmin,deccmax,ra_cent,dec_cent,'dr1',fits_image_g,fits_image_r,fits_image_i,fits_image_z,fits_image_y,fits_image_det,fits_dr1_main,fits_dr1_magnitude,fits_dr1_flux;
-                '''.format(ra=ra, dec=dec, ra_adjusted=ra_adjusted)
-            else:
-                query = '''
-                select o.tilename,RACMIN,RACMAX,DECCMIN,DECCMAX,RA_CENT,DEC_CENT,'sva1' as release,fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y,count(o.tilename) as nobjects from sva1_coadd_objects o, mcarras2.sva1_tile_info m,y3a2_coaddtile_geom g where m.tilename=g.tilename and o.tilename=g.tilename and o.tilename=m.tilename and ({dec} between g.UDECMIN and g.UDECMAX) and ((g.CROSSRA0='N' and ({ra} between g.URAMIN and g.URAMAX)) or (g.CROSSRA0='Y' and ({ra_adjusted} between g.URAMIN-360 and g.URAMAX))) group by o.tilename,racmin,racmax,deccmin,deccmax,ra_cent,dec_cent,'sva1',fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y UNION ALL select o.tilename,RACMIN,RACMAX,DECCMIN,DECCMAX,RA_CENT,DEC_CENT,'y1a1' as release,fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y, count(o.tilename) as nobjects from y1a1_coadd_objects o, mcarras2.y1a1_tile_info m,y3a2_coaddtile_geom g where m.tilename=g.tilename and o.tilename=g.tilename and o.tilename=m.tilename and ({dec} between g.UDECMIN and g.UDECMAX) and ((g.CROSSRA0='N' and ({ra} between g.URAMIN and g.URAMAX)) or (g.CROSSRA0='Y' and ({ra_adjusted} between g.URAMIN-360 and g.URAMAX))) group by o.tilename,racmin,racmax,deccmin,deccmax,ra_cent,dec_cent,'y1a1',fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y UNION ALL select o.tilename,RACMIN,RACMAX,DECCMIN,DECCMAX,RA_CENT,DEC_CENT,'y3a2' as release,fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y,count(o.tilename) as nobjects from y3a2_coadd_object_summary o,mcarras2.y3a2_tile_info m,y3a2_coaddtile_geom g where  m.tilename=g.tilename and o.tilename=g.tilename and o.tilename=m.tilename and ({dec} between g.UDECMIN and g.UDECMAX) and ((g.CROSSRA0='N' and ({ra} between g.URAMIN and g.URAMAX)) or (g.CROSSRA0='Y' and ({ra_adjusted} between g.URAMIN-360 and g.URAMAX))) group by o.tilename,racmin,racmax,deccmin,deccmax,ra_cent,dec_cent,'y3a2',fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y UNION ALL select o.tilename,RACMIN,RACMAX,DECCMIN,DECCMAX,RA_CENT,DEC_CENT,'y6a1' as release,fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y,count(o.tilename) as nobjects from y6a1_coadd_object_summary o,mcarras2.y6a1_tile_info m,y3a2_coaddtile_geom g where m.tilename=g.tilename and o.tilename=g.tilename and o.tilename=m.tilename and ({dec} between g.UDECMIN and g.UDECMAX) and ((g.CROSSRA0='N' and ({ra} between g.URAMIN and g.URAMAX)) or (g.CROSSRA0='Y' and ({ra_adjusted} between g.URAMIN-360 and g.URAMAX))) group by o.tilename,racmin,racmax,deccmin,deccmax,ra_cent,dec_cent,'y6a1',fits_image_g,fits_catalog_g,fits_image_r,fits_catalog_r,fits_image_i,fits_catalog_i,fits_image_z,fits_catalog_z,fits_image_y,fits_catalog_y
-                '''.format(ra=ra, dec=dec, ra_adjusted=ra_adjusted)
+
+            public_query_where = private_query_where = '''
+                ({dec} BETWEEN g.UDECMIN AND g.UDECMAX) AND 
+                (
+                    (
+                        g.CROSSRA0='N' AND ({ra} BETWEEN g.URAMIN AND g.URAMAX)
+                    )
+                    OR 
+                    (
+                        g.CROSSRA0='Y' AND ({ra_adjusted} BETWEEN g.URAMIN-360 AND g.URAMAX)
+                    )
+                ) 
+            '''.format(ra=ra, dec=dec, ra_adjusted=ra_adjusted)
+
+            # The DESDR tile_info tables include the geometry information but the 
+            # DESSCI tables do not
+            private_query_where += '''
+                AND m.tilename=g.tilename
+            '''
+
         else:
             response['status'] = STATUS_ERROR
             response['msg'] = 'Only coords or name supported. This error should never occur.'
             self.write(response)
             return
+
+        public_query = ''
+        for release in public_releases:
+            public_query += '''
+            SELECT {select_criteria}
+            FROM {from_criteria}
+            WHERE {where_criteria}
+            '''.format(
+                select_criteria=public_query_select[release],
+                from_criteria=public_query_from[release], 
+                where_criteria=public_query_where,
+            )
+            # Insert UNION ALL between release query blocks
+            if release != public_releases[-1]:
+                public_query += ' UNION ALL '
+
+        private_query = ''
+        for release in private_releases:
+            private_query += '''
+            SELECT {select_criteria}
+            FROM {from_criteria}
+            WHERE {where_criteria}
+            '''.format(
+                select_criteria=private_query_select[release], 
+                from_criteria=private_query_from[release], 
+                where_criteria=private_query_where,
+            )
+            # Insert UNION ALL between release query blocks
+            if release != private_releases[-1]:
+                private_query += ' UNION ALL '
+
+        if envvars.DESACCESS_INTERFACE == 'public':
+            query = public_query
+        else:
+            query = private_query
+
         try:
+            # logger.info(query)
             connection = ea.connect(db, user=username, passwd=password)
             cursor = connection.cursor()
             df = connection.query_to_pandas(query)
@@ -1223,43 +1392,68 @@ class GetTileLinks(BaseHandler):
                 # Get the webserver base path for the different releases
                 if release['RELEASE'] in ['sva1', 'y1a1']:
                     base_path = 'data/'
-                elif release['RELEASE'] == 'dr1':
-                    base_path = 'data/dr1/'
+                elif release['RELEASE'] in ['dr1', 'dr2']:
+                    base_path = 'data/{}/'.format(release['RELEASE'])
                 else:
                     base_path = 'data/desarchive/'
                 # Set the delimiter to split the URL returned by the database query to 
                 # discard the domain information and invalid base path
-                if release['RELEASE'] == 'dr1':
-                    delimiter = 'dr1_tiles/'
+                if release['RELEASE'] in ['dr1', 'dr2']:
+                    delimiter = '{}_tiles/'.format(release['RELEASE'])
                 else:
                     delimiter = 'OPS/'
+                
+                # Iterate through the key-value pairs and generate the download links if the keys exists in the record
+                key_fits_main = 'FITS_{}_MAIN'.format(release['RELEASE'])
+                key_fits_magnitude = 'FITS_{}_MAGNITUDE'.format(release['RELEASE'])
+                key_fits_flux = 'FITS_{}_FLUX'.format(release['RELEASE'])
+                key_fits_det = 'FITS_IMAGE_DET'
+                key_tiff_image = 'TIFF_COLOR_IMAGE'
+                release_keys = [
+                    key_fits_main,
+                    key_fits_magnitude,
+                    key_fits_flux,
+                    key_fits_det,
+                    key_tiff_image,
+                ]
+                values = {}
+                for key in release_keys:
+                    if key not in release or not release[key]:
+                        values[key] = ''
+                    else:
+                        values[key] = 'https://{}{}/{}{}'.format(envvars.BASE_DOMAIN, envvars.BASE_PATH, base_path, release[key].split(delimiter)[1])
+                # Iterate through the band-specific key-value pairs and generate the download links if the keys exists in the record
                 bands = {}
                 for band in ['G', 'R', 'I', 'Z', 'Y']:
                     image_key = 'FITS_IMAGE_{}'.format(band)
+                    image_nobkg_key = 'FITS_IMAGE_NOBKG_{}'.format(band)
                     catalog_key = 'FITS_CATALOG_{}'.format(band)
-                    image_link = ''
-                    catalog_link = ''
-                    try:
-                        if image_key in release and len(release[image_key]) > 0:
-                            # logger.info(release[image_key])
-                            image_link = 'https://{}{}/{}{}'.format(envvars.BASE_DOMAIN, envvars.BASE_PATH, base_path, release[image_key].split(delimiter)[1])
-                        if catalog_key in release and len(release[catalog_key]) > 0:
-                            # logger.info(release[catalog_key])
-                            catalog_link = 'https://{}{}/{}{}'.format(envvars.BASE_DOMAIN, envvars.BASE_PATH, base_path, release[catalog_key].split(delimiter)[1])
-                    except:
-                        pass
+                    band_keys = [
+                        image_key,
+                        image_nobkg_key,
+                        catalog_key,
+                    ]
+                    band_val = {}
+                    for key in band_keys:
+                        if key not in release or not release[key]:
+                            band_val[key] = ''
+                        else:
+                            band_val[key] = 'https://{}{}/{}{}'.format(envvars.BASE_DOMAIN, envvars.BASE_PATH, base_path, release[key].split(delimiter)[1])
                     bands[band] = {
-                        'image': image_link,
-                        'catalog': catalog_link
+                        'image'      : band_val[image_key],
+                        'image_nobkg': band_val[image_nobkg_key],
+                        'catalog'    : band_val[catalog_key],
                     }
+                # Compile the information in an object and append to the returned data structure
                 releases.append({
-                    'release': release['RELEASE'],
-                    'bands': bands,
+                    'release'    : release['RELEASE'],
+                    'bands'      : bands,
                     'num_objects': release['NOBJECTS'],
-                    'detection': '' if 'FITS_IMAGE_DET' not in release or len(release['FITS_IMAGE_DET']) < 1 else 'https://{}{}/{}{}'.format(envvars.BASE_DOMAIN, envvars.BASE_PATH, base_path, release['FITS_IMAGE_DET'].split(delimiter)[1]),
-                    'main': '' if 'FITS_DR1_MAIN' not in release or len(release['FITS_DR1_MAIN']) < 1 else 'https://{}{}/{}{}'.format(envvars.BASE_DOMAIN, envvars.BASE_PATH, base_path, release['FITS_DR1_MAIN'].split(delimiter)[1]),
-                    'magnitude': '' if 'FITS_DR1_MAGNITUDE' not in release or len(release['FITS_DR1_MAGNITUDE']) < 1 else 'https://{}{}/{}{}'.format(envvars.BASE_DOMAIN, envvars.BASE_PATH, base_path, release['FITS_DR1_MAGNITUDE'].split(delimiter)[1]),
-                    'flux': '' if 'FITS_DR1_FLUX' not in release or len(release['FITS_DR1_FLUX']) < 1 else 'https://{}{}/{}{}'.format(envvars.BASE_DOMAIN, envvars.BASE_PATH, base_path, release['FITS_DR1_FLUX'].split(delimiter)[1]),
+                    'tiff_image' : values[key_tiff_image],
+                    'detection'  : values[key_fits_det],
+                    'main'       : values[key_fits_main],
+                    'magnitude'  : values[key_fits_magnitude],
+                    'flux'       : values[key_fits_flux],
                 })
             response['releases'] = releases
             # logger.info(json.dumps(releases, indent=2))
@@ -2311,6 +2505,7 @@ def make_app(basePath=''):
             (r"{}/data/coadd/(.*)?".format(basePath),      TileDataHandler, {'path': '/des004/coadd'}),
             (r"{}/data/desarchive/(.*)?".format(basePath), TileDataHandler, {'path': '/des003/desarchive'}),
             (r"{}/data/dr1/(.*)?".format(basePath), TileDataHandler, {'path': '/tiles/dr1'}),
+            (r"{}/data/dr2/(.*)?".format(basePath), TileDataHandler, {'path': '/tiles/dr2'}),
             (r"{}/dev/debug/trigger?".format(basePath), DebugTrigger),
             (r"{}/dev/db/wipe?".format(basePath), DbWipe),
             (r"{}/dev/webcron?".format(basePath), TriggerWebcronHandler),
