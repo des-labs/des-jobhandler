@@ -1683,6 +1683,7 @@ class JobsDb:
             error_msg = ""
 
         except Exception as e:
+            summary = ""
             error_msg = str(e).strip()
             logger.error(error_msg)
             
