@@ -1,18 +1,20 @@
 
 *ACTION ITEMS*
-- Please ASSIGN this ticket if it is unassigned.
-- PLEASE SEND AN EMAIL TO  *{{ email }}* to reply to this ticket
-- COPY the answer in the comments section and ideally further communication.
-- PLEASE close this ticket when resolved
-
+- ASSIGN this ticket if it is unassigned.
+- SEND AN EMAIL TO *{{ email }}* AND *{{ emaillist }}* to reply to this ticket.
+- CLOSE this ticket when resolved, copying any noteworthy info in the comments.
 
 *Name*: {{ firstname }} {{ lastname }}
 
 *Email*: {{ email }}
 
 *Topics*:
-{{ topics }}
+{% for topic in topics -%}
+- {{ topic }}
+{% endfor %}
+{% if othertopic -%}
 Custom topic: {{ othertopic }}
+{% endif %}
 
 *Question*:
 {{ message }}

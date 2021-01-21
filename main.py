@@ -2169,7 +2169,6 @@ class HelpFormHandler(BaseHandler):
         lastname = self.getarg('lastname')
         message = self.getarg('message')
         topics = self.getarg('topics')
-        topics = ', \n'.join(topics)
         othertopic = self.getarg('othertopic')
         # Generate a new Jira ticket using the Jira API
         try:
@@ -2180,7 +2179,23 @@ class HelpFormHandler(BaseHandler):
             )
             with open(jiraIssueTemplateFile) as f:
                 templateText = f.read()
-            body = Template(templateText).render(
+            jira_body = Template(templateText).render(
+                email=email,
+                emaillist=','.join(envvars.DESACCESS_ADMIN_EMAILS),
+                firstname=firstname,
+                lastname=lastname,
+                topics=topics,
+                message=message,
+                othertopic=othertopic
+            )
+            # Construct Jira issue body from template file
+            emailTemplateFile = os.path.join(
+                os.path.dirname(__file__),
+                "jira_issue_email.tpl"
+            )
+            with open(emailTemplateFile) as f:
+                templateText = f.read()
+            email_body = Template(templateText).render(
                 email=email,
                 firstname=firstname,
                 lastname=lastname,
@@ -2196,7 +2211,7 @@ class HelpFormHandler(BaseHandler):
                 'project' : {'key': 'DESRELEASE'},
                 'issuetype': {'name': 'Task'},
                 'summary': issuetype,
-                'description' : body,
+                'description' : jira_body,
                 #'reporter' : {'name': 'desdm-wufoo'},
             }
             new_jira_issue = JIRA_API.create_issue(fields=issue)
@@ -2224,7 +2239,7 @@ class HelpFormHandler(BaseHandler):
                 error_msg = ''
                 recipients = envvars.DESACCESS_ADMIN_EMAILS + [email]
                 if error_msg == '':
-                    email_utils.help_request_notification(username, recipients, data['jira_issue_number'], body)
+                    email_utils.help_request_notification(username, recipients, data['jira_issue_number'], email_body)
                 else:
                     logger.error('Error sending notification email to admins ({}):\n{}'.format(data['jira_issue_number'], error_msg))
             except:
