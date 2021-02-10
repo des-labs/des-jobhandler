@@ -1679,7 +1679,8 @@ class JobsDb:
                     "select file_size from `cutout`" 
                 )
             )
-            summary = sum([size for (size,) in self.cur.fetchall()])
+        
+            summary = sum([float(size) for (size,) in self.cur.fetchall() if size])
             error_msg = ""
 
         except Exception as e:
