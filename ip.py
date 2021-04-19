@@ -11,7 +11,7 @@ api_v1 = client.CoreV1Api()
 
 def query_pod_logs(api_v1=api_v1, cluster='pub'):
     if cluster == 'pub':
-        release = 'nginx-ingress-nginx'
+        release = 'nginx-ingress-class-nginx'
         namespace = 'nginx-ingress'
     elif cluster == 'prod':
         release='nginx-ingress-class-deslabs'
