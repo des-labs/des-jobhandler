@@ -3,7 +3,7 @@ kubernetes == 11.0.0
 tornado == 6.0.4
 pyjwt == 1.7.1
 pyyaml == 5.3.1
-jinja2 == 2.11.2
+jinja2 == 2.11.3
 mysql-connector-python-rf == 2.2.2
 cx_Oracle == 8.0.1
 tenacity == 6.2.0
