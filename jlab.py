@@ -111,7 +111,7 @@ def create_deployment(apps_v1_api, username, token, gpu):
                 spec=client.V1PodSpec(
                     image_pull_secrets=[
                         client.V1LocalObjectReference(
-                            name='registry-auth'
+                            name='registry-auth-jupyter'
                         )
                     ],
                     init_containers=[
