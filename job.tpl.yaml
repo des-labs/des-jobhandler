@@ -48,7 +48,7 @@ spec:
           runAsUser: 1001
           runAsGroup: 1001
         image: {{ image }}
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         command: {{ command }}
         volumeMounts:
         - name: config-volume
