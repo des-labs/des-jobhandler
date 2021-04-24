@@ -177,43 +177,74 @@ def create_service(core_v1_api, username):
 
 def create_ingress(networking_v1_beta1_api, username):
     name = 'jlab-{}'.format(username)
-    try:
-        # TODO: Improve this parameterization so that no cluster-specific details are hard-coded
-        body = client.NetworkingV1beta1Ingress(
-            api_version="networking.k8s.io/v1beta1",
-            kind="Ingress",
-            metadata=client.V1ObjectMeta(name=name, annotations={
-                'kubernetes.io/ingress.class': envvars.INGRESS_CLASS_JLAB_SERVER
-            }),
-            spec=client.NetworkingV1beta1IngressSpec(
-                tls=[
-                    client.ExtensionsV1beta1IngressTLS(
-                        hosts=[
-                            envvars.BASE_DOMAIN
-                        ],
-                        secret_name=envvars.TLS_SECRET
-                    )
-                ],
-                rules=[client.NetworkingV1beta1IngressRule(
-                    host=envvars.BASE_DOMAIN,
-                    http=client.NetworkingV1beta1HTTPIngressRuleValue(
-                        paths=[client.NetworkingV1beta1HTTPIngressPath(
-                            path="{}/jlab/{}".format(envvars.FRONTEND_BASE_PATH, username),
-                            backend=client.NetworkingV1beta1IngressBackend(
-                                service_port=8888,
-                                service_name=name)
+    
+    class CustomIngressApi(object):
+        # https://stackoverflow.com/a/42788119
+        def __init__(self):
+            # config = client.Configuration()
+            # try:
+            #     self.api_client = config.api_client
+            # except:
+            #     self.api_client = client.ApiClient()
+            self.api_client = client.ApiClient(configuration=config.load_incluster_config())
+        
+        # https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.21/#-strong-write-operations-ingress-v1-networking-k8s-io-strong-
+        def create_ingress(self, body, namespace='default'):
+            import json
+            resource_path = f'/apis/networking.k8s.io/v1/namespaces/{namespace}/ingresses'
+            header_params = {}
+            header_params['Accept'] = self.api_client.select_header_accept(['application/json'])
+            header_params['Content-Type'] = self.api_client.select_header_content_type(['*/*'])
+            
+            token = ''
+            with open("/var/run/secrets/kubernetes.io/serviceaccount/token") as f:
+                token = f.read()
+            header_params['Authorization'] = f'Bearer {token}'
 
-                        )]
-                    )
-                )
+            (resp, code, header) = self.api_client.call_api(
+                    resource_path, 'POST', {'namespace': namespace}, {}, header_params, body, [], _preload_content=False)
+
+            return json.loads(resp.data.decode('utf-8'))
+
+    
+    try:
+        body = {
+            'apiVersion': 'networking.k8s.io/v1',
+            'kind': 'Ingress',
+            'metadata': {
+                'name': name,
+                'annotations': {
+                    'kubernetes.io/ingress.class': envvars.INGRESS_CLASS_JLAB_SERVER,
+                },
+            },
+            'spec': {
+                'rules': [
+                    {
+                        'host': envvars.BASE_DOMAIN,
+                        'http': {
+                            'paths': [
+                                {
+                                   'path': f"{envvars.FRONTEND_BASE_PATH}/jlab/{username}",
+                                    'pathType': 'Prefix',
+                                    'backend': {
+                                        'service': {
+                                            'name': name,
+                                            'port': {
+                                                'number': 8888
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
                 ]
-            )
-        )
+            }
+        }
         # Creation of the Ingress in specified namespace
-        networking_v1_beta1_api.create_namespaced_ingress(
-            namespace=namespace,
-            body=body
-        )
+        resp = CustomIngressApi().create_ingress(body=body, namespace=namespace)
+        logger.debug(f'k8s API (creating ingress) response:\n{resp}')
+        
     except ApiException as e:
         error_msg = str(e).strip()
         logger.error(error_msg)
