@@ -251,17 +251,17 @@ def webcron(cls_handler):
             try:
                 current_time = datetime.datetime.utcnow()
                 for cronjob in cronjobs:
-                    if cronjob['last_run']:
+                    try:
                         last_run_time = cronjob['last_run']
-                    else:
+                        logger.debug('cronjob ({} min): {}'.format(cronjob['period'],cronjob['name']))
+                        logger.debug('current time: {}'.format(current_time))
+                        logger.debug('last run: {}'.format(last_run_time))
+                        # Period is an integer in units of minutes
+                        time_diff = current_time - last_run_time
+                        time_diff_in_minutes = time_diff.total_seconds()/60
+                        logger.debug('time diff (min): {}'.format(time_diff_in_minutes))
+                    except:
                         last_run_time = False
-                    logger.debug('cronjob ({} min): {}'.format(cronjob['period'],cronjob['name']))
-                    logger.debug('current time: {}'.format(current_time))
-                    logger.debug('last run: {}'.format(last_run_time))
-                    # Period is an integer in units of minutes
-                    time_diff = current_time - last_run_time
-                    time_diff_in_minutes = time_diff.total_seconds()/60
-                    logger.debug('time diff (min): {}'.format(time_diff_in_minutes))
                     if not last_run_time or time_diff_in_minutes >= cronjob['period']:
                         # Time to run the cron job again
                         logger.info('Running cron job "{}" at "{}".'.format(cronjob['name'], current_time))
