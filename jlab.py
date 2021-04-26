@@ -30,13 +30,23 @@ def create_deployment(apps_v1_api, username, token, gpu):
             image="ubuntu:18.04",
             image_pull_policy="IfNotPresent",
             command=["/bin/sh"],
-            args=["-c", "chown 1001:1001 /persistent_volume"],
+            args=["-c", "chown 1001:1001 /persistent_volume /jobs/query /jobs/cutout"],
             volume_mounts=[
                 client.V1VolumeMount(
                     name='persistent-volume',
                     mount_path="/persistent_volume",
                     sub_path='{}/jupyter'.format(username)
-                )
+                ),
+                client.V1VolumeMount(
+                    name='persistent-volume',
+                    mount_path="/jobs/query",
+                    sub_path='{}/query'.format(username)
+                ),
+                client.V1VolumeMount(
+                    name='persistent-volume',
+                    mount_path="/jobs/cutout",
+                    sub_path='{}/cutout'.format(username)
+                ),
             ]
         )
         if gpu == True:
