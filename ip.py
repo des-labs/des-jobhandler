@@ -9,21 +9,15 @@ config.load_incluster_config()
 
 api_v1 = client.CoreV1Api()
 
-def query_pod_logs(api_v1=api_v1, cluster='pub'):
+def query_pod_logs(api_v1=api_v1, cluster='pub', namespace='traefik'):
     if cluster == 'pub':
-        release = 'nginx-ingress-class-nginx'
-        namespace = 'nginx-ingress'
+        instance = 'traefik-des-ncsa'
     elif cluster == 'prod':
-        release='nginx-ingress-class-deslabs'
-        namespace="nginx-ingress"
-    else:
-        cluster='dev'
-        release='nginx-ingress-trans'
-        namespace='desapps'
+        instance = 'traefik-deslabs-ncsa'
 
     # Getting pod name based on public or private infrastructure
     pods = api_v1.list_namespaced_pod(namespace, watch = False,
-        label_selector="component=controller,release={release}".format(release=release)
+        label_selector="instance={instance}".format(instance=instance)
     )
     
     pod_name = pods.items[0].metadata.name
