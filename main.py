@@ -568,14 +568,14 @@ class IPStatisticsHandler(BaseHandler):
         response = {}
         response['results'] = {}
         for cluster in ['pub','prod']:
-            #try:
-            ip_list = ip.query_pod_logs(cluster = cluster)
-            response['status'] = STATUS_OK
-            response['message'] = ''
-            response['results'][cluster] = ip_list
-            #except Exception as e:
-             #   response['message'] = str(e).strip()
-              #  response['status'] = STATUS_ERROR
+            try:
+                ip_list = ip.query_pod_logs(cluster = cluster)
+                response['status'] = STATUS_OK
+                response['message'] = ''
+                response['results'][cluster] = ip_list
+            except Exception as e:
+                response['message'] = str(e).strip()
+                response['status'] = STATUS_ERROR
         self.write(response)
 
 @authenticated
