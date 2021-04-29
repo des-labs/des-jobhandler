@@ -1508,10 +1508,14 @@ class NotificationsCreateHandler(BaseHandler):
                 response['status'] = STATUS_ERROR
                 response['msg'] = error_msg
             else:
-                # Only send email if the roles list includes "default"
+                # Only send email to the entire membership if the roles list includes "default"
                 if email and 'default' in roles:
                     logger.info('Sending notification email to email list.')
                     email_utils.email_notify_public_list(EMAIL_LIST_ADDRESS, title, body)
+                # Send email to admins if the roles list includes "admin"
+                elif email and 'admin' in roles:
+                    logger.info(f'Sending notification email to DESaccess admins: {envvars.DESACCESS_ADMIN_EMAILS}')
+                    email_utils.email_notify_public_list(envvars.DESACCESS_ADMIN_EMAILS, title, body)
         except Exception as e:
             response['status'] = STATUS_ERROR
             response['msg'] = str(e).strip()
@@ -1559,10 +1563,14 @@ class NotificationsEditHandler(BaseHandler):
                 response['status'] = STATUS_ERROR
                 response['msg'] = error_msg
             else:
-                # Only send email if the roles list includes "default"
+                # Only send email to the entire membership if the roles list includes "default"
                 if email and 'default' in roles:
                     logger.info('Sending notification email to email list.')
                     email_utils.email_notify_public_list(EMAIL_LIST_ADDRESS, title, body)
+                # Send email to admins if the roles list includes "admin"
+                elif email and 'admin' in roles:
+                    logger.info(f'Sending notification email to DESaccess admins: {envvars.DESACCESS_ADMIN_EMAILS}')
+                    email_utils.email_notify_public_list(envvars.DESACCESS_ADMIN_EMAILS, title, body)
         except Exception as e:
             response['status'] = STATUS_ERROR
             response['msg'] = str(e).strip()
