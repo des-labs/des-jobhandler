@@ -17,7 +17,7 @@ def query_pod_logs(api_v1=api_v1, cluster='pub', namespace='traefik'):
 
     # Getting pod name based on public or private infrastructure
     pods = api_v1.list_namespaced_pod(namespace, watch = False,
-        label_selector="instance={instance}".format(instance=instance)
+        label_selector="app.kubernetes.io/instance={instance}".format(instance=instance)
     )
     logger.info(pods)    
     pod_name = pods.items[0].metadata.name
