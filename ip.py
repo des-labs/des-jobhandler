@@ -19,16 +19,16 @@ def query_pod_logs(api_v1=api_v1, cluster='pub', namespace='traefik'):
     pods = api_v1.list_namespaced_pod(namespace, watch = False,
         label_selector="instance={instance}".format(instance=instance)
     )
-    print(pods)    
+    logger.info(pods)    
     pod_name = pods.items[0].metadata.name
-    print(pod_name)
+    logger.info(pod_name)
     
     ips = []
     # try:
     # Reading of the nginx controller in specified namespace
     api_response = api_v1.read_namespaced_pod_log(
         namespace=namespace, name = pod_name)
-        
+    logger.info(api_response)        
     # Getting IPs from api_response
     for line in api_response.split('\n'):
         if '/desaccess/api/login' in line:
