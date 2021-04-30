@@ -22,20 +22,20 @@ def query_pod_logs(api_v1=api_v1, cluster='pub', namespace='traefik'):
     pod_name = pods.items[0].metadata.name
     
     ips = []
-     try:
+    try:
         # Reading of the traefik controller in specified namespace
         api_response = api_v1.read_namespaced_pod_log(
-            namespace=namespace, name = pod_name)
+            namespace=namespace, name=pod_name)
         # Getting IPs from api_response
         for line in api_response.split('\n'):
             if '/desaccess/api/login' in line:
                 ip = line.split(' ')[0]
-                ips.append(ip)    
+                ips.append(ip)
 
         # Getting count of unique ips
         counter_unique_ips = Counter(ips)
         return counter_unique_ips
-       
-     except ApiException as e:
+
+    except ApiException as e:
         error_msg = str(e).strip()
         logger.error(error_msg)
