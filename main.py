@@ -1125,6 +1125,13 @@ class CheckQuerySyntaxHandler(BaseHandler):
         db = self._token_decoded["db"]
         query = self.getarg('query')
         try:
+            assert query.lower().lstrip().startswith('select')
+        except:
+            response['status'] = STATUS_ERROR
+            response['msg'] = 'Query must start with the word "SELECT"'
+            self.write(response)
+            return
+        try:
             connection = ea.connect(db, user=username, passwd=password)
             cursor = connection.cursor()
         except Exception as e:
