@@ -2078,11 +2078,13 @@ class UserRegisterHandler(BaseHandler):
                 response['msg'] = 'Valid username characters are: a-z0-9'
                 self.write(response)
                 return
+            firstname = firstname.strip()
             if not re.fullmatch(r'[A-Za-z0-9]{1,}', firstname):
                 response['status'] = STATUS_ERROR
                 response['msg'] = 'Valid given name characters are: A-Za-z0-9'
                 self.write(response)
                 return
+            lastname = lastname.strip()
             if not re.fullmatch(r'[A-Za-z0-9]{1,}', lastname):
                 response['status'] = STATUS_ERROR
                 response['msg'] = 'Valid family name characters are: A-Za-z0-9'
