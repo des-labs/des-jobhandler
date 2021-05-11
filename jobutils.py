@@ -255,6 +255,27 @@ class JobsDb:
         self.close_db_connection()
         return rowId
 
+    def delete_apitoken(self, apitoken):
+        error_msg = ''
+        self.open_db_connection()
+        try:
+            self.cur.execute(
+                (
+                    "UPDATE `job` SET `apitoken` = '' WHERE `apitoken` = %s"
+                ),
+                (
+                    apitoken,
+                )
+            )
+            if self.cur.rowcount < 1:
+                error_msg = 'Error deleting apitoken: {}'.format(apitoken)
+                logger.error(error_msg)
+        except Exception as e:
+            error_msg = str(e).strip()
+            logger.error(error_msg)
+        self.close_db_connection()
+        return error_msg
+
     def job_status(self, username, job_id):
         self.open_db_connection()
         request_status = STATUS_OK
@@ -609,6 +630,10 @@ class JobsDb:
                 except:
                     logger.error('Failed to send job complete email: {}/{}.'.format(user, job_id))
         self.close_db_connection()
+        
+        error_msg_delete = self.delete_apitoken(apitoken)
+        if error_msg_delete:
+            error_msg += f'; {error_msg_delete}'
         return error_msg
 
     def session_login(self, username, token, ciphertext):

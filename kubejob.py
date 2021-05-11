@@ -39,7 +39,7 @@ def job(input):
         backoffLimit=2,
         hostNetwork=input["host_network"],
         activeDeadlineSeconds=input['activeDeadlineSeconds'], # No Job is allowed to run beyond 24 hours.
-        ttlSecondsAfterFinished=0, # ttlSecondsAfterFinished requires a feature gate flag in kubelet to function
+        ttlSecondsAfterFinished=120,
         container_name=input["job"],
         image=input["image"],
         command=input["command"],
