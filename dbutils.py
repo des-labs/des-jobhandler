@@ -574,6 +574,7 @@ class dbConfig(object):
                 # Update the cache tables with table and column info
                 cursor.execute(refresh_tables_sql)
                 cursor.execute(refresh_columns_sql)
+                dbh.commit()
                 cursor.close()
                 dbh.close()
         except Exception as e:
