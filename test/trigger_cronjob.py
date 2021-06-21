@@ -36,7 +36,7 @@ def login():
             'password': config['password'],
             'database': config['database']
         },
-        verify=False
+        # verify=False
     )
     # Store the JWT auth token
     config['auth_token'] = r.json()['token']
@@ -56,7 +56,7 @@ def trigger_cronjob(cronjob):
         '{}/dev/webcron'.format(config['apiBaseUrl']),
         params=params,
         headers={'Authorization': 'Bearer {}'.format(config['auth_token'])},
-        verify=False
+        # verify=False
     )
     try:
         response = response.json()
@@ -76,4 +76,4 @@ if __name__ == '__main__':
         print('Login failed.')
         sys.exit(1)
 
-    response = trigger_cronjob('sync_email_list')
+    response = trigger_cronjob('refresh_database_table_cache')
