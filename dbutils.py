@@ -16,7 +16,7 @@ STATUS_ERROR = 'error'
 logger = logging.getLogger(__name__)
 
 class dbConfig(object):
-    def __init__(self, manager_db, all_databases):
+    def __init__(self, manager_db, all_databases, user_manager_host):
         file = os.path.join(
             os.path.dirname(__file__),
             "oracle_user_manager.yaml"
@@ -29,6 +29,7 @@ class dbConfig(object):
         self.pwd_manager = conf['passwd']
         self.admin_user_manager = conf['admin_user']
         self.admin_pwd_manager = conf['admin_passwd']
+        self.user_manager_host = user_manager_host
         self.db_manager = manager_db
         self.databases = all_databases
 
@@ -46,10 +47,7 @@ class dbConfig(object):
         return re.fullmatch(r'^[A-Za-z0-9]+$', in_string)
 
     def get_username_from_email(self, email):
-        newhost = self.host
-        if db == "dessci":
-            newhost = self.host.replace('02','05')
-        kwargs = {'host': newhost, 'port': self.port, 'service_name': self.db_manager}
+        kwargs = {'host': self.user_manager_host, 'port': self.port, 'service_name': self.db_manager}
         dsn = cx_Oracle.makedsn(**kwargs)
         dbh = cx_Oracle.connect(self.user_manager, self.pwd_manager, dsn=dsn)
         cursor = dbh.cursor()
@@ -67,10 +65,7 @@ class dbConfig(object):
         return username
 
     def check_credentials(self, username, password, db, email=''):
-        newhost = self.host
-        if db == "dessci":
-            newhost = self.host.replace('02','05')
-        kwargs = {'host': newhost, 'port': self.port, 'service_name': db}
+        kwargs = {'host': self.user_manager_host, 'port': self.port, 'service_name': db}
         dsn = cx_Oracle.makedsn(**kwargs)
         update = False
         try:
@@ -92,11 +87,10 @@ class dbConfig(object):
                 update = True
             return False, username, error, update
 
-    def get_basic_info(self, user, db):
-        newhost = self.host
-        if db == "dessci":
-            newhost = self.host.replace('02','05')
-        kwargs = {'host': newhost, 'port': self.port, 'service_name': db}
+    def get_basic_info(self, user, db=None):
+        if not db:
+            db = self.db_manager
+        kwargs = {'host': self.user_manager_host, 'port': self.port, 'service_name': db}
         dsn = cx_Oracle.makedsn(**kwargs)
         dbh = cx_Oracle.connect(self.user_manager, self.pwd_manager, dsn=dsn)
         cursor = dbh.cursor()
@@ -156,11 +150,8 @@ class dbConfig(object):
         return status, msg
 
     def change_credentials(self, username, oldpwd, newpwd, db):
-        newhost = self.host
-        if db == "dessci":
-            newhost = self.host.replace('02','05')
         auth, username, error, update = self.check_credentials(username, oldpwd, db)
-        kwargs = {'host': newhost, 'port': self.port, 'service_name': db}
+        kwargs = {'host': self.user_manager_host, 'port': self.port, 'service_name': db}
         dsn = cx_Oracle.makedsn(**kwargs)
         if auth:
             try:
