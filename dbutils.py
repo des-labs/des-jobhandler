@@ -92,11 +92,11 @@ class dbConfig(object):
                 update = True
             return False, username, error, update
 
-    def get_basic_info(self, user):
+    def get_basic_info(self, user, db):
         newhost = self.host
         if db == "dessci":
             newhost = self.host.replace('02','05')
-        kwargs = {'host': newhost, 'port': self.port, 'service_name': self.db_manager}
+        kwargs = {'host': newhost, 'port': self.port, 'service_name': db}
         dsn = cx_Oracle.makedsn(**kwargs)
         dbh = cx_Oracle.connect(self.user_manager, self.pwd_manager, dsn=dsn)
         cursor = dbh.cursor()
