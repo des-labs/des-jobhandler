@@ -34,7 +34,7 @@ class dbConfig(object):
 
     @retry(reraise=True, stop=tenacity.stop.stop_after_attempt(2), wait=tenacity.wait.wait_fixed(2))
     def __login(self, user, passwd, dsn):
-        logger.info('Connecting to DB as {}...'.format(user))
+        logger.info('Connecting to DB [{}] as {}...'.format(dsn, user))
         try:
             dbh = cx_Oracle.connect(user, passwd, dsn=dsn)
             dbh.close()
