@@ -34,7 +34,7 @@ class dbConfig(object):
 
     @retry(reraise=True, stop=tenacity.stop.stop_after_attempt(2), wait=tenacity.wait.wait_fixed(2))
     def __login(self, user, passwd, dsn):
-        logger.info('Connecting to DB as {}...'.format(user))
+        logger.info('Connecting to DB [{}] as {}...'.format(dsn, user))
         try:
             dbh = cx_Oracle.connect(user, passwd, dsn=dsn)
             dbh.close()
@@ -46,7 +46,10 @@ class dbConfig(object):
         return re.fullmatch(r'^[A-Za-z0-9]+$', in_string)
 
     def get_username_from_email(self, email):
-        kwargs = {'host': self.host, 'port': self.port, 'service_name': self.db_manager}
+        newhost = self.host
+        if db == "dessci":
+            newhost = self.host.replace('02','05')
+        kwargs = {'host': newhost, 'port': self.port, 'service_name': self.db_manager}
         dsn = cx_Oracle.makedsn(**kwargs)
         dbh = cx_Oracle.connect(self.user_manager, self.pwd_manager, dsn=dsn)
         cursor = dbh.cursor()
@@ -64,7 +67,10 @@ class dbConfig(object):
         return username
 
     def check_credentials(self, username, password, db, email=''):
-        kwargs = {'host': self.host, 'port': self.port, 'service_name': db}
+        newhost = self.host
+        if db == "dessci":
+            newhost = self.host.replace('02','05')
+        kwargs = {'host': newhost, 'port': self.port, 'service_name': db}
         dsn = cx_Oracle.makedsn(**kwargs)
         update = False
         try:
@@ -86,8 +92,11 @@ class dbConfig(object):
                 update = True
             return False, username, error, update
 
-    def get_basic_info(self, user):
-        kwargs = {'host': self.host, 'port': self.port, 'service_name': self.db_manager}
+    def get_basic_info(self, user, db):
+        newhost = self.host
+        if db == "dessci":
+            newhost = self.host.replace('02','05')
+        kwargs = {'host': newhost, 'port': self.port, 'service_name': db}
         dsn = cx_Oracle.makedsn(**kwargs)
         dbh = cx_Oracle.connect(self.user_manager, self.pwd_manager, dsn=dsn)
         cursor = dbh.cursor()
@@ -147,8 +156,11 @@ class dbConfig(object):
         return status, msg
 
     def change_credentials(self, username, oldpwd, newpwd, db):
+        newhost = self.host
+        if db == "dessci":
+            newhost = self.host.replace('02','05')
         auth, username, error, update = self.check_credentials(username, oldpwd, db)
-        kwargs = {'host': self.host, 'port': self.port, 'service_name': db}
+        kwargs = {'host': newhost, 'port': self.port, 'service_name': db}
         dsn = cx_Oracle.makedsn(**kwargs)
         if auth:
             try:
@@ -212,7 +224,10 @@ class dbConfig(object):
             # self.db_manager = db
             # Open an Oracle connection and get a Cursor object
             try:
-                kwargs = {'host': self.host, 'port': self.port, 'service_name': db}
+                newhost = self.host
+                if db == "dessci":
+                    newhost = self.host.replace('02','05')
+                kwargs = {'host': newhost, 'port': self.port, 'service_name': db}
                 dsn = cx_Oracle.makedsn(**kwargs)
                 dbh = cx_Oracle.connect(self.admin_user_manager, self.admin_pwd_manager, dsn=dsn)
                 logger.info('connecting to {} with user: {}'.format(db, self.admin_user_manager))

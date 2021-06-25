@@ -665,7 +665,7 @@ class LoginHandler(BaseHandler):
             self.finish()
             return
         try:
-            name, last, email = USER_DB_MANAGER.get_basic_info(username)
+            name, last, email = USER_DB_MANAGER.get_basic_info(username, db)
         except Exception as e:
             error_msg = str(e).strip()
             logger.error(error_msg)
