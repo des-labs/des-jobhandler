@@ -122,31 +122,31 @@ class dbConfig(object):
         dbh.close()
         return cc
 
-    def update_info(self, username, firstname, lastname, email, db=None):
-        if not db:
-            db = self.databases[0]
-        username = username.lower()
-        kwargs = {'host': self.conf[db]['host'], 'port': self.conf[db]['port'], 'service_name': db}
-        dsn = cx_Oracle.makedsn(**kwargs)
-        dbh = cx_Oracle.connect(self.conf[db]['user'], self.conf[db]['passwd'], dsn=dsn)
-        cursor = dbh.cursor()
-        qupdate = """
-            UPDATE  DES_ADMIN.DES_USERS SET
-            FIRSTNAME = :first,
-            LASTNAME = :last,
-            EMAIL = :email
-            WHERE USERNAME = :username
-            """
-        try:
-            cursor.execute(qupdate, first=firstname, last=lastname, email=email, username=username)
-            dbh.commit()
-            msg = 'Information for {} Updated'.format(username)
-            status = 'ok'
-        except Exception as e:
-            msg = str(e).strip()
-            status = 'error'
-        cursor.close()
-        dbh.close()
+    def update_info(self, username, firstname, lastname, email):
+        for db in self.databases:
+            username = username.lower()
+            kwargs = {'host': self.conf[db]['host'], 'port': self.conf[db]['port'], 'service_name': db}
+            dsn = cx_Oracle.makedsn(**kwargs)
+            dbh = cx_Oracle.connect(self.conf[db]['user'], self.conf[db]['passwd'], dsn=dsn)
+            cursor = dbh.cursor()
+            qupdate = """
+                UPDATE DES_ADMIN.DES_USERS SET
+                FIRSTNAME = :first,
+                LASTNAME = :last,
+                EMAIL = :email
+                WHERE USERNAME = :username
+                """
+            try:
+                cursor.execute(qupdate, first=firstname, last=lastname, email=email, username=username)
+                dbh.commit()
+                msg = 'Information for {} Updated'.format(username)
+                status = 'ok'
+            except Exception as e:
+                msg = str(e).strip()
+                status = 'error'
+                return status, msg
+            cursor.close()
+            dbh.close()
         return status, msg
 
     def change_credentials(self, username, oldpwd, newpwd, db):
