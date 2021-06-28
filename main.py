@@ -89,10 +89,10 @@ except:
 
 # Initialize the Oracle database user manager and set email list address
 if envvars.DESACCESS_INTERFACE == 'public':
-    USER_DB_MANAGER = dbutils.dbConfig(envvars.ORACLE_PUB, envvars.ORACLE_PUB_DBS, envvars.ORACLE_USER_MANAGER_HOST_PUBLIC)
+    USER_DB_MANAGER = dbutils.dbConfig(envvars.ORACLE_PUB_DBS)
     EMAIL_LIST_ADDRESS = envvars.DESACCESS_PUBLIC_EMAILS
 else:
-    USER_DB_MANAGER = dbutils.dbConfig(envvars.ORACLE_PRV, envvars.ORACLE_PRV_DBS, envvars.ORACLE_USER_MANAGER_HOST_PRIVATE)
+    USER_DB_MANAGER = dbutils.dbConfig(envvars.ORACLE_PRV_DBS)
     EMAIL_LIST_ADDRESS = envvars.DESACCESS_PRIVATE_EMAILS
 
 # The datetime type is not JSON serializable, so convert to string

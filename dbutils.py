@@ -16,21 +16,13 @@ STATUS_ERROR = 'error'
 logger = logging.getLogger(__name__)
 
 class dbConfig(object):
-    def __init__(self, manager_db, all_databases, user_manager_host):
+    def __init__(self, all_databases):
         file = os.path.join(
             os.path.dirname(__file__),
             "oracle_user_manager.yaml"
         )
         with open(file, 'r') as cfile:
-            conf = yaml.load(cfile, Loader=yaml.FullLoader)[manager_db]
-        self.host = conf['host']
-        self.port = conf['port']
-        self.user_manager = conf['user']
-        self.pwd_manager = conf['passwd']
-        self.admin_user_manager = conf['admin_user']
-        self.admin_pwd_manager = conf['admin_passwd']
-        self.user_manager_host = user_manager_host
-        self.db_manager = manager_db
+            self.conf = yaml.load(cfile, Loader=yaml.FullLoader)
         self.databases = all_databases
 
     @retry(reraise=True, stop=tenacity.stop.stop_after_attempt(2), wait=tenacity.wait.wait_fixed(2))
@@ -46,10 +38,12 @@ class dbConfig(object):
     def is_alphanumeric(self, in_string):
         return re.fullmatch(r'^[A-Za-z0-9]+$', in_string)
 
-    def get_username_from_email(self, email):
-        kwargs = {'host': self.user_manager_host, 'port': self.port, 'service_name': self.db_manager}
+    def get_username_from_email(self, email, db=None):
+        if not db:
+            db = self.databases[0]
+        kwargs = {'host': self.conf[db]['host'], 'port': self.conf[db]['port'], 'service_name': db}
         dsn = cx_Oracle.makedsn(**kwargs)
-        dbh = cx_Oracle.connect(self.user_manager, self.pwd_manager, dsn=dsn)
+        dbh = cx_Oracle.connect(self.conf[db]['user'], self.conf[db]['passwd'], dsn=dsn)
         cursor = dbh.cursor()
         username = None
         try:
@@ -65,13 +59,15 @@ class dbConfig(object):
         return username
 
     def check_credentials(self, username, password, db, email=''):
-        kwargs = {'host': self.user_manager_host, 'port': self.port, 'service_name': db}
+        if not db:
+            db = self.databases[0]
+        kwargs = {'host': self.conf[db]['host'], 'port': self.conf[db]['port'], 'service_name': db}
         dsn = cx_Oracle.makedsn(**kwargs)
         update = False
         try:
             # Get username from account with registered email address if provided
             if email != '':
-                username_from_email = self.get_username_from_email(email)
+                username_from_email = self.get_username_from_email(email, db)
                 if not username_from_email:
                     return False, username, 'email is not registered', update
                 else:
@@ -89,10 +85,10 @@ class dbConfig(object):
 
     def get_basic_info(self, user, db=None):
         if not db:
-            db = self.db_manager
-        kwargs = {'host': self.user_manager_host, 'port': self.port, 'service_name': db}
+            db = self.databases[0]
+        kwargs = {'host': self.conf[db]['host'], 'port': self.conf[db]['port'], 'service_name': db}
         dsn = cx_Oracle.makedsn(**kwargs)
-        dbh = cx_Oracle.connect(self.user_manager, self.pwd_manager, dsn=dsn)
+        dbh = cx_Oracle.connect(self.conf[db]['user'], self.conf[db]['passwd'], dsn=dsn)
         cursor = dbh.cursor()
         try:
             if user == envvars.MONITOR_SERVICE_ACCOUNT_USERNAME:
@@ -108,10 +104,12 @@ class dbConfig(object):
         dbh.close()
         return cc
 
-    def list_all_users(self):
-        kwargs = {'host': self.host, 'port': self.port, 'service_name': self.db_manager}
+    def list_all_users(self, db=None):
+        if not db:
+            db = self.databases[0]
+        kwargs = {'host': self.conf[db]['host'], 'port': self.conf[db]['port'], 'service_name': db}
         dsn = cx_Oracle.makedsn(**kwargs)
-        dbh = cx_Oracle.connect(self.user_manager, self.pwd_manager, dsn=dsn)
+        dbh = cx_Oracle.connect(self.conf[db]['user'], self.conf[db]['passwd'], dsn=dsn)
         cursor = dbh.cursor()
         try:
             sql = """
@@ -124,11 +122,13 @@ class dbConfig(object):
         dbh.close()
         return cc
 
-    def update_info(self, username, firstname, lastname, email):
+    def update_info(self, username, firstname, lastname, email, db=None):
+        if not db:
+            db = self.databases[0]
         username = username.lower()
-        kwargs = {'host': self.host, 'port': self.port, 'service_name': self.db_manager}
+        kwargs = {'host': self.conf[db]['host'], 'port': self.conf[db]['port'], 'service_name': db}
         dsn = cx_Oracle.makedsn(**kwargs)
-        dbh = cx_Oracle.connect(self.user_manager, self.pwd_manager, dsn=dsn)
+        dbh = cx_Oracle.connect(self.conf[db]['user'], self.conf[db]['passwd'], dsn=dsn)
         cursor = dbh.cursor()
         qupdate = """
             UPDATE  DES_ADMIN.DES_USERS SET
@@ -151,7 +151,7 @@ class dbConfig(object):
 
     def change_credentials(self, username, oldpwd, newpwd, db):
         auth, username, error, update = self.check_credentials(username, oldpwd, db)
-        kwargs = {'host': self.user_manager_host, 'port': self.port, 'service_name': db}
+        kwargs = {'host': self.conf[db]['host'], 'port': self.conf[db]['port'], 'service_name': db}
         dsn = cx_Oracle.makedsn(**kwargs)
         if auth:
             try:
@@ -172,14 +172,16 @@ class dbConfig(object):
         else:
             return 'error', error
     
-    def check_username(self, username):
+    def check_username(self, username, db=None):
+        if not db:
+            db = self.databases[0]
         status = STATUS_OK
         msg = ''
         username = username.lower()
         results = None
-        kwargs = {'host': self.host, 'port': self.port, 'service_name': self.db_manager}
+        kwargs = {'host': self.conf[db]['host'], 'port': self.conf[db]['port'], 'service_name': db}
         dsn = cx_Oracle.makedsn(**kwargs)
-        dbh = cx_Oracle.connect(self.user_manager, self.pwd_manager, dsn=dsn)
+        dbh = cx_Oracle.connect(self.conf[db]['user'], self.conf[db]['passwd'], dsn=dsn)
         cursor = dbh.cursor()
         sql = """
             SELECT USERNAME FROM DES_ADMIN.DES_USERS WHERE USERNAME = :username
@@ -212,16 +214,12 @@ class dbConfig(object):
             return status, msg
 
         for db in self.databases:
-            # self.db_manager = db
             # Open an Oracle connection and get a Cursor object
             try:
-                newhost = self.host
-                if db == "dessci":
-                    newhost = self.host.replace('02','05')
-                kwargs = {'host': newhost, 'port': self.port, 'service_name': db}
+                kwargs = {'host': self.conf[db]['host'], 'port': self.conf[db]['port'], 'service_name': db}
                 dsn = cx_Oracle.makedsn(**kwargs)
-                dbh = cx_Oracle.connect(self.admin_user_manager, self.admin_pwd_manager, dsn=dsn)
-                logger.info('connecting to {} with user: {}'.format(db, self.admin_user_manager))
+                dbh = cx_Oracle.connect(self.conf[db]['admin_user'], self.conf[db]['admin_passwd'], dsn=dsn)
+                # logger.info('connecting to {} with user: {}'.format(db, self.conf[db]['admin_user']))
                 cursor = dbh.cursor()
                 
                 # Unlock account in case it is locked for some reason
@@ -247,7 +245,7 @@ class dbConfig(object):
                 # If the procedure calls do not throw an error, assume success
                 # Delete the reset token
                 logger.info('Deleting reset token "{}"...'.format(username))
-                status, msg = self.clear_reset_token(username)
+                status, msg = self.clear_reset_token(username, db)
                 cursor.close()
                 dbh.close()
             except Exception as e:
@@ -259,13 +257,15 @@ class dbConfig(object):
                 break
         return status, msg
 
-    def clear_reset_token(self, username):
+    def clear_reset_token(self, username, db=None):
+        if not db:
+            db = self.databases[0]
         status = STATUS_OK
         msg = ''
         username = username.lower()
-        kwargs = {'host': self.host, 'port': self.port, 'service_name': self.db_manager}
+        kwargs = {'host': self.conf[db]['host'], 'port': self.conf[db]['port'], 'service_name': db}
         dsn = cx_Oracle.makedsn(**kwargs)
-        dbh = cx_Oracle.connect(self.admin_user_manager, self.admin_pwd_manager, dsn=dsn)
+        dbh = cx_Oracle.connect(self.conf[db]['admin_user'], self.conf[db]['admin_passwd'], dsn=dsn)
         cursor = dbh.cursor()
         try:
             # Delete the reset token
@@ -282,7 +282,9 @@ class dbConfig(object):
         dbh.close()
         return status, msg
 
-    def unlock_account(self, username, db=''):
+    def unlock_account(self, username, db=None):
+        if not db:
+            db = self.databases[0]
         status = STATUS_OK
         msg = ''
         username = username.lower()
@@ -292,12 +294,9 @@ class dbConfig(object):
             status = STATUS_ERROR
             msg = 'Invalid characters in username'
             return status, msg
-
-        if not db:
-            db = self.db_manager
-        kwargs = {'host': self.host, 'port': self.port, 'service_name': db}
+        kwargs = {'host': self.conf[db]['host'], 'port': self.conf[db]['port'], 'service_name': db}
         dsn = cx_Oracle.makedsn(**kwargs)
-        dbh = cx_Oracle.connect(self.admin_user_manager, self.admin_pwd_manager, dsn=dsn)
+        dbh = cx_Oracle.connect(self.conf[db]['admin_user'], self.conf[db]['admin_passwd'], dsn=dsn)
         cursor = dbh.cursor()
         try:
             if envvars.DESACCESS_INTERFACE == 'public':
@@ -311,7 +310,7 @@ class dbConfig(object):
                 result = cursor.callproc('UNLOCKUSER', [username])
                 logger.info('Result UNLOCKUSER: {}'.format(result))
             # Delete the reset token
-            status, msg = self.clear_reset_token(username)
+            status, msg = self.clear_reset_token(username, db)
         except Exception as e:
             status = STATUS_ERROR
             msg = str(e).strip()
@@ -325,9 +324,11 @@ class dbConfig(object):
         status = STATUS_OK
         msg = 'Activation token is invalid'
         results = None
-        kwargs = {'host': self.host, 'port': self.port, 'service_name': self.db_manager}
+        # Reset tokens need only be managed in one database, since we are applying updated user info and credentials to all databases
+        db = self.databases[0]
+        kwargs = {'host': self.conf[db]['host'], 'port': self.conf[db]['port'], 'service_name': db}
         dsn = cx_Oracle.makedsn(**kwargs)
-        dbh = cx_Oracle.connect(self.admin_user_manager, self.admin_pwd_manager, dsn=dsn)
+        dbh = cx_Oracle.connect(self.conf[db]['admin_user'], self.conf[db]['admin_passwd'], dsn=dsn)
         cursor = dbh.cursor()
         sql = """
             SELECT CREATED, USERNAME FROM DES_ADMIN.RESET_URL WHERE URL = :token
@@ -355,13 +356,15 @@ class dbConfig(object):
         dbh.close()
         return valid, username, status, msg
 
-    def check_email(self, email):
+    def check_email(self, email, db=None):
+        if not db:
+            db = self.databases[0]
         status = STATUS_OK
         msg = ''
         results = None
-        kwargs = {'host': self.host, 'port': self.port, 'service_name': self.db_manager}
+        kwargs = {'host': self.conf[db]['host'], 'port': self.conf[db]['port'], 'service_name': db}
         dsn = cx_Oracle.makedsn(**kwargs)
-        dbh = cx_Oracle.connect(self.user_manager, self.pwd_manager, dsn=dsn)
+        dbh = cx_Oracle.connect(self.conf[db]['user'], self.conf[db]['passwd'], dsn=dsn)
         cursor = dbh.cursor()
         sql = """
             SELECT EMAIL FROM DES_ADMIN.DES_USERS WHERE EMAIL = :email
@@ -385,10 +388,12 @@ class dbConfig(object):
         status = STATUS_OK
         msg = ''
         username = username.lower()
-        kwargs = {'host': self.host, 'port': self.port, 'service_name': self.db_manager}
+        # Reset tokens need only be managed in one database, since we are applying updated user info and credentials to all databases
+        db = self.databases[0]
+        kwargs = {'host': self.conf[db]['host'], 'port': self.conf[db]['port'], 'service_name': db}
         dsn = cx_Oracle.makedsn(**kwargs)
         # The admin credentials are required for the delete and insert commands
-        dbh = cx_Oracle.connect(self.admin_user_manager, self.admin_pwd_manager, dsn=dsn)
+        dbh = cx_Oracle.connect(self.conf[db]['admin_user'], self.conf[db]['admin_passwd'], dsn=dsn)
         cursor = dbh.cursor()
         try:
             if email:
@@ -408,7 +413,7 @@ class dbConfig(object):
             else:
                 username, email, firstname, lastname = results
                 # Delete any existing reset codes
-                status, msg = self.clear_reset_token(username)
+                status, msg = self.clear_reset_token(username, db)
 
                 now = dt.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
                 url = uuid.uuid4().hex
@@ -437,13 +442,15 @@ class dbConfig(object):
             status = STATUS_ERROR
             msg = 'Invalid characters in username'
             return status, msg
-        kwargs = {'host': self.host, 'port': self.port, 'service_name': self.db_manager}
+        # Users can only be deleted from the public DESDR database, so set db accordingly:
+        db = self.databases[0]
+        kwargs = {'host': self.conf[db]['host'], 'port': self.conf[db]['port'], 'service_name': db}
         dsn = cx_Oracle.makedsn(**kwargs)
         # The admin credentials are required for the DELETE and DROP commands
-        dbh = cx_Oracle.connect(self.admin_user_manager, self.admin_pwd_manager, dsn=dsn)
+        dbh = cx_Oracle.connect(self.conf[db]['admin_user'], self.conf[db]['admin_passwd'], dsn=dsn)
         cursor = dbh.cursor()
         try:
-            status, msg = self.clear_reset_token(username)
+            status, msg = self.clear_reset_token(username, db)
             
             sql = """
             DELETE FROM DES_ADMIN.DES_USERS where USERNAME = :username
@@ -478,10 +485,12 @@ class dbConfig(object):
             msg = 'Invalid characters in password'
             return status, msg
 
-        kwargs = {'host': self.host, 'port': self.port, 'service_name': self.db_manager}
+        # Users can only be created in the public DESDR database, so set db accordingly:
+        db = self.databases[0]
+        kwargs = {'host': self.conf[db]['host'], 'port': self.conf[db]['port'], 'service_name': db}
         dsn = cx_Oracle.makedsn(**kwargs)
         # The admin credentials are required for the CREATE, GRANT, and INSERT commands
-        dbh = cx_Oracle.connect(self.admin_user_manager, self.admin_pwd_manager, dsn=dsn)
+        dbh = cx_Oracle.connect(self.conf[db]['admin_user'], self.conf[db]['admin_passwd'], dsn=dsn)
         cursor = dbh.cursor()
         try:
             sql = """
@@ -566,9 +575,9 @@ class dbConfig(object):
             """
             for db in self.databases:
                 # Connect to the relevant database
-                kwargs = {'host': self.host, 'port': self.port, 'service_name': db}
+                kwargs = {'host': self.conf[db]['host'], 'port': self.conf[db]['port'], 'service_name': db}
                 dsn = cx_Oracle.makedsn(**kwargs)
-                dbh = cx_Oracle.connect(self.admin_user_manager, self.admin_pwd_manager, dsn=dsn)
+                dbh = cx_Oracle.connect(self.conf[db]['admin_user'], self.conf[db]['admin_passwd'], dsn=dsn)
                 cursor = dbh.cursor()
 
                 # Empty cache tables
