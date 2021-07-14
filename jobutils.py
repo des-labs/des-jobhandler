@@ -1104,7 +1104,7 @@ class JobsDb:
                             status = STATUS_ERROR
                             msg = 'Error sending email notification of impending file purge for job "{}" during periodic pruning. Error details: {}'.format(job_id, str(e).strip())
             for email in expiring_job_messages:
-                email_utils.send_job_prune_warning(expiring_job_messages)
+                email_utils.send_job_prune_warning(expiring_job_messages[email])
                 #     username, 
                 #     [email], 
                 #     job_name, 
