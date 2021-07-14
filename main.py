@@ -276,8 +276,8 @@ def webcron(cls_handler):
                             webcron_prune_job_files()
                         elif cronjob['name'] == 'sync_email_list':
                             webcron_sync_email_list()
-                        # elif cronjob['name'] == 'another_task':
-                            # et cetera ...
+                        else:
+                            logger.warning(f'Unsupported cronjob did not run: {cronjob}')
                         # Update the last_run time with the current time
                         JOBSDB.cron_update_run_time(cronjob['name'], current_time)
             except Exception as e:
