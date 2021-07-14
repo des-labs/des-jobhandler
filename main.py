@@ -265,13 +265,13 @@ def webcron(cls_handler):
                     if not last_run_time or time_diff_in_minutes >= cronjob['period']:
                         # Time to run the cron job again
                         logger.info('Running cron job "{}" at "{}".'.format(cronjob['name'], current_time))
-                        if cronjob == 'jupyter_prune':
+                        if cronjob['name'] == 'jupyter_prune':
                             webcron_jupyter_prune(current_time)
-                        elif cronjob == 'refresh_database_table_cache':
+                        elif cronjob['name'] == 'refresh_database_table_cache':
                             webcron_refresh_database_table_cache()
-                        elif cronjob == 'prune_job_files':
+                        elif cronjob['name'] == 'prune_job_files':
                             webcron_prune_job_files()
-                        elif cronjob == 'sync_email_list':
+                        elif cronjob['name'] == 'sync_email_list':
                             webcron_sync_email_list()
                         else:
                             logger.warning(f'Unsupported cronjob did not run: {cronjob}')
