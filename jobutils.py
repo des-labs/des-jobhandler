@@ -995,6 +995,7 @@ class JobsDb:
             '''
             self.cur.execute(sql)
             completed_jobs = self.cur.fetchall()
+            expiring_job_messages = {}
             for (job_row_id, job_id, username, job_type, job_name, time_complete, renewal_row_id, renewals_used, renewals_left, expiration_date, renewal_token) in completed_jobs:
                 # If the expiration_date is None, then the job_renewal record needs to be added. Otherwise,
                 # assume all columns have valid information
@@ -1009,6 +1010,9 @@ class JobsDb:
                     (`job_id`, `renewals_used`, `renewals_left`, `expiration_date`, `renewal_token`)
                     VALUES (%s, %s, %s, %s, %s)
                     '''
+                    logger.info(f'Executing SQL: {sql}')
+                    self.close_db_connection()
+                    self.open_db_connection()
                     self.cur.execute(sql, (
                         job_row_id,
                         renewals_used,
@@ -1029,6 +1033,9 @@ class JobsDb:
                     sql = '''
                     DELETE FROM `job_renewal` WHERE `job_id` = %s
                     '''
+                    logger.info(f'Executing SQL: {sql}')
+                    self.close_db_connection()
+                    self.open_db_connection()
                     self.cur.execute(sql, (job_row_id,))
                     # logger.info('Deleting files from job "{}"'.format(job_id))
                     # TODO: Reduce redundancy of this code with the API handler function in `main.py`
@@ -1066,27 +1073,51 @@ class JobsDb:
                 elif current_time > warning_date and renewals_left > 0:
                     # Send warning notification email if user has not disabled them by user preference
                     renewal_preference, error_msg = self.get_user_preference('sendRenewalEmails', username)
+                    # Disable emails for monitor service account
+                    renewal_preference = renewal_preference and username != envvars.MONITOR_SERVICE_ACCOUNT_USERNAME
                     # Send renewal emails by default, but do not send them if the user preference specifically disables it 
                     if renewal_preference != False:
                         # logger.info('Sending warning notification email about pruning files from job "{}"'.format(job_id))
                         given_name, family_name, email = USER_DB_MANAGER.get_basic_info(username)
                         try:
-                            email_utils.send_job_prune_warning(
-                                username, 
-                                [email], 
-                                job_name, 
-                                job_id, 
-                                round(job_warning_period/(24*60*60)), 
-                                round(job_ttl/(24*60*60)), 
-                                renewals_left, 
-                                renewal_token,
-                                expiration_date,
-                            )
-                        except:
+                            # Only try to send email if it looks like an email address in order to avoid SMTP rate limits from failed messages.
+                            if re.match(r"[^@]+@[^@]+\.[^@]+", email) and email != "devnull@ncsa.illinois.edu":
+                                logger.info(f'(dry-run) Sending email to "{email}" ...')
+                                expiring_job = {
+                                    'job_name': job_name,
+                                    'job_id': job_id,
+                                    'job_warning_period': round(job_warning_period/(24*60*60)),
+                                    'job_ttl': round(job_ttl/(24*60*60)),
+                                    'renewals_left': renewals_left,
+                                    'renewal_token': renewal_token,
+                                    'expiration_date': expiration_date,
+                                }
+                                if email not in expiring_job_messages: 
+                                    expiring_job_messages[email] = {
+                                    'username': username,
+                                    'email': [email],
+                                    'jobs': [expiring_job],
+                                }
+                                else:
+                                    expiring_job_messages[email]['jobs'].append(expiring_job)
+                        except Exception as e:
                             status = STATUS_ERROR
-                            msg = 'Error sending email notification of impending file purge for job "{}" during periodic pruning.'.format(job_id)
+                            msg = 'Error sending email notification of impending file purge for job "{}" during periodic pruning. Error details: {}'.format(job_id, str(e).strip())
+            for email in expiring_job_messages:
+                email_utils.send_job_prune_warning(expiring_job_messages)
+                #     username, 
+                #     [email], 
+                #     job_name, 
+                #     job_id, 
+                #     round(job_warning_period/(24*60*60)), 
+                #     round(job_ttl/(24*60*60)), 
+                #     renewals_left, 
+                #     renewal_token,
+                #     expiration_date,
+                # )
         except Exception as e:
             msg = str(e).strip()
+            status = STATUS_ERROR
             logger.error(msg)
         self.close_db_connection()
         return status, msg

@@ -177,7 +177,48 @@ def email_notify_admins_new_user(firstname, lastname, username, recipients, url)
     return "Email Sent to {}".format(header.recipients)
 
 
-def send_job_prune_warning(username, recipients, job_name, job_id, warning_period, job_lifetime, renewals_remaining, renewal_token, expiration_date):
+# def send_job_prune_warning(username, recipients, job_name, job_id, warning_period, job_lifetime, renewals_remaining, renewal_token, expiration_date):
+def send_job_prune_warning(expiring_job_messages):
+    
+    jobs_table = '''
+        <table>
+        <thead>
+            <tr>
+            <th>Job Name</th>
+            <th>Job ID</th>
+            <th>Expiration date</th>
+            <th>Renewals remaining</th>
+            <th>Renewal token</th>
+            </tr>
+        </thead>
+        <tbody>
+    '''
+    for job in expiring_job_messages:
+        jobs_table += f'''
+            <tr>
+            <td>
+                {job['job_name']}
+            </td>
+            <td>
+                {job['job_id']}
+            </td>
+            <td>
+                {job['expiration_date']}
+            </td>
+            <td>
+                {job['renewals_left']}
+            </td>
+            <td>
+                {job['renewal_token']}
+            </td>
+            </tr>
+        '''
+    
+    jobs_table += '''
+        </tbody>
+        </table>
+    '''
+    recipients = expiring_job_messages['email']
     if not isinstance(recipients, list):
         recipients = [recipients]
     link = '{}/renew/{}'.format(envvars.FRONTEND_BASE_URL, renewal_token)
@@ -190,6 +231,7 @@ def send_job_prune_warning(username, recipients, job_name, job_id, warning_perio
         "Subject": "DESaccess Job Scheduled for Deletion",
         "username": username,
         "msg": """
+        <p>The file storage for the jobs listed below is scheduled for automatic deletion on the expiration dates listed {expiration_date} (UTC).<p>
         <p>The file storage for job <code>{job_name}</code> (Job ID: <code>{job_id}</code>) is scheduled for automatic deletion on {expiration_date} (UTC).<p>
         <p>You may use the link below to extend your job file storage another {job_lifetime} days. {renewal_message}</p>
         <p>To disable future renewal emails (for all jobs), <a href="{opt_out_link}">open this link</a>.</p>
@@ -201,6 +243,7 @@ def send_job_prune_warning(username, recipients, job_name, job_id, warning_perio
             job_lifetime=job_lifetime,
             expiration_date=expiration_date,
             opt_out_link=opt_out_link),
+            jobs_table=jobs_table),
         "action": "Renew job file storage",
         "link": link,
     }
