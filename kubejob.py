@@ -32,6 +32,13 @@ def job(input):
     with open(os.path.join(os.path.dirname(__file__), "job.tpl.yaml")) as f:
         templateText = f.read()
 
+    imagePullPolicy = 'IfNotPresent'
+    try:
+        if input["image"].split(':')[1] in ['latest', 'dev']:
+            imagePullPolicy = 'Always'
+    except:
+        pass
+
     template = Template(templateText)
     body = yaml.safe_load(template.render(
         name=input["configjob"]["metadata"]["jobId"],
@@ -42,6 +49,7 @@ def job(input):
         ttlSecondsAfterFinished=120,
         container_name=input["job"],
         image=input["image"],
+        imagePullPolicy=imagePullPolicy,
         command=input["command"],
         configmap_name=input["cm_name"],
         pvc_name=input["configjob"]["metadata"]["persistentVolumeClaim"],
