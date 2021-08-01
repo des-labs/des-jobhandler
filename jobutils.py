@@ -515,7 +515,7 @@ class JobsDb:
         try:
             self.cur.execute(
                 (
-                    "SELECT `status` FROM `job` where `user` = %s"
+                    "SELECT `status` FROM `job` where `user` = %s AND `deleted` = 0"
                 ),
                 (
                     username,
