@@ -1,4 +1,4 @@
 [submodule "des-tasks"]
 	path = des_tasks
 	url = https://github.com/des-labs/des-tasks
-	branch = master
+	branch = dev
