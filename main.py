@@ -56,7 +56,10 @@ logging.basicConfig(
 class TornadoLogFilter(logging.Filter):
     def filter(self, record):
         print(record.getMessage())
-        if record.getMessage().find('api/login') > -1 or record.getMessage().find('api/job/status') > -1:
+        if record.getMessage().find('api/login') > -1 or \
+                record.getMessage().find('api/job/status') > -1 or \
+                record.getMessage().find('api/job/list') > -1 or \
+                record.getMessage().find('api/profile') > -1:
             ret_val = 0
         else:
             ret_val = 1
