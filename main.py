@@ -192,6 +192,7 @@ def webcron_prune_job_files(job_ttl=envvars.DESACCESS_JOB_FILES_LIFETIME, job_wa
     return status, msg
 
 
+
 def webcron_sync_email_list():
     status = STATUS_OK
     msg = ''
@@ -1856,7 +1857,11 @@ class UserPreferencesStopRenewalEmailsHandler(BaseHandler):
                 if error_msg != '':
                     response = '<html><body>There was an error disabling job renewal emails: {}</body></html>'.format(error_msg)
                 else:
-                    response = '<html><body>You will no longer receive job renewal emails.</body></html>'
+                    response = '''
+                    <html><body>
+                        You will no longer receive job renewal emails. To re-enable email notifications for upcoming job expirations, 
+                        configure your user preferences in the drop-down menu in the upper right of the DESaccess web app.
+                    </body></html>'''
             else:
                 response = '<html><body>There was an error disabling job renewal emails: Link is invalid or has expired.</body></html>'
         except Exception as e:

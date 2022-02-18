@@ -75,7 +75,7 @@ class JobsDb:
         self.database = mysql_database
         self.cur = None
         self.cnx = None
-        self.db_schema_version = 18
+        self.db_schema_version = 19
         self.table_names = [
             'job',
             'query',
@@ -926,7 +926,7 @@ class JobsDb:
                 # Update the job_renewal information by updating the number of used/left renewals and advancing the expiration date
                 sql = '''
                 UPDATE `job_renewal` 
-                SET `renewals_used` = %s, `renewals_left` = %s, `renewal_token` = %s, `expiration_date` = %s
+                SET `renewals_used` = %s, `renewals_left` = %s, `renewal_token` = %s, `expiration_date` = %s, `email_sent` = %s
                 WHERE `job_id` = %s 
                 '''
                 self.cur.execute(sql, (
@@ -934,6 +934,7 @@ class JobsDb:
                     renewals_left - 1,
                     generate_uuid() if renewals_left > 1 else None,
                     expiration_date + datetime.timedelta(0, job_ttl),
+                    False,
                     job_table_id,
                 ))
                 if self.cur.rowcount != 1:
@@ -987,7 +988,7 @@ class JobsDb:
         try:
             sql = '''
             SELECT j.id as job_row_id, j.uuid as job_id, j.user as username, j.type as job_type, j.name as job_name, j.time_complete, 
-                   r.id as renewal_row_id, r.renewals_used, r.renewals_left, r.expiration_date, r.renewal_token
+                   r.id as renewal_row_id, r.renewals_used, r.renewals_left, r.expiration_date, r.renewal_token, r.email_sent as email_sent
             FROM `job` j
             LEFT JOIN `job_renewal` r
             ON j.id = r.job_id
@@ -996,7 +997,7 @@ class JobsDb:
             self.cur.execute(sql)
             completed_jobs = self.cur.fetchall()
             expiring_job_messages = {}
-            for (job_row_id, job_id, username, job_type, job_name, time_complete, renewal_row_id, renewals_used, renewals_left, expiration_date, renewal_token) in completed_jobs:
+            for (job_row_id, job_id, username, job_type, job_name, time_complete, renewal_row_id, renewals_used, renewals_left, expiration_date, renewal_token, email_sent) in completed_jobs:
                 # If the expiration_date is None, then the job_renewal record needs to be added. Otherwise,
                 # assume all columns have valid information
                 #
@@ -1008,8 +1009,8 @@ class JobsDb:
                     # logger.info('job_renewal record missing for job {}. Creating...'.format(job_row_id))
                     sql = '''
                     INSERT INTO `job_renewal` 
-                    (`job_id`, `renewals_used`, `renewals_left`, `expiration_date`, `renewal_token`)
-                    VALUES (%s, %s, %s, %s, %s)
+                    (`job_id`, `renewals_used`, `renewals_left`, `expiration_date`, `renewal_token`, `email_sent`)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     '''
                     logger.info(f'Executing SQL: {sql}')
                     self.close_db_connection()
@@ -1020,6 +1021,7 @@ class JobsDb:
                         renewals_left,
                         expiration_date,
                         renewal_token,
+                        False,
                     ))
                     if not self.cur.lastrowid:
                         logger.error('Error adding record to job_renewal table for job {}'.format(job_row_id))
@@ -1071,12 +1073,12 @@ class JobsDb:
                         logger.error(msg)
                         self.close_db_connection()
                         return status, msg
-                #
-                ## TODO: 2021/11/30 disabled job renewal system due to bug in 'sendRenewalEmails' user preference.
-                #
-                elif current_time > warning_date and renewals_left > 0:
+                elif current_time > warning_date and not email_sent:
                     # Send warning notification email if user has not disabled them by user preference
                     renewal_preference, error_msg = self.get_user_preference('sendRenewalEmails', username)
+                    if error_msg:
+                        self.close_db_connection()
+                        return status, msg
                     # Disable emails for monitor service account
                     renewal_preference = renewal_preference and username != envvars.MONITOR_SERVICE_ACCOUNT_USERNAME
                     # Send renewal emails by default, but do not send them if the user preference specifically disables it 
@@ -1086,10 +1088,10 @@ class JobsDb:
                         try:
                             # Only try to send email if it looks like an email address in order to avoid SMTP rate limits from failed messages.
                             if re.match(r"[^@]+@[^@]+\.[^@]+", email) and email != "devnull@ncsa.illinois.edu":
-                                logger.info(f'(dry-run) Sending email to "{email}" ...')
                                 expiring_job = {
                                     'job_name': job_name,
                                     'job_id': job_id,
+                                    'renewal_row_id': renewal_row_id,
                                     'job_warning_period': round(job_warning_period/(24*60*60)),
                                     'job_ttl': round(job_ttl/(24*60*60)),
                                     'renewals_left': renewals_left,
@@ -1106,19 +1108,32 @@ class JobsDb:
                                     expiring_job_messages[email]['jobs'].append(expiring_job)
                         except Exception as e:
                             status = STATUS_ERROR
-                            msg = 'Error sending email notification of impending file purge for job "{}" during periodic pruning. Error details: {}'.format(job_id, str(e).strip())
-            for email in expiring_job_messages:
-                email_utils.send_job_prune_warning(expiring_job_messages[email])
-                #     username, 
-                #     [email], 
-                #     job_name, 
-                #     job_id, 
-                #     round(job_warning_period/(24*60*60)), 
-                #     round(job_ttl/(24*60*60)), 
-                #     renewals_left, 
-                #     renewal_token,
-                #     expiration_date,
-                # )
+                            msg = f'''Error preparing email notification for impending file purge for job "{job_id}" during periodic pruning. Error details: {str(e).strip()}'''
+            ## Send an email to each user who has requested job expiration notifications, and record that an email was sent to avoid redundant email notifications.
+            try:
+                self.close_db_connection()
+                self.open_db_connection()
+                for email in expiring_job_messages:
+                    email_utils.send_job_prune_warning(expiring_job_messages[email])
+                    for job in expiring_job_messages[email]['jobs']:
+                        logger.info(f'Email sent to "{email}"...')
+                        renewal_row_id = job['renewal_row_id']
+                        # Update the job_renewal information to indicate an email was already sent
+                        sql = '''
+                        UPDATE `job_renewal` SET `email_sent` = %s WHERE `id` = %s 
+                        '''
+                        self.cur.execute(sql, (
+                            True,
+                            renewal_row_id,
+                        ))
+                        if self.cur.rowcount != 1:
+                            status = STATUS_ERROR
+                            msg = f'''Error updating email sent status for job id "{job_id}" in job_renewal database table (table id={renewal_row_id})'''
+                            logger.error(msg)
+            except Exception as e:
+                status = STATUS_ERROR
+                msg = f'''Error sending email notification of impending file purge to "{email}" during periodic pruning. Error details: {str(e).strip()}'''
+                logger.error(msg)
         except Exception as e:
             msg = str(e).strip()
             status = STATUS_ERROR
@@ -1543,6 +1558,13 @@ class JobsDb:
         self.close_db_connection()
         return error_msg
 
+    def get_default_user_preference(self, preference):
+        if preference == 'hideWelcomeMessage':
+            return False
+        if preference == 'sendRenewalEmails':
+            return True
+        return None
+
     def get_user_preference(self, preference, username):
         # preference is either 'all' to get all preferences as an object, or it is the name
         # of a specific preference key, to get the individual preference value
@@ -1569,7 +1591,10 @@ class JobsDb:
                 if preference == 'all':
                     value = preferences
                 else:
-                    value = preferences[preference]
+                    if preference in preferences:
+                        value = preferences[preference]
+                    else:
+                        value = self.get_default_user_preference(preference)
         except Exception as e:
             error_msg = str(e).strip()
             logger.error(error_msg)
