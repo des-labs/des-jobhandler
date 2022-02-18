@@ -177,32 +177,67 @@ def email_notify_admins_new_user(firstname, lastname, username, recipients, url)
     return "Email Sent to {}".format(header.recipients)
 
 
-def send_job_prune_warning(username, recipients, job_name, job_id, warning_period, job_lifetime, renewals_remaining, renewal_token, expiration_date):
+# def send_job_prune_warning(username, recipients, job_name, job_id, warning_period, job_lifetime, renewals_remaining, renewal_token, expiration_date):
+def send_job_prune_warning(expiring_jobs_info):
+    username = expiring_jobs_info['username']
+    jobs_table = '''
+        <table  border="1" cellspacing="0" cellpadding="5">
+        <thead>
+            <tr>
+            <th>Job Name</th>
+            <th>Job ID</th>
+            <th>Expiration date</th>
+            <th>Renewals remaining</th>
+            <th>Renewal token</th>
+            </tr>
+        </thead>
+        <tbody>
+    '''
+    renewal_token = ''
+    for job in expiring_jobs_info['jobs']:
+        renewal_token = job['renewal_token']
+        if job['renewals_left'] >= 1:
+            renewal_message = f'''<a href="{envvars.FRONTEND_BASE_URL}/renew/{job['renewal_token']}">Click here to renew this job.</a>'''
+        else:
+            renewal_message = f'''You have no more renewals available. Please export your data.'''
+        jobs_table += f'''
+            <tr>
+            <td>
+                {job['job_name']}
+            </td>
+            <td>
+                {job['job_id']}
+            </td>
+            <td>
+                {job['expiration_date']} (UTC)
+            </td>
+            <td>
+                {job['renewals_left']}
+            </td>
+            <td>
+                {renewal_message}
+            </td>
+            </tr>
+        '''
+    
+    jobs_table += '''
+        </tbody>
+        </table>
+    '''
+    recipients = expiring_jobs_info['email']
     if not isinstance(recipients, list):
         recipients = [recipients]
-    link = '{}/renew/{}'.format(envvars.FRONTEND_BASE_URL, renewal_token)
-    opt_out_link = 'https://{}{}/user/preference/stoprenewalemails?token={}'.format(envvars.BASE_DOMAIN, envvars.BASE_PATH, renewal_token)
-    if renewals_remaining <= 1:
-        renewal_message = '<b>This is the last time you may renew your job file storage.</b>'
-    else:
-        renewal_message = 'You have {} renewals remaining.'.format(renewals_remaining-1)
+    opt_out_link = f'''https://{envvars.BASE_DOMAIN}{envvars.BASE_PATH}/user/preference/stoprenewalemails?token={renewal_token}'''
     context = {
         "Subject": "DESaccess Job Scheduled for Deletion",
         "username": username,
-        "msg": """
-        <p>The file storage for job <code>{job_name}</code> (Job ID: <code>{job_id}</code>) is scheduled for automatic deletion on {expiration_date} (UTC).<p>
-        <p>You may use the link below to extend your job file storage another {job_lifetime} days. {renewal_message}</p>
-        <p>To disable future renewal emails (for all jobs), <a href="{opt_out_link}">open this link</a>.</p>
-        """.format(
-            job_name=job_name,
-            job_id=job_id,
-            warning_period=warning_period,
-            renewal_message=renewal_message,
-            job_lifetime=job_lifetime,
-            expiration_date=expiration_date,
-            opt_out_link=opt_out_link),
-        "action": "Renew job file storage",
-        "link": link,
+        "msg": f"""
+        <p>The file storage for the jobs listed below is scheduled for automatic deletion on the listed expiration dates.<p>
+        <p>{jobs_table}</p>
+        <p>To disable future renewal emails (for all jobs), click the link below. You can re-enable the reminders in your DESaccess user preferences.</p>
+        """,
+        "action": "Click here to disable expiration reminders",
+        "link": opt_out_link,
     }
     header = SingleEmailHeader(username, recipients, context, char='c')
     MP1 = MIMEText(header.html, 'html')
