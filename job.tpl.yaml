@@ -42,13 +42,25 @@ spec:
         - name: persistent-volume
           mountPath: /home/worker/output
           subPath: {{ username }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: task
+                  operator: In
+                  values:
+                  - {{ container_name }}
+              topologyKey: "kubernetes.io/hostname"
       containers:
       - name: {{ container_name }}
         securityContext:
           runAsUser: 1001
           runAsGroup: 1001
         image: {{ image }}
-        imagePullPolicy: Always
+        imagePullPolicy: {{ imagePullPolicy }}
         command: {{ command }}
         volumeMounts:
         - name: config-volume

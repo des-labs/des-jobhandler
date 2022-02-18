@@ -515,7 +515,7 @@ class JobsDb:
         try:
             self.cur.execute(
                 (
-                    "SELECT `status` FROM `job` where `user` = %s"
+                    "SELECT `status` FROM `job` where `user` = %s AND `deleted` = 0"
                 ),
                 (
                     username,
@@ -999,6 +999,7 @@ class JobsDb:
             for (job_row_id, job_id, username, job_type, job_name, time_complete, renewal_row_id, renewals_used, renewals_left, expiration_date, renewal_token) in completed_jobs:
                 # If the expiration_date is None, then the job_renewal record needs to be added. Otherwise,
                 # assume all columns have valid information
+                #
                 if not renewal_row_id:
                     renewals_used = 0
                     renewals_left = envvars.DESACCESS_JOB_FILES_MAX_RENEWALS
@@ -1047,11 +1048,14 @@ class JobsDb:
                         "cm_name": get_job_configmap_name(job_type, job_id, username),
                     }
                     # Delete the k8s Job if it is still running
+                    logger.debug(f"Deleting job {job_id} Kubernetes objects")
                     kubejob.delete_job(conf)
                     # Delete the job files on disk
+                    logger.debug(f"Deleting job {job_id} output files")
                     status, msg = JOBSDB.delete_job_files(job_id, username)
                     if status == STATUS_OK:
                         # Mark the job deleted in the JobHandler database
+                        logger.debug(f"Marking job {job_id} deleted")
                         msg = JOBSDB.mark_job_deleted(job_id)
                         if msg != '':
                             status = STATUS_ERROR
@@ -1068,7 +1072,7 @@ class JobsDb:
                         self.close_db_connection()
                         return status, msg
                 #
-                # Job file storage will expire within the warning time period
+                ## TODO: 2021/11/30 disabled job renewal system due to bug in 'sendRenewalEmails' user preference.
                 #
                 elif current_time > warning_date and renewals_left > 0:
                     # Send warning notification email if user has not disabled them by user preference
