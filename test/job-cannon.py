@@ -27,12 +27,12 @@ config = {
     'apiBaseUrl': os.environ['JOB_CANNON_API_BASE_URL'],
     'username': os.environ['JOB_CANNON_USERNAME'],
     'password': os.environ['JOB_CANNON_PASSWORD'],
-    'database': 'dessci',
-    'duration_min': 60*2,
-    'duration_max': 60*5,
-    'launch_probability': 100,
-    'launch_separation': 0.5,
-    'max_jobs': 50
+    'database': os.environ['JOB_CANNON_DATABASE'].lower(),
+    'duration_min': os.environ['JOB_CANNON_DURATION_MIN'],
+    'duration_max': os.environ['JOB_CANNON_DURATION_MAX'],
+    'launch_probability': os.environ['JOB_CANNON_MAX_LAUNCH_PROBABILITY'],
+    'launch_separation': os.environ['JOB_CANNON_LAUNCH_SEPARATION'],
+    'max_jobs': os.environ['JOB_CANNON_MAX_JOBS'],
 }
 # All or nothing customization from environment variables
 try:
@@ -46,6 +46,7 @@ try:
 except:
     pass
 
+# print(config)
 
 ra_decs = [
     [21.58813, 3.48611],
@@ -166,7 +167,7 @@ def launch_multiple_jobs(job_type='test', randomize_each=False):
             elif job_type == 'cutout':
                 # Choose random set of colors for FITS
                 colors_fits = []
-                for i in range(0,secrets.choice(range(0,8))):
+                for i in range(0,secrets.choice(range(1,4))):
                     colors_fits.append(secrets.choice(list('grizy')))
                 colors_fits = ','.join(colors_fits)
                 # Choose from combinations of
@@ -180,7 +181,7 @@ def launch_multiple_jobs(job_type='test', randomize_each=False):
                     data = {
                         'username': config['username'],
                         'job': 'cutout',
-                        'db': 'dessci',
+                        'db': config['database'],
                         'xsize': secrets.choice([0.1,0.5,1.0,5.0]),
                         'ysize': secrets.choice([0.1,0.5,1.0,5.0]),
                         'make_fits': secrets.choice(['true', 'false']),
@@ -192,17 +193,28 @@ def launch_multiple_jobs(job_type='test', randomize_each=False):
                         'colors_fits': colors_fits,
                         'colors_rgb': colors_rgb,
                     }
-
-                    # Select either RA/DEC
-                    if secrets.choice(['coadds', 'ra_decs']) == 'ra_decs':
-                        data['release'] = secrets.choice(['Y6A1', 'Y3A2'])
-                        ra_dec = secrets.choice(ra_decs)
-                        data['ra'] = ra_dec[0]
-                        data['dec'] = ra_dec[1]
-                    # or Coadd IDs
+                    ## TODO: Only use RA/DEC until we can specify a list of COADD IDs for DR1/DR2 releases
+                    if config['database'] == 'desdr':
+                        data['release'] = secrets.choice(['DR1', 'DR2'])
                     else:
-                        data['release'] = secrets.choice(['Y3A2'])
-                        data['coadd'] = secrets.choice(coadds)
+                        data['release'] = secrets.choice(['Y6A1', 'Y3A2'])
+                    ra_dec = secrets.choice(ra_decs)
+                    # data['ra'] = ra_dec[0]
+                    # data['dec'] = ra_dec[1]
+                    data['positions'] = f'''RA,DEC\n{ra_dec[0]},{ra_dec[1]}\n'''
+                    # ## Select either RA/DEC
+                    # if secrets.choice(['coadds', 'ra_decs']) == 'ra_decs':
+                    #     if config['database'] == 'desdr':
+                    #         data['release'] = secrets.choice(['DR1', 'DR2'])
+                    #     else:
+                    #         data['release'] = secrets.choice(['Y6A1', 'Y3A2'])
+                    #     ra_dec = secrets.choice(ra_decs)
+                    #     data['ra'] = ra_dec[0]
+                    #     data['dec'] = ra_dec[1]
+                    # # or Coadd IDs
+                    # else:
+                    #     data['release'] = secrets.choice(['Y3A2'])
+                    #     data['coadd'] = secrets.choice(coadds)
 
             # Submit job
             r = requests.put(

@@ -44,7 +44,6 @@ def login():
 
 
 def trigger_cronjob(cronjob):
-    """Submits a query job and returns the complete server response which includes the job ID."""
 
     # Specify API request parameters
     params = {

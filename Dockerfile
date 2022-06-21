@@ -1,4 +1,4 @@
-FROM hub.ncsa.illinois.edu/des/easyaccess:latest
+FROM hub.ncsa.illinois.edu/des/easyaccess:1.4.10
 
 WORKDIR /home/worker
 USER worker

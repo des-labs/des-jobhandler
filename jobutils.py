@@ -583,8 +583,8 @@ class JobsDb:
                 conf["job_name"] = job_name
                 conf["job_id"] = job_id
                 conf["cm_name"] = get_job_configmap_name(type, job_id, user)
-                if 'synchronous' not in response or response['synchronous'] != True:
-                    kubejob.delete_job(conf)
+                # if 'synchronous' not in response or response['synchronous'] != True:
+                #     kubejob.delete_job(conf)
                 if type == 'test':
                     updateQuerySql = (
                         "UPDATE `job` "
