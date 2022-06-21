@@ -543,7 +543,10 @@ class dbConfig(object):
         msg = ''
         try:
             if envvars.DESACCESS_INTERFACE == 'public':
-                refresh_tables_sql = "select distinct synonym_name as table_name from all_synonyms where table_owner = 'DES_ADMIN'"
+                refresh_tables_sql = """
+                insert into DES_ADMIN.CACHE_TABLES (TABLE_NAME)
+                select distinct synonym_name as table_name from all_synonyms where table_owner = 'DES_ADMIN'
+                """
             else:
                 refresh_tables_sql = """
                 insert into DES_ADMIN.CACHE_TABLES (TABLE_NAME)
