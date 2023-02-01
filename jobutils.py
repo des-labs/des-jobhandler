@@ -1978,6 +1978,14 @@ def submit_job(params):
     # Output files 
     outdir = os.path.join(user_dir, 'cutout', job_id)
 
+    # Count the number of jobs currently pending for the submitting user.
+    if not synchronous_job and params['limits']['cutout']['concurrent_jobs'] > 0:
+        num_pending_jobs = JOBSDB.count_pending_jobs(username)
+        if num_pending_jobs > params['limits']['cutout']['concurrent_jobs']:
+            status = STATUS_ERROR
+            msg = 'Number of requested jobs ({}) exceeds the maximum allowed concurrent jobs ({}).'.format(num_pending_jobs, params['limits']['cutout']['concurrent_jobs'])
+            return status,msg,job_id
+
     # Custom configurations depending on the task type:
 
     ############################################################################
@@ -2139,14 +2147,6 @@ def submit_job(params):
         #     spec['num_cpus'] = 3
         # elif num_cutouts > 10:
         #     spec['num_cpus'] = 2
-
-        # Count the number of jobs currently pending for the submitting user.
-        if not synchronous_job and params['limits']['cutout']['concurrent_jobs'] > 0:
-            num_pending_jobs = JOBSDB.count_pending_jobs(username)
-            if num_pending_jobs > params['limits']['cutout']['concurrent_jobs']:
-                status = STATUS_ERROR
-                msg = 'Number of requested jobs ({}) exceeds the maximum allowed concurrent jobs ({}).'.format(num_pending_jobs, params['limits']['cutout']['concurrent_jobs'])
-                return status,msg,job_id
 
     try:
         # If this is a synchronous run, do not create a Kubernetes Job
