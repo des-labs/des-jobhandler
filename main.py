@@ -823,7 +823,18 @@ class JobHandler(BaseHandler):
         )
         # logger.info(json.dumps(params, indent=2))
 
-        # Enforce job request limits
+        # Reject jobs from users that have been blocked.
+        if any(role in self._token_decoded["roles"] for role in ['blocked']):
+            out = {
+                'status': STATUS_ERROR,
+                'message': 'This account has been blocked from submitting jobs. Contact DES help if you have questions.',
+                'jobid': '',
+                'new_token': self._token_encoded
+            }
+            self.write(json.dumps(out, indent=4))
+            return
+            
+        # Enforce job request limits. Apply the cutout job limit to query jobs also.
         if any(role in self._token_decoded["roles"] for role in ['admin', 'unlimited']):
             LIMIT_CUTOUTS_CUTOUTS_PER_JOB = 0
             LIMIT_CUTOUTS_CONCURRENT_JOBS = 0
