@@ -5,6 +5,7 @@ import os
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 from jinja2 import Template
+import envvars
 
 STATUS_OK = 'ok'
 STATUS_ERROR = 'error'
@@ -56,6 +57,8 @@ def job(input):
         username=input["configjob"]["metadata"]["username"],
         resource_limit_cpu=input["resource_limit_cpu"],
         resource_request_cpu=input["resource_request_cpu"],
+        desarchiveHostPath=envvars.DESARCHIVE_HOST_PATH,
+        coaddHostPath=envvars.COADD_HOST_PATH,
     ))
     return body
 

@@ -26,11 +26,11 @@ spec:
       - name: desarchive-volume
         readOnly: true
         hostPath:
-          path: "/des003/desarchive"
+          path: {{ desarchiveHostPath }}
       - name: coadd-volume
         readOnly: true
         hostPath:
-          path: "/des004/coadd"
+          path: {{ coaddHostPath }}
       initContainers:
       - name: init
         securityContext:
