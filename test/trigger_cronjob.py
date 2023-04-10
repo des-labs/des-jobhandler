@@ -75,4 +75,4 @@ if __name__ == '__main__':
         print('Login failed.')
         sys.exit(1)
 
-    response = trigger_cronjob('refresh_database_table_cache')
+    # response = trigger_cronjob('refresh_database_table_cache')

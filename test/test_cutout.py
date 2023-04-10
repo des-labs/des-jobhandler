@@ -157,23 +157,23 @@ if __name__ == '__main__':
     print('Complete job status details:')
     print(json.dumps(response, indent=2))
 
-    # # If successful, display job results
-    # if job_status == 'success':
+    # If successful, display job results
+    if job_status == 'success':
 
-    #     # Download single compressed archive file containing all job files
-    #     job_archive_filename = '{}.tar.gz'.format(job_id)
-    #     job_archive_file_url = '{}/{}/{}/{}'.format(config['filesBaseUrl'], config['username'], 'cutout', job_archive_filename)
-    #     data = requests.get(job_archive_file_url)
-    #     with open('./{}'.format(job_archive_filename), "wb") as file:
-    #         file.write(data.content)
-    #     print('Job archive file "{}" downloaded.'.format(job_archive_filename))
+        # Download single compressed archive file containing all job files
+        job_archive_filename = '{}.tar.gz'.format(job_id)
+        job_archive_file_url = '{}/{}/{}/{}'.format(config['filesBaseUrl'], config['username'], 'cutout', job_archive_filename)
+        data = requests.get(job_archive_file_url)
+        with open('./{}'.format(job_archive_filename), "wb") as file:
+            file.write(data.content)
+        print('Job archive file "{}" downloaded.'.format(job_archive_filename))
 
-    #     # Construct the job file download URL
-    #     job_url = '{}/{}/{}/{}'.format(config['filesBaseUrl'], config['username'], job_type, job_id)
-    #     download_dir = './{}'.format(job_id)
-    #     # Download each raw job file sequentially to a subfolder of the working directory
-    #     download_job_files(job_url, download_dir)
-    #     print('Files for job "{}" downloaded to "{}"'.format(job_id, download_dir))
-    #     list_downloaded_files(download_dir)
-    # else:
-    #     print('The job "{}" failed.'.format(job_id))
+        # Construct the job file download URL
+        job_url = '{}/{}/{}/{}'.format(config['filesBaseUrl'], config['username'], job_type, job_id)
+        download_dir = './{}'.format(job_id)
+        # Download each raw job file sequentially to a subfolder of the working directory
+        download_job_files(job_url, download_dir)
+        print('Files for job "{}" downloaded to "{}"'.format(job_id, download_dir))
+        list_downloaded_files(download_dir)
+    else:
+        print('The job "{}" failed.'.format(job_id))
