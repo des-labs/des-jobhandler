@@ -37,7 +37,7 @@ spec:
           runAsUser: 0
           runAsGroup: 0
         image: busybox@sha256:edafc0a0fb057813850d1ba44014914ca02d671ae247107ca70c94db686e7de6
-        command: ['/bin/sh', '-c', 'chown 1001:1001 /home/worker/output']
+        command: ['/bin/sh', '-c', 'chown {{ uid }}:{{ gid }} /home/worker/output']
         volumeMounts:
         - name: persistent-volume
           mountPath: /home/worker/output
@@ -57,8 +57,8 @@ spec:
       containers:
       - name: {{ container_name }}
         securityContext:
-          runAsUser: 1001
-          runAsGroup: 1001
+          runAsUser: {{ uid }}
+          runAsGroup: {{ gid }}
         image: {{ image }}
         imagePullPolicy: {{ imagePullPolicy }}
         command: {{ command }}
