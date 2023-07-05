@@ -532,6 +532,22 @@ class EndpointStatisticsHandler(BaseHandler):
             response['status'] = STATUS_ERROR
         self.write(response)
 
+class StatusHandler(BaseHandler):
+    # API endpoint: /status
+    def get(self):
+        response = {}
+        try:
+            response['status'] = STATUS_OK
+            response['message'] = ''
+        except Exception as e:
+            response['message'] = str(e).strip()
+            response['status'] = STATUS_ERROR
+            self.set_status(500)
+            self.write(json.dumps(response))
+            self.finish()
+            return
+        self.write(response)
+
 @authenticated
 @allowed_roles(['monitor'])
 class CutoutStatisticsHandler(BaseHandler):
@@ -2570,6 +2586,7 @@ def make_app(basePath=''):
             (r"{}/statistics/ips?".format(basePath), IPStatisticsHandler),
             (r"{}/statistics/query?".format(basePath), QueryStatisticsHandler),
             (r"{}/statistics/cutout?".format(basePath), CutoutStatisticsHandler),
+            (r"{}/status?".format(basePath), StatusHandler),
         ],
         **settings
     )
