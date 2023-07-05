@@ -74,7 +74,7 @@ if __name__ == "__main__":
     except:
         option = ''
     task_root_dirs = [
-        '/des004/deslabs/cluster-prod/namespaces/default/deslabs-legacy/tasks',
-        '/des004/deslabs/cluster-prod/namespaces/deslabs/deslabs-legacy/tasks',
+        '/taiga/Release/deslabs/pv/manual/desaccess-public-tasks',
+        '/taiga/Release/deslabs/pv/manual/desaccess-private-tasks',
     ]
     main(option=option, task_root_dirs=task_root_dirs)
