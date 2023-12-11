@@ -94,19 +94,19 @@ def delete_job(input):
         logger.error(
             "Exception when calling BatchV1Api->delete_namespaced_job: {}\n".format(e)
         )
-    try:
-        api_response = api_v1.delete_namespaced_config_map(
-            name=input["cm_name"],
-            namespace=input["namespace"],
-            body=client.V1DeleteOptions(
-                propagation_policy="Foreground", grace_period_seconds=5
-            ),
-        )
-        # logger.info("Config Map {} deleted".format(input["cm_name"]))
-    except ApiException as e:
-        logger.error(
-            "Exception when calling V1Api->delete_namespaced_configmap: {}\n".format(e)
-        )
+    # try:
+    #     api_response = api_v1.delete_namespaced_config_map(
+    #         name=input["cm_name"],
+    #         namespace=input["namespace"],
+    #         body=client.V1DeleteOptions(
+    #             propagation_policy="Foreground", grace_period_seconds=5
+    #         ),
+    #     )
+    #     # logger.info("Config Map {} deleted".format(input["cm_name"]))
+    # except ApiException as e:
+    #     logger.error(
+    #         "Exception when calling V1Api->delete_namespaced_configmap: {}\n".format(e)
+    #     )
 
     return
 
@@ -119,6 +119,7 @@ def create_job(input):
             namespace=input["namespace"], body=job(input)
         )
         # logger.info("Job {} created".format(input["configjob"]["metadata"]["jobId"]))
+        create_configmap(input, job_uid=api_response.metadata.uid)
     except ApiException as e:
         logger.error(
             "Exception when calling BatchV1Api->create_namespaced_job: {}\n".format(e)
@@ -128,7 +129,7 @@ def create_job(input):
     return status, msg
 
 
-def config_map(input):
+def config_map(input, job_uid=''):
     keyfile = "configjob.yaml"
     meta = client.V1ObjectMeta(
         name=input["cm_name"],
@@ -137,6 +138,11 @@ def config_map(input):
             "task": input["job"],
             "username": input["configjob"]["metadata"]["username"],
         },
+        owner_references=[client.V1OwnerReference(
+            api_version='batch/v1', kind='Job',
+            name=input["configjob"]["metadata"]["jobId"],
+            uid=job_uid,
+        )],
     )
     body = client.V1ConfigMap(
         api_version="v1",
@@ -147,10 +153,10 @@ def config_map(input):
     return body
 
 
-def create_configmap(input):
+def create_configmap(input, job_uid=''):
     try:
         api_response = api_v1.create_namespaced_config_map(
-            namespace=input["namespace"], body=config_map(input)
+            namespace=input["namespace"], body=config_map(input, job_uid=job_uid)
         )
         # logger.info("ConfigMap {} created".format(input["cm_name"]))
 

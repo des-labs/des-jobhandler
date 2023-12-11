@@ -2208,7 +2208,6 @@ def submit_job(params):
             response['synchronous'] = True
             JOBSDB.update_job_complete(config['metadata']['apiToken'], response)
         else:
-            kubejob.create_configmap(conf)
             kubejob_status, kubejob_msg = kubejob.create_job(conf)
             if kubejob_status == STATUS_ERROR:
                 status = STATUS_ERROR
