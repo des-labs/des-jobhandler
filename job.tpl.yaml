@@ -11,6 +11,7 @@ spec:
     metadata:
       labels:
         task: {{ container_name }}
+        username: {{ username }}
     spec:
       hostNetwork: {{ hostNetwork }}
       restartPolicy: Never

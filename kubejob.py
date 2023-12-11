@@ -134,8 +134,9 @@ def config_map(input):
         name=input["cm_name"],
         namespace=input["namespace"],
         labels={
-            "task": input["job"]
-        }
+            "task": input["job"],
+            "username": input["configjob"]["metadata"]["username"],
+        },
     )
     body = client.V1ConfigMap(
         api_version="v1",
