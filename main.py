@@ -26,6 +26,7 @@ import uuid
 import shutil
 import re
 from des_tasks.cutout.worker.bulkthumbs import validate_positions_table as validate_cutout_positions_table
+import sys
 
 STATUS_OK = 'ok'
 STATUS_ERROR = 'error'
@@ -2622,7 +2623,15 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error(str(e).strip())
 
-    app = make_app(basePath=basePath)
-    app.listen(servicePort)
-    logger.info('Running at localhost:{}{}'.format(servicePort,basePath))
-    tornado.ioloop.IOLoop.current().start()
+    if len(sys.argv) < 2:
+        app = make_app(basePath=basePath)
+        app.listen(servicePort)
+        logger.info('Running at localhost:{}{}'.format(servicePort,basePath))
+        tornado.ioloop.IOLoop.current().start()
+    elif sys.argv[1] == '--prune-job-files':
+        logger.info('Pruning job files...')
+        webcron_prune_job_files()
+    elif sys.argv[1] == '--sync-email-list':
+        logger.info('Syncing email list...')
+        webcron_sync_email_list()
+
