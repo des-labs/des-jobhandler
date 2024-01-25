@@ -39,6 +39,10 @@ def job(input):
             imagePullPolicy = 'Always'
     except:
         pass
+    try:
+        quick_query=input['configjob']['spec']['inputs']['quickQuery']==True
+    except:
+        quick_query=False
 
     template = Template(templateText)
     body = yaml.safe_load(template.render(
@@ -49,6 +53,7 @@ def job(input):
         activeDeadlineSeconds=input['activeDeadlineSeconds'], # No Job is allowed to run beyond 24 hours.
         ttlSecondsAfterFinished=120,
         container_name=input["job"],
+        job_type=input["job"],
         image=input["image"],
         imagePullPolicy=imagePullPolicy,
         command=input["command"],
@@ -64,6 +69,7 @@ def job(input):
         dr2TilePath=envvars.DR2_TILE_HOST_PATH,
         uid=envvars.JOB_UID,
         gid=envvars.JOB_GID,
+        quick_query=quick_query
     ))
     return body
 

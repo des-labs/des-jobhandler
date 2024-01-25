@@ -87,6 +87,7 @@ spec:
           preStop:
             exec:
               command: ["python3", "prestop.py"]
+        {% if not quick_query -%}
         resources:
           limits:
             cpu: {{ resource_limit_cpu }}
@@ -94,3 +95,4 @@ spec:
           requests:
             cpu: {{ resource_request_cpu }}
             memory: {{ resource_request_memory }}
+        {%- endif %}
