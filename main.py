@@ -354,7 +354,7 @@ class TileDataHandler(tornado.web.StaticFileHandler):
             return
 
 
-@webcron
+# @webcron
 class BaseHandler(tornado.web.RequestHandler):
     def set_default_headers(self):
         # By default the responses are JSON format. Individual GET responses that are text/html must
