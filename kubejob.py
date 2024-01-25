@@ -57,6 +57,8 @@ def job(input):
         username=input["configjob"]["metadata"]["username"],
         resource_limit_cpu=input["resource_limit_cpu"],
         resource_request_cpu=input["resource_request_cpu"],
+        resource_limit_memory=input["resource_limit_memory"],
+        resource_request_memory=input["resource_request_memory"],
         desarchiveHostPath=envvars.DESARCHIVE_HOST_PATH,
         coaddHostPath=envvars.COADD_HOST_PATH,
         dr2TilePath=envvars.DR2_TILE_HOST_PATH,

@@ -89,6 +89,8 @@ spec:
               command: ["python3", "prestop.py"]
         resources:
           limits:
-            cpu: {{ resource_limit_cpu}}
+            cpu: {{ resource_limit_cpu | quote }}
+            memory: {{ resource_limit_memory | quote }}
           requests:
-            cpu: {{ resource_request_cpu}}
+            cpu: {{ resource_request_cpu | quote }}
+            memory: {{ resource_request_memory | quote }}

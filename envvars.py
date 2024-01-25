@@ -46,5 +46,9 @@ COADD_HOST_PATH = os.environ['COADD_HOST_PATH']
 DR2_TILE_HOST_PATH = os.environ['DR2_TILE_HOST_PATH']
 JOB_UID = os.environ.get('JOB_UID', '1001')
 JOB_GID = os.environ.get('JOB_GID', '1001')
+JOB_RESOURCE_REQUEST_CPU    = os.environ.get('JOB_RESOURCE_REQUEST_CPU',    '100m')
+JOB_RESOURCE_LIMIT_CPU      = os.environ.get('JOB_RESOURCE_LIMIT_CPU',      '1')
+JOB_RESOURCE_REQUEST_MEMORY = os.environ.get('JOB_RESOURCE_REQUEST_MEMORY', '100Mi')
+JOB_RESOURCE_LIMIT_MEMORY   = os.environ.get('JOB_RESOURCE_LIMIT_MEMORY',   '1Gi')
 
 FRONTEND_BASE_PATH = re.sub(r'http.*\/\/{}'.format(BASE_DOMAIN), '', FRONTEND_BASE_URL)

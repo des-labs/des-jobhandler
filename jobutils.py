@@ -1959,8 +1959,10 @@ def submit_job(params):
     conf['configjob']['spec'] = {}
 
     # TODO: Variate the resource requests/limits between the task types
-    conf["resource_limit_cpu"] = 1
-    conf["resource_request_cpu"] = 1
+    conf["resource_limit_cpu"] = envvars.JOB_RESOURCE_LIMIT_CPU
+    conf["resource_request_cpu"] = envvars.JOB_RESOURCE_REQUEST_CPU
+    conf["resource_limit_memory"] = envvars.JOB_RESOURCE_LIMIT_MEMORY
+    conf["resource_request_memory"] = envvars.JOB_RESOURCE_REQUEST_MEMORY
 
 
     # Should the job be executed synchronously or in an independent container (Kubernetes Job)
