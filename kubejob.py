@@ -59,6 +59,7 @@ def job(input):
         resource_request_cpu=input["resource_request_cpu"],
         desarchiveHostPath=envvars.DESARCHIVE_HOST_PATH,
         coaddHostPath=envvars.COADD_HOST_PATH,
+        dr2TilePath=envvars.DR2_TILE_HOST_PATH,
         uid=envvars.JOB_UID,
         gid=envvars.JOB_GID,
     ))

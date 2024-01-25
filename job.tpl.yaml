@@ -32,6 +32,10 @@ spec:
         readOnly: true
         hostPath:
           path: {{ coaddHostPath }}
+      - name: dr2-tiles
+        readOnly: true
+        hostPath:
+          path: {{ dr2TilePath }}
       initContainers:
       - name: init
         securityContext:
@@ -74,6 +78,8 @@ spec:
           mountPath: '/des003/desarchive'
         - name: coadd-volume
           mountPath: '/des004/coadd'
+        - name: dr2-tiles
+          mountPath: "/tiles/dr2"
         lifecycle:
           postStart:
             exec:
