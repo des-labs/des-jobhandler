@@ -18,14 +18,19 @@ def render(tpl_path, context):
 class SingleEmailHeader(object):
     def __init__(self, username, recipients, context, char='r', template='email_template.html', ps=None):
         self.recipients = recipients
-        self.server = 'smtp.ncsa.illinois.edu'
-        # self.server = 'localhost'
+        self.server = os.environ.get('SMTP_SERVER', 'smtp.ncsa.illinois.edu')
+        self.smtp_user = os.environ.get('SMTP_USERNAME', '')
+        self.smtp_pass = os.environ.get('SMTP_PASSWORD', '')
+
         self.fromemail = 'devnull@ncsa.illinois.edu'
-        self.s = smtplib.SMTP(self.server)
+        self.smtp_api = smtplib.SMTP(self.server)
+        if self.smtp_user and self.smtp_pass:
+            self.smtp_api.login(self.smtp_user, self.smtp_pass)
         self.msg = MIMEMultipart('alternative')
         self.msg['Subject'] = context['Subject']
-        self.msg['From'] = formataddr((str(Header('DESDM Release Team', 'utf-8')), self.fromemail))
+        self.msg['From'] = formataddr((str(Header('DESaccess admins', 'utf-8')), self.fromemail))
         self.msg['To'] = ', '.join(self.recipients)
+        self.msg.add_header('reply-to', ','.join(envvars.DESACCESS_ADMIN_EMAILS))
         self.context = context
         if ps is None:
             self.ps = '''
@@ -74,8 +79,8 @@ def send_note(username, jobid, job_name, recipients):
     header = SingleEmailHeader(username, recipients, context, char='c')
     MP1 = MIMEText(header.html, 'html')
     header.msg.attach(MP1)
-    header.s.sendmail(header.fromemail, header.recipients, header.msg.as_string())
-    header.s.quit()
+    header.smtp_api.sendmail(header.fromemail, header.recipients, header.msg.as_string())
+    header.smtp_api.quit()
     return "Email Sent to {}".format(header.recipients)
 
 
@@ -98,8 +103,8 @@ def help_request_notification(username, recipients, jira_issue_number, jira_issu
     MP1 = MIMEText(header.html, 'html')
     header.msg.attach(MP1)
     # The TO and CC header fields are populated by the header construction, and any additional recipient addresses are effectively BCC
-    header.s.sendmail(header.fromemail, header.recipients, header.msg.as_string())
-    header.s.quit()
+    header.smtp_api.sendmail(header.fromemail, header.recipients, header.msg.as_string())
+    header.smtp_api.quit()
     return "Email Sent to {}".format(header.recipients)
 
 
@@ -121,8 +126,8 @@ def send_activation(firstname, lastname, username, recipients, url):
     MP1 = MIMEText(header.html, 'html')
     header.msg.attach(MP1)
     # The TO and CC header fields are populated by the header construction, and any additional recipient addresses are effectively BCC
-    header.s.sendmail(header.fromemail, header.recipients, header.msg.as_string())
-    header.s.quit()
+    header.smtp_api.sendmail(header.fromemail, header.recipients, header.msg.as_string())
+    header.smtp_api.quit()
     return "Email Sent to {}".format(header.recipients)
 
 
@@ -145,8 +150,8 @@ def send_reset(username, recipients, token):
     MP1 = MIMEText(header.html, 'html')
     header.msg.attach(MP1)
     # The TO and CC header fields are populated by the header construction, and any additional recipient addresses are effectively BCC
-    header.s.sendmail(header.fromemail, header.recipients, header.msg.as_string())
-    header.s.quit()
+    header.smtp_api.sendmail(header.fromemail, header.recipients, header.msg.as_string())
+    header.smtp_api.quit()
     return "Email Sent to {}".format(header.recipients)
 
 
@@ -172,8 +177,8 @@ def email_notify_admins_new_user(firstname, lastname, username, recipients, url)
     MP1 = MIMEText(header.html, 'html')
     header.msg.attach(MP1)
     # The TO and CC header fields are populated by the header construction, and any additional recipient addresses are effectively BCC
-    header.s.sendmail(header.fromemail, header.recipients, header.msg.as_string())
-    header.s.quit()
+    header.smtp_api.sendmail(header.fromemail, header.recipients, header.msg.as_string())
+    header.smtp_api.quit()
     return "Email Sent to {}".format(header.recipients)
 
 
@@ -243,8 +248,8 @@ def send_job_prune_warning(expiring_jobs_info):
     MP1 = MIMEText(header.html, 'html')
     header.msg.attach(MP1)
     # The TO and CC header fields are populated by the header construction, and any additional recipient addresses are effectively BCC
-    header.s.sendmail(header.fromemail, header.recipients, header.msg.as_string())
-    header.s.quit()
+    header.smtp_api.sendmail(header.fromemail, header.recipients, header.msg.as_string())
+    header.smtp_api.quit()
     return "Email Sent to {}".format(header.recipients)
 
 
@@ -260,8 +265,8 @@ def email_notify_public_list(recipients, subject, body):
     MP1 = MIMEText(header.html, 'html')
     header.msg.attach(MP1)
     # The TO and CC header fields are populated by the header construction, and any additional recipient addresses are effectively BCC
-    header.s.sendmail(header.fromemail, header.recipients, header.msg.as_string())
-    header.s.quit()
+    header.smtp_api.sendmail(header.fromemail, header.recipients, header.msg.as_string())
+    header.smtp_api.quit()
     return "Email Sent to {}".format(header.recipients)
 
 # def parse_email_list_file():
